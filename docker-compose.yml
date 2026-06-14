@@ -1,0 +1,28 @@
+services:
+  projectego-ws-chat:
+    build: .
+    image: projectego-ws-chat:local
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 19100
+      DATA_DIR: /data
+      DEV_AUTH_BYPASS: "false"
+      TRUST_AUTHELIA_HEADERS: "true"
+      LLM_PROVIDER: mock
+      CODEX_AGENT_URL: ""
+      CODEX_AGENT_TOKEN: ""
+      CODEX_FALLBACK_TO_MOCK: "true"
+      PLANE_BASE_URL: ""
+      PLANE_WORKSPACE: projectego
+      PLANE_API_KEY: ""
+      N8N_BASE_URL: ""
+      N8N_WEBHOOK_TOKEN: ""
+    ports:
+      - "19100:19100"
+    volumes:
+      - projectego-ws-chat-data:/data
+
+volumes:
+  projectego-ws-chat-data:

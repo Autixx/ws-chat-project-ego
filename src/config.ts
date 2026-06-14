@@ -1,0 +1,43 @@
+export type AppConfig = {
+  host: string;
+  port: number;
+  dataDir: string;
+  devAuthBypass: boolean;
+  trustAutheliaHeaders: boolean;
+  llmProvider: "mock" | "codex";
+  codexAgentUrl?: string;
+  codexAgentToken?: string;
+  codexFallbackToMock: boolean;
+  planeBaseUrl?: string;
+  planeWorkspace: string;
+  planeApiKey?: string;
+  n8nBaseUrl?: string;
+  n8nWebhookToken?: string;
+};
+
+function boolFromEnv(value: string | undefined, fallback = false): boolean {
+  if (value === undefined || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+}
+
+function numberFromEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export const config: AppConfig = {
+  host: process.env.HOST ?? "127.0.0.1",
+  port: numberFromEnv(process.env.PORT, 19100),
+  dataDir: process.env.DATA_DIR ?? "./data",
+  devAuthBypass: boolFromEnv(process.env.DEV_AUTH_BYPASS, process.env.NODE_ENV !== "production"),
+  trustAutheliaHeaders: boolFromEnv(process.env.TRUST_AUTHELIA_HEADERS, false),
+  llmProvider: process.env.LLM_PROVIDER === "codex" ? "codex" : "mock",
+  codexAgentUrl: process.env.CODEX_AGENT_URL,
+  codexAgentToken: process.env.CODEX_AGENT_TOKEN,
+  codexFallbackToMock: boolFromEnv(process.env.CODEX_FALLBACK_TO_MOCK, true),
+  planeBaseUrl: process.env.PLANE_BASE_URL,
+  planeWorkspace: process.env.PLANE_WORKSPACE ?? "projectego",
+  planeApiKey: process.env.PLANE_API_KEY,
+  n8nBaseUrl: process.env.N8N_BASE_URL,
+  n8nWebhookToken: process.env.N8N_WEBHOOK_TOKEN
+};
