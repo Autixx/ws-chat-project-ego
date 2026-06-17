@@ -3,58 +3,80 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ProjectEGO Chat Gateway</title>
+    <title>ProjectEGO Chat Workbench</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div>
-        <h1>ProjectEGO Chat Gateway</h1>
-        <p id="userLine">Disconnected</p>
-      </div>
-      <span id="statusBadge" class="badge badge-offline">offline</span>
-    </header>
-
-    <main class="layout">
-      <section class="composer">
-        <label for="prompt">Prompt or document text</label>
-        <textarea id="prompt" rows="12" spellcheck="true"></textarea>
-
-        <div class="file-row">
-          <input id="fileInput" type="file" accept=".txt,.md,text/plain,text/markdown" />
-          <span id="fileNotice"></span>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <h1>ProjectEGO</h1>
+          <p>WS Chat Workbench</p>
         </div>
-
-        <div class="button-row">
-          <button id="digestBtn" type="button">Digest</button>
-          <button id="tasksBtn" type="button">Tasks</button>
-          <button id="applyAllBtn" type="button">Apply all</button>
-          <button id="applySelectedBtn" type="button">Apply selected</button>
-          <button id="showUnclarifiedBtn" type="button">Show unclarified</button>
+        <div class="connection">
+          <span id="statusDot" class="dot"></span>
+          <span id="statusText">offline</span>
         </div>
-      </section>
+        <button id="newConversationBtn" type="button">+ New conversation</button>
+        <input id="conversationFilter" class="filter" type="search" placeholder="Filter conversations" />
+        <nav id="conversationList" class="conversation-list" aria-label="Conversations"></nav>
+      </aside>
 
-      <section class="panel">
-        <h2>Live output</h2>
-        <pre id="liveOutput"></pre>
-      </section>
+      <section class="chat-pane">
+        <header class="chat-header">
+          <div>
+            <h2 id="conversationTitle">No conversation</h2>
+            <p id="userLine">Disconnected</p>
+          </div>
+          <button id="archiveConversationBtn" type="button">Archive</button>
+        </header>
 
-      <section class="panel preview-panel">
-        <h2>Draft preview</h2>
-        <pre id="draftPreview"></pre>
-      </section>
+        <div id="messageList" class="message-list"></div>
 
-      <section class="panel">
-        <h2>Items</h2>
-        <div id="itemsList" class="items-list"></div>
-      </section>
+        <section class="composer">
+          <div class="mode-row" role="radiogroup" aria-label="Mode">
+            <label><input type="radio" name="mode" value="chat" checked /> Chat</label>
+            <label><input type="radio" name="mode" value="digest" /> Digest</label>
+            <label><input type="radio" name="mode" value="tasks" /> Tasks</label>
+            <label><input type="radio" name="mode" value="abstract_idea" /> Abstract idea</label>
+          </div>
+          <textarea id="prompt" rows="4" placeholder="Send a message or paste ProjectEGO planning material"></textarea>
+          <div class="composer-actions">
+            <input id="fileInput" type="file" accept=".txt,.md,text/plain,text/markdown" />
+            <span id="fileNotice"></span>
+            <button id="sendBtn" type="button">Send</button>
+          </div>
+        </section>
 
-      <section class="panel">
-        <details>
-          <summary>Raw JSON / debug</summary>
+        <details class="debug">
+          <summary>Execution log</summary>
           <pre id="debugOutput"></pre>
         </details>
       </section>
+
+      <aside class="inspector">
+        <section class="inspector-section">
+          <div class="section-header">
+            <h2>Draft Inspector</h2>
+            <span id="draftJobId">No draft</span>
+          </div>
+          <pre id="draftPreview" class="preview"></pre>
+          <div class="inspector-actions">
+            <button id="applySelectedBtn" type="button">Apply selected</button>
+            <button id="applyAllBtn" type="button">Apply all</button>
+            <button id="keepAllBtn" type="button">Keep all</button>
+          </div>
+          <div id="itemsList" class="items-list"></div>
+        </section>
+
+        <section class="inspector-section">
+          <div class="section-header">
+            <h2>Unclarified</h2>
+            <button id="showUnclarifiedBtn" type="button">Refresh</button>
+          </div>
+          <pre id="unclarifiedPanel" class="preview small"></pre>
+        </section>
+      </aside>
     </main>
 
     <script src="/app.js" defer></script>

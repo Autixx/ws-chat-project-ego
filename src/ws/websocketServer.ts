@@ -1,7 +1,12 @@
 import type { Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { getAutheliaUser, type AuthenticatedUser } from "../auth/authelia.js";
+import type { Conversation } from "../conversations/types.js";
 import type { AppConfig } from "../config.js";
+import { ConversationStore } from "../conversations/conversationStore.js";
+import { MessageStore } from "../conversations/messageStore.js";
+import { generateConversationTitle } from "../conversations/titleGenerator.js";
+import { openDatabase } from "../db/database.js";
 import { parseApplyExpression } from "../drafts/applyParser.js";
 import { DraftStore } from "../drafts/draftStore.js";
 import { UnclarifiedStore } from "../drafts/unclarifiedStore.js";
@@ -22,8 +27,17 @@ function providerFromConfig(config: AppConfig): LlmProvider {
   return config.llmProvider === "codex" ? new CodexProvider(config) : new MockProvider();
 }
 
+function taskModeFromUiMode(mode: "digest" | "tasks" | "abstract_idea"): LlmTaskMode {
+  if (mode === "tasks") return "create_tasks";
+  if (mode === "abstract_idea") return "abstract_idea";
+  return "structured_breakdown";
+}
+
 export function attachWebSocketServer(server: Server, config: AppConfig): void {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 });
+  const database = openDatabase(config);
+  const conversations = new ConversationStore(database);
+  const messages = new MessageStore(database);
   const drafts = new DraftStore(config.dataDir);
   const unclarified = new UnclarifiedStore(config.dataDir);
   const plane = new PlaneClient(config);
@@ -73,35 +87,85 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
     });
   }
 
-  async function handleClientMessage(ws: WebSocket, message: ClientMessage, user: AuthenticatedUser): Promise<void> {
-    if (message.type === "digest" || message.type === "tasks") {
-      if (message.text.length > MAX_TEXT_LENGTH) throw new Error("Message text is too large.");
-      const mode: LlmTaskMode = message.type === "tasks" ? "create_tasks" : "structured_breakdown";
-      const source = message.fileName ? "uploaded_file" : "browser_text";
-      send(ws, { type: "status", jobId: "pending", message: "Starting LLM provider task." });
+  async function emitMessage(ws: WebSocket, message: Awaited<ReturnType<MessageStore["appendToolMessage"]>>): Promise<void> {
+    send(ws, { type: "message_created", message });
+  }
 
-      for await (const event of provider.runProjectEgoTask({ mode, text: message.text, source, fileName: message.fileName, user })) {
-        if (event.type === "status") send(ws, { type: "status", jobId: "pending", message: event.message });
-        if (event.type === "token") send(ws, { type: "token", jobId: "pending", text: event.text });
-        if (event.type === "error") send(ws, { type: "error", message: event.message });
-        if (event.type === "result") {
-          const saved = await drafts.saveDraft({ mode, source, fileName: message.fileName, user, result: event.result });
-          send(ws, { type: "draft_saved", jobId: saved.draft.jobId, itemsCount: saved.draft.result.items.length, preview: saved.preview });
-          send(ws, { type: "draft_result", jobId: saved.draft.jobId, result: saved.draft.result });
-        }
-      }
+  async function createAndEmitConversation(ws: WebSocket, user: AuthenticatedUser, title?: string): Promise<Conversation> {
+    const conversation = await conversations.createConversation(user, title);
+    send(ws, { type: "conversation_created", conversation });
+    send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user) });
+    return conversation;
+  }
+
+  async function ensureConversation(ws: WebSocket, user: AuthenticatedUser, conversationId: string | undefined, titleSeed: string): Promise<Conversation> {
+    if (conversationId) return conversations.loadConversation(user, conversationId);
+    return createAndEmitConversation(ws, user, generateConversationTitle(titleSeed));
+  }
+
+  async function handleClientMessage(ws: WebSocket, message: ClientMessage, user: AuthenticatedUser): Promise<void> {
+    if (message.type === "conversation_create") {
+      await createAndEmitConversation(ws, user, message.title);
+      return;
+    }
+
+    if (message.type === "conversation_list") {
+      send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user) });
+      return;
+    }
+
+    if (message.type === "conversation_open") {
+      const conversation = await conversations.loadConversation(user, message.conversationId);
+      const history = await messages.loadMessages(user, conversation.id);
+      send(ws, { type: "conversation_opened", conversation, messages: history });
+      return;
+    }
+
+    if (message.type === "conversation_rename") {
+      const conversation = await conversations.renameConversation(user, message.conversationId, message.title);
+      send(ws, { type: "conversation_renamed", conversation });
+      send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user) });
+      return;
+    }
+
+    if (message.type === "conversation_archive") {
+      await conversations.archiveConversation(user, message.conversationId);
+      send(ws, { type: "conversation_archived", conversationId: message.conversationId });
+      send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user) });
+      return;
+    }
+
+    if (message.type === "message_send" || message.type === "digest" || message.type === "tasks") {
+      const mode = message.type === "message_send" ? message.mode : message.type;
+      await handleConversationMessage(ws, user, {
+        conversationId: message.conversationId,
+        mode,
+        text: message.text,
+        fileName: message.fileName
+      });
       return;
     }
 
     if (message.type === "apply") {
+      await conversations.loadConversation(user, message.conversationId);
       const draft = await drafts.loadDraft(message.jobId, user);
       const selection = parseApplyExpression(message.expression, draft.result.items.length);
       const applyItems = drafts.selectItems(draft, selection.apply);
       const keepItems = drafts.selectItems(draft, selection.keep);
       const planeResult = await plane.createWorkItems(applyItems);
       await unclarified.storeUnclarifiedItems(keepItems, user);
+      const content = `Apply result for ${draft.jobId}: applied=${planeResult.createdCount}, kept=${keepItems.length}, dropped=${selection.drop.length}. ${planeResult.message}`;
+      const toolMessage = await messages.appendToolMessage(message.conversationId, user, content, {
+        kind: "apply_result",
+        jobId: draft.jobId,
+        selection,
+        requestedApplyCount: applyItems.length
+      });
+      await conversations.touchConversation(user, message.conversationId);
+      await emitMessage(ws, toolMessage);
       send(ws, {
         type: "apply_result",
+        conversationId: message.conversationId,
         jobId: draft.jobId,
         appliedCount: planeResult.createdCount,
         keptCount: keepItems.length,
@@ -112,22 +176,164 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
     }
 
     if (message.type === "discard") {
+      await conversations.loadConversation(user, message.conversationId);
       const discardedJobId = await drafts.discardDraft(message.jobId, user);
-      send(ws, { type: "status", jobId: discardedJobId, message: "Draft discarded." });
+      const toolMessage = await messages.appendToolMessage(message.conversationId, user, `Draft ${discardedJobId} discarded.`, {
+        kind: "status",
+        jobId: discardedJobId
+      });
+      await conversations.touchConversation(user, message.conversationId);
+      await emitMessage(ws, toolMessage);
+      send(ws, { type: "status", conversationId: message.conversationId, jobId: discardedJobId, message: "Draft discarded." });
       return;
     }
 
     if (message.type === "show_unclarified") {
-      send(ws, { type: "unclarified_index", text: await unclarified.renderUnclarifiedIndex() });
+      const text = await unclarified.renderUnclarifiedIndex();
+      if (message.conversationId) {
+        await conversations.loadConversation(user, message.conversationId);
+        const toolMessage = await messages.appendToolMessage(message.conversationId, user, text, { kind: "unclarified_index" });
+        await conversations.touchConversation(user, message.conversationId);
+        await emitMessage(ws, toolMessage);
+      }
+      send(ws, { type: "unclarified_index", conversationId: message.conversationId, text });
       return;
     }
 
     if (message.type === "clarify") {
+      await conversations.loadConversation(user, message.conversationId);
       const item = await unclarified.loadUnclarifiedItem(message.unclarifiedId);
-      item.item.needs_clarification = [];
-      item.item.details = `${item.item.details}\n\nClarification: ${message.text}`;
-      await unclarified.removeUnclarifiedItem(message.unclarifiedId);
-      send(ws, { type: "status", jobId: message.unclarifiedId, message: "Clarification recorded and item removed from unclarified storage." });
+      const userMessage = await messages.appendUserMessage(message.conversationId, user, `Clarification for ${message.unclarifiedId}: ${message.text}`, {
+        unclarifiedId: message.unclarifiedId
+      });
+      await emitMessage(ws, userMessage);
+      const toolMessage = await messages.appendToolMessage(
+        message.conversationId,
+        user,
+        `Clarification recorded for ${message.unclarifiedId}. The unclarified item is preserved for review; apply or drop it explicitly when ready.`,
+        {
+          kind: "status",
+          unclarifiedId: message.unclarifiedId,
+          itemTitle: item.item.title,
+          todo: "Future pass should run LLM clarification and create a new review draft item."
+        }
+      );
+      await conversations.touchConversation(user, message.conversationId);
+      await emitMessage(ws, toolMessage);
+      send(ws, { type: "status", conversationId: message.conversationId, jobId: message.unclarifiedId, message: "Clarification recorded; unclarified item preserved." });
     }
+  }
+
+  async function handleConversationMessage(
+    ws: WebSocket,
+    user: AuthenticatedUser,
+    input: { conversationId?: string; mode: "chat" | "digest" | "tasks" | "abstract_idea"; text: string; fileName?: string }
+  ): Promise<void> {
+    if (input.text.length > MAX_TEXT_LENGTH) throw new Error("Message text is too large.");
+    const conversation = await ensureConversation(ws, user, input.conversationId, input.text);
+    const userMessage = await messages.appendUserMessage(conversation.id, user, input.text, {
+      mode: input.mode,
+      fileName: input.fileName
+    });
+    send(ws, { type: "message_created", message: userMessage });
+
+    if (conversation.title === "New conversation") {
+      const renamed = await conversations.renameConversation(user, conversation.id, generateConversationTitle(input.text));
+      send(ws, { type: "conversation_renamed", conversation: renamed });
+    }
+
+    const assistantMessage = messages.createMessage({
+      conversationId: conversation.id,
+      user,
+      role: "assistant",
+      kind: "chat",
+      content: "",
+      metadata: { mode: input.mode }
+    });
+    await messages.appendMessage(assistantMessage);
+    send(ws, { type: "assistant_message_start", conversationId: conversation.id, messageId: assistantMessage.id });
+
+    if (input.mode === "chat") {
+      const updatedAssistant = await messages.updateMessageContent(
+        assistantMessage,
+        "I received your message and saved it in this conversation. General chat is currently a lightweight MVP path; use Digest, Tasks, or Abstract idea to generate ProjectEGO drafts."
+      );
+      await conversations.touchConversation(user, conversation.id);
+      send(ws, { type: "message_created", message: updatedAssistant });
+      send(ws, { type: "assistant_message_done", conversationId: conversation.id, messageId: assistantMessage.id });
+      return;
+    }
+
+    const taskMode = taskModeFromUiMode(input.mode);
+    const source = input.fileName ? "uploaded_file" : "browser_text";
+    let assistantContent = "";
+
+    for await (const event of provider.runProjectEgoTask({ mode: taskMode, text: input.text, source, fileName: input.fileName, user })) {
+      if (event.type === "status") {
+        const statusMessage = await messages.appendToolMessage(conversation.id, user, event.message, {
+          kind: "status",
+          mode: input.mode
+        });
+        await emitMessage(ws, statusMessage);
+        send(ws, { type: "status", conversationId: conversation.id, messageId: assistantMessage.id, jobId: "pending", message: event.message });
+      }
+
+      if (event.type === "token") {
+        assistantContent += event.text;
+        send(ws, { type: "token", conversationId: conversation.id, messageId: assistantMessage.id, jobId: "pending", text: event.text });
+      }
+
+      if (event.type === "error") {
+        const errorMessage = await messages.appendToolMessage(conversation.id, user, event.message, {
+          kind: "error",
+          mode: input.mode
+        });
+        await emitMessage(ws, errorMessage);
+        send(ws, { type: "error", message: event.message });
+      }
+
+      if (event.type === "result") {
+        const saved = await drafts.saveDraft({ mode: taskMode, source, fileName: input.fileName, user, result: event.result });
+        await conversations.insertDraftRef(user, {
+          conversationId: conversation.id,
+          jobId: saved.draft.jobId,
+          messageId: assistantMessage.id,
+          mode: input.mode,
+          source,
+          fileName: input.fileName,
+          itemsCount: saved.draft.result.items.length
+        });
+        assistantContent += `\n\nI created draft ${saved.draft.jobId} with ${saved.draft.result.items.length} item(s).`;
+        const draftMessage = await messages.appendToolMessage(conversation.id, user, `Draft ${saved.draft.jobId}: ${saved.draft.result.items.length} item(s).`, {
+          kind: "draft",
+          jobId: saved.draft.jobId,
+          itemsCount: saved.draft.result.items.length,
+          preview: saved.preview,
+          result: saved.draft.result,
+          mode: input.mode
+        });
+        await emitMessage(ws, draftMessage);
+        send(ws, {
+          type: "draft_saved",
+          conversationId: conversation.id,
+          messageId: assistantMessage.id,
+          jobId: saved.draft.jobId,
+          itemsCount: saved.draft.result.items.length,
+          preview: saved.preview
+        });
+        send(ws, {
+          type: "draft_result",
+          conversationId: conversation.id,
+          messageId: assistantMessage.id,
+          jobId: saved.draft.jobId,
+          result: saved.draft.result
+        });
+      }
+    }
+
+    const updatedAssistant = await messages.updateMessageContent(assistantMessage, assistantContent.trim() || "Done.");
+    await conversations.touchConversation(user, conversation.id);
+    send(ws, { type: "message_created", message: updatedAssistant });
+    send(ws, { type: "assistant_message_done", conversationId: conversation.id, messageId: assistantMessage.id });
   }
 }

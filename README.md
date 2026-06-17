@@ -1,25 +1,54 @@
-# ProjectEGO WebSocket Chat Gateway
+# ProjectEGO WebSocket Chat Workbench
 
-Production-oriented MVP for a browser-based WebSocket chat interface that can later replace the Telegram bot as the primary ProjectEGO planning automation UI.
+Browser chat/workbench for ProjectEGO planning automation. The app keeps persistent conversations in SQLite, streams WebSocket events to the browser, and preserves the existing ProjectEGO draft workflow as chat artifacts.
 
-The app provides its own HTTP/WebSocket server. n8n and Plane are optional integrations and are not required for local MVP usage.
-
-## Features
+## Architecture
 
 - Express HTTP server with `GET /health`.
 - WebSocket endpoint at `GET /ws`.
-- Authelia header auth helper with local development bypass.
-- Strict JSON WebSocket protocol for digest, tasks, apply, discard, unclarified, and clarify actions.
-- LLM provider abstraction with `MockProvider` and configurable `CodexProvider` placeholder.
-- Disk draft storage under configurable `DATA_DIR`.
-- Unclarified item storage with global `U-000001` IDs.
-- Apply/keep/drop selection grammar parser.
-- Static browser UI with prompt input, `.txt` / `.md` upload, live stream output, draft preview, item choices, and debug panel.
+- Authelia header auth with local development bypass.
+- SQLite-backed chat history:
+  - conversations
+  - messages
+  - draft references
+  - attachment metadata
+  - app migrations
+- Filesystem-backed artifacts:
+  - full draft JSON
+  - preview text
+  - per-item JSON
+  - future uploaded attachments
+- LLM provider abstraction with `MockProvider` and `CodexProvider` placeholder.
+- Optional Plane and n8n integration stubs.
 
-## Requirements
+## Storage
 
-- Node.js 20+
-- npm
+SQLite path is controlled by:
+
+```env
+SQLITE_PATH=./data/projectego-chat.sqlite
+```
+
+If `SQLITE_PATH` is not set, the app uses:
+
+```text
+path.join(DATA_DIR, "projectego-chat.sqlite")
+```
+
+Draft artifacts still use:
+
+```env
+DATA_DIR=./data
+```
+
+Typical production layout:
+
+```text
+/app/data/projectego-chat.sqlite
+/app/data/drafts/
+/app/data/attachments/
+/app/data/unclarified/
+```
 
 ## Install
 
@@ -27,32 +56,45 @@ The app provides its own HTTP/WebSocket server. n8n and Plane are optional integ
 npm install
 ```
 
-## Development Run
+## Local Development
 
 ```bash
 cp .env.example .env
 npm run dev
 ```
 
-Open `http://127.0.0.1:19100`.
+Open:
 
-For local development, keep:
+```text
+http://127.0.0.1:19100
+```
+
+Useful local env:
 
 ```env
+HOST=127.0.0.1
+PORT=19100
+DATA_DIR=./data
+SQLITE_PATH=./data/projectego-chat.sqlite
 DEV_AUTH_BYPASS=true
 TRUST_AUTHELIA_HEADERS=false
 LLM_PROVIDER=mock
-DATA_DIR=./data
 ```
 
-## Production Run
+## Production Without Docker
 
 ```bash
+npm ci
 npm run build
-NODE_ENV=production HOST=127.0.0.1 PORT=19100 DATA_DIR=/var/lib/projectego-ws-chat DEV_AUTH_BYPASS=false TRUST_AUTHELIA_HEADERS=true npm start
+NODE_ENV=production \
+HOST=127.0.0.1 \
+PORT=19100 \
+DATA_DIR=/var/lib/projectego-ws-chat \
+SQLITE_PATH=/var/lib/projectego-ws-chat/projectego-chat.sqlite \
+DEV_AUTH_BYPASS=false \
+TRUST_AUTHELIA_HEADERS=true \
+npm start
 ```
-
-Runtime data is written only to `DATA_DIR`. Do not point `DATA_DIR` inside `dist` or another immutable application directory.
 
 ## Docker
 
@@ -69,20 +111,21 @@ docker run --rm \
   -p 19100:19100 \
   -e HOST=0.0.0.0 \
   -e PORT=19100 \
-  -e DATA_DIR=/data \
+  -e DATA_DIR=/app/data \
+  -e SQLITE_PATH=/app/data/projectego-chat.sqlite \
   -e DEV_AUTH_BYPASS=true \
   -e TRUST_AUTHELIA_HEADERS=false \
-  -v projectego-ws-chat-data:/data \
+  -v projectego-ws-chat-data:/app/data \
   projectego-ws-chat:local
 ```
 
-Compose example:
+Compose:
 
 ```bash
 docker compose up --build
 ```
 
-The image exposes one HTTP/WebSocket port: `19100`. Mount `/data` or set `DATA_DIR` to another mounted path. Runtime drafts and unclarified items are not stored inside the image.
+Only one HTTP/WebSocket port is exposed. Runtime state should live in the mounted `/app/data` volume.
 
 ## Health Check
 
@@ -90,67 +133,22 @@ The image exposes one HTTP/WebSocket port: `19100`. Mount `/data` or set `DATA_D
 curl http://127.0.0.1:19100/health
 ```
 
-Response:
+Expected response:
 
 ```json
 {"status":"ok","service":"projectego-ws-chat"}
 ```
 
-## WebSocket Protocol
+## Caddy + Authelia
 
-Client messages:
-
-- `digest`: `{ "type": "digest", "text": "string", "fileName": "optional string" }`
-- `tasks`: `{ "type": "tasks", "text": "string", "fileName": "optional string" }`
-- `apply`: `{ "type": "apply", "jobId": "latest", "expression": "1,2 keep 3 drop other" }`
-- `discard`: `{ "type": "discard", "jobId": "latest" }`
-- `show_unclarified`: `{ "type": "show_unclarified" }`
-- `clarify`: `{ "type": "clarify", "unclarifiedId": "U-000001", "text": "clarification" }`
-
-Server events include `connected`, `status`, `token`, `draft_saved`, `draft_result`, `apply_result`, `unclarified_index`, and `error`.
-
-## MockProvider Test
-
-1. Start with `LLM_PROVIDER=mock`.
-2. Open the UI.
-3. Paste text or upload a `.txt` / `.md` file.
-4. Click `Digest` or `Tasks`.
-5. Watch status/token events.
-6. Confirm a numbered draft appears.
-7. Select Apply/Keep/Drop choices and click `Apply selected`.
-8. If Plane env is missing, the app reports `Plane integration is not configured.` and stores kept items under `DATA_DIR/unclarified`.
-
-## Environment Variables
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `HOST` | `127.0.0.1` | Bind host. Use `0.0.0.0` in Docker. |
-| `PORT` | `19100` | Single HTTP/WebSocket port. |
-| `DATA_DIR` | `./data` | Runtime draft and unclarified storage. Use a mounted volume in Docker. |
-| `DEV_AUTH_BYPASS` | dev defaults true | Enables local fake user. Must be false in production. |
-| `TRUST_AUTHELIA_HEADERS` | `false` | Trusts `Remote-*` headers from Authelia/Caddy. |
-| `LLM_PROVIDER` | `mock` | `mock` or `codex`. |
-| `CODEX_AGENT_URL` | empty | Optional HTTP endpoint for Codex provider. |
-| `CODEX_AGENT_TOKEN` | empty | Optional bearer token for Codex provider. |
-| `CODEX_FALLBACK_TO_MOCK` | `true` | Falls back to mock if Codex is not configured. |
-| `PLANE_BASE_URL` | empty | Optional Plane API base URL. |
-| `PLANE_WORKSPACE` | `projectego` | Plane workspace slug. |
-| `PLANE_API_KEY` | empty | Optional Plane API key. |
-| `N8N_BASE_URL` | empty | Optional n8n base URL. |
-| `N8N_WEBHOOK_TOKEN` | empty | Optional n8n webhook token. |
-
-## Authelia
-
-This app does not implement username/password login. In production it should sit behind Caddy and Authelia. When `TRUST_AUTHELIA_HEADERS=true`, the backend reads:
+The app does not implement login. In production, put it behind Caddy and Authelia. With `TRUST_AUTHELIA_HEADERS=true`, the server reads:
 
 - `Remote-User`
 - `Remote-Groups`
 - `Remote-Email`
 - `Remote-Name`
 
-If auth headers are missing and `DEV_AUTH_BYPASS=false`, WebSocket upgrades are rejected with `401 Unauthorized`.
-
-## Caddy Example
+Example:
 
 ```caddyfile
 chat.project-ego.online {
@@ -167,31 +165,56 @@ chat.project-ego.online {
 }
 ```
 
-## Apply Grammar
+## MockProvider Test
 
-Examples:
+1. Start with `LLM_PROVIDER=mock`.
+2. Open the UI.
+3. Create a conversation or let the app create one.
+4. Send `Chat`, `Digest`, `Tasks`, or `Abstract idea`.
+5. Confirm the message history persists after reload.
+6. For draft modes, open the draft inspector.
+7. Choose Apply/Keep/Drop per item.
+8. Click `Apply selected`.
 
-```text
-all
-1,2,3
-1,2,3 keep 4,5 drop 6
-keep 4,5 drop 6
-1,2 drop other
-keep 4,5 drop other
-all drop 4,5
-```
+If Plane is not configured, the app returns `Plane integration is not configured.` and stores kept items in unclarified storage.
 
-Rules:
+## Backup
 
-- If no explicit apply list is provided, apply all except keep/drop.
-- Unmentioned items default to keep.
-- Drop wins over apply and keep.
-- Apply wins over keep.
+Back up both SQLite and artifact files.
 
-## Known Limitations
+Recommended simple backup:
 
-- `CodexProvider` is an HTTP placeholder. Real token streaming depends on the future Codex/local LLM endpoint contract.
-- Plane creation is intentionally guarded until project ID mapping is configured.
-- n8n client is a stub for later webhook workflows.
-- Runtime storage is file-based and suitable for MVP/single-node deployment, not concurrent multi-node operation.
-- Frontend file upload reads `.txt` / `.md` as UTF-8 plain text and does not render Markdown.
+1. Stop the service, or use SQLite online backup tooling.
+2. Copy `projectego-chat.sqlite` and its WAL/SHM files if present.
+3. Copy `drafts/`, `attachments/`, and `unclarified/`.
+
+For Docker, back up the mounted `/app/data` volume.
+
+## Environment
+
+| Variable | Purpose |
+| --- | --- |
+| `HOST` | Bind host. Use `127.0.0.1` behind Caddy, `0.0.0.0` in Docker. |
+| `PORT` | Single HTTP/WebSocket port. |
+| `DATA_DIR` | Draft artifacts, attachments, and unclarified files. |
+| `SQLITE_PATH` | SQLite database file for chat history. |
+| `DEV_AUTH_BYPASS` | Local fake auth. Keep false in production. |
+| `TRUST_AUTHELIA_HEADERS` | Trust Authelia `Remote-*` headers. |
+| `LLM_PROVIDER` | `mock` or `codex`. |
+| `CODEX_AGENT_URL` | Optional HTTP endpoint for Codex provider. |
+| `CODEX_AGENT_TOKEN` | Optional bearer token for Codex provider. |
+| `CODEX_FALLBACK_TO_MOCK` | Fall back to mock if Codex is not configured. |
+| `PLANE_BASE_URL` | Optional Plane API base URL. |
+| `PLANE_WORKSPACE` | Plane workspace slug. |
+| `PLANE_API_KEY` | Optional Plane API key. |
+| `N8N_BASE_URL` | Optional n8n base URL. |
+| `N8N_WEBHOOK_TOKEN` | Optional n8n webhook token. |
+
+## Current Limitations
+
+- Plane work-item creation is still guarded until project ID mapping is implemented.
+- `CodexProvider` is non-streaming unless the configured backend streams or returns incremental events.
+- SQLite is intended for single-node deployment.
+- No database-backed full-text search yet.
+- No Telegram integration.
+- No custom login; Authelia remains the authentication layer.

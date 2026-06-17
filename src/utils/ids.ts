@@ -1,5 +1,9 @@
 import { randomBytes } from "node:crypto";
 
+export function createId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
+}
+
 export function createJobId(date = new Date()): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   const stamp = [

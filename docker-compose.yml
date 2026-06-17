@@ -7,7 +7,8 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 19100
-      DATA_DIR: /data
+      DATA_DIR: /app/data
+      SQLITE_PATH: /app/data/projectego-chat.sqlite
       DEV_AUTH_BYPASS: "false"
       TRUST_AUTHELIA_HEADERS: "true"
       LLM_PROVIDER: mock
@@ -22,7 +23,7 @@ services:
     ports:
       - "19100:19100"
     volumes:
-      - projectego-ws-chat-data:/data
+      - projectego-ws-chat-data:/app/data
 
 volumes:
   projectego-ws-chat-data:

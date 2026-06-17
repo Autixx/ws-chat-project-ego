@@ -1,7 +1,10 @@
+import path from "node:path";
+
 export type AppConfig = {
   host: string;
   port: number;
   dataDir: string;
+  sqlitePath: string;
   devAuthBypass: boolean;
   trustAutheliaHeaders: boolean;
   llmProvider: "mock" | "codex";
@@ -29,6 +32,7 @@ export const config: AppConfig = {
   host: process.env.HOST ?? "127.0.0.1",
   port: numberFromEnv(process.env.PORT, 19100),
   dataDir: process.env.DATA_DIR ?? "./data",
+  sqlitePath: process.env.SQLITE_PATH ?? path.join(process.env.DATA_DIR ?? "./data", "projectego-chat.sqlite"),
   devAuthBypass: boolFromEnv(process.env.DEV_AUTH_BYPASS, process.env.NODE_ENV !== "production"),
   trustAutheliaHeaders: boolFromEnv(process.env.TRUST_AUTHELIA_HEADERS, false),
   llmProvider: process.env.LLM_PROVIDER === "codex" ? "codex" : "mock",
