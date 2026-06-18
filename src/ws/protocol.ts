@@ -1,5 +1,5 @@
 import type { AuthenticatedUser } from "../auth/authelia.js";
-import type { ChatMessage, Conversation } from "../conversations/types.js";
+import type { AttachmentMetadata, ChatMessage, Conversation } from "../conversations/types.js";
 import type { DraftResult } from "../drafts/types.js";
 
 export type ClientMessage =
@@ -18,6 +18,7 @@ export type ClientMessage =
       mimeType?: string;
     }
   | { type: "draft_open"; conversationId: string; jobId: string }
+  | { type: "attachments_for_request"; conversationId: string; requestId: string }
   | { type: "response_decision_update"; conversationId: string; messageId: string; decisionStatus: "pending" | "applied" | "dropped" | "kept" }
   | { type: "digest"; conversationId?: string; text: string; fileName?: string }
   | { type: "tasks"; conversationId?: string; text: string; fileName?: string }
@@ -30,7 +31,14 @@ export type ServerMessage =
   | { type: "connected"; user: Pick<AuthenticatedUser, "username" | "email"> }
   | { type: "conversation_created"; conversation: Conversation }
   | { type: "conversation_list"; conversations: Conversation[] }
-  | { type: "conversation_opened"; conversation: Conversation; messages: ChatMessage[] }
+  | { type: "conversation_opened"; conversation: Conversation; messages: ChatMessage[]; attachments: AttachmentMetadata[] }
+  | { type: "attachments_for_request"; conversationId: string; requestId: string; attachments: AttachmentMetadata[] }
+  | {
+      type: "app_status";
+      db: { status: "ok" | "error"; path?: string; message?: string };
+      plane: { status: "configured" | "unconfigured" };
+      n8n: { status: "configured" | "unconfigured" };
+    }
   | { type: "conversation_renamed"; conversation: Conversation }
   | { type: "conversation_archived"; conversationId: string }
   | { type: "message_created"; message: ChatMessage }
@@ -95,6 +103,13 @@ export function parseClientMessage(raw: unknown): ClientMessage {
       throw new Error("draft_open requires conversationId and jobId.");
     }
     return { type: "draft_open", conversationId: msg.conversationId, jobId: msg.jobId };
+  }
+
+  if (msg.type === "attachments_for_request") {
+    if (typeof msg.conversationId !== "string" || typeof msg.requestId !== "string") {
+      throw new Error("attachments_for_request requires conversationId and requestId.");
+    }
+    return { type: "attachments_for_request", conversationId: msg.conversationId, requestId: msg.requestId };
   }
 
   if (msg.type === "response_decision_update") {

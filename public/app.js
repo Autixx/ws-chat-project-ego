@@ -11,12 +11,20 @@ const state = {
   expandedRequestId: null,
   expandedResponseId: null,
   currentDraft: null,
-  currentDraftItems: []
+  currentDraftItems: [],
+  attachments: [],
+  attachmentsByRequest: {}
 };
 
 const els = {
   wsSquare: document.getElementById("wsSquare"),
   wsText: document.getElementById("wsText"),
+  planeSquare: document.getElementById("planeSquare"),
+  planeText: document.getElementById("planeText"),
+  n8nSquare: document.getElementById("n8nSquare"),
+  n8nText: document.getElementById("n8nText"),
+  dbSquare: document.getElementById("dbSquare"),
+  dbText: document.getElementById("dbText"),
   userLine: document.getElementById("userLine"),
   conversationTitle: document.getElementById("conversationTitle"),
   conversationSelect: document.getElementById("conversationSelect"),
@@ -87,6 +95,12 @@ function handleServerMessage(message) {
     els.userLine.textContent = `${message.user.username}${message.user.email ? ` / ${message.user.email}` : ""} / logout`;
   }
 
+  if (message.type === "app_status") {
+    setStatusIndicator(els.dbSquare, els.dbText, message.db.status, message.db.path || message.db.message || message.db.status);
+    setStatusIndicator(els.planeSquare, els.planeText, message.plane.status === "configured" ? "ok" : "error", message.plane.status);
+    setStatusIndicator(els.n8nSquare, els.n8nText, message.n8n.status === "configured" ? "ok" : "error", message.n8n.status);
+  }
+
   if (message.type === "conversation_list") {
     state.conversations = message.conversations;
     renderConversationSelect();
@@ -105,6 +119,8 @@ function handleServerMessage(message) {
     state.currentConversationId = message.conversation.id;
     upsertConversation(message.conversation);
     state.messages = message.messages;
+    state.attachments = message.attachments || [];
+    state.attachmentsByRequest = groupAttachmentsByRequest(state.attachments);
     state.selectedRequestId = firstRequest()?.id || null;
     state.expandedRequestId = state.selectedRequestId;
     state.selectedResponseId = null;
@@ -165,6 +181,11 @@ function handleServerMessage(message) {
     renderResponses();
   }
 
+  if (message.type === "attachments_for_request" && message.conversationId === state.currentConversationId) {
+    state.attachmentsByRequest[message.requestId] = message.attachments || [];
+    renderAttachments();
+  }
+
   if (message.type === "draft_saved" && message.conversationId === state.currentConversationId) {
     state.currentDraft = { jobId: message.jobId, preview: message.preview, result: null };
     renderDraft();
@@ -192,6 +213,11 @@ function handleServerMessage(message) {
     });
     renderAll();
   }
+}
+
+function setStatusIndicator(square, text, status, label) {
+  square.className = `sq ${status === "ok" ? "green" : status === "error" ? "red" : "gray"}`;
+  text.textContent = label;
 }
 
 function isResponse(message) {
@@ -258,12 +284,17 @@ function requestHasResponse(requestId) {
 }
 
 function requestAttachments(request) {
-  return request?.metadata?.fileName ? [{
-    fileName: request.metadata.fileName,
-    sizeBytes: request.metadata.fileSize || byteSize(request.content),
-    mimeType: request.metadata.mimeType || "text/plain",
-    requestId: request.id
-  }] : [];
+  return request ? state.attachmentsByRequest[request.id] || [] : [];
+}
+
+function groupAttachmentsByRequest(attachments) {
+  return attachments.reduce((groups, attachment) => {
+    const requestId = attachment.messageId;
+    if (!requestId) return groups;
+    groups[requestId] = groups[requestId] || [];
+    groups[requestId].push(attachment);
+    return groups;
+  }, {});
 }
 
 function kb(value) {
@@ -365,8 +396,7 @@ function renderResponses() {
 
 function renderAttachments() {
   els.attachmentsList.replaceChildren();
-  const selected = state.messages.find((message) => message.id === state.selectedRequestId);
-  const attachments = requestAttachments(selected);
+  const attachments = state.attachmentsByRequest[state.selectedRequestId] || [];
   if (!attachments.length) {
     const empty = document.createElement("div");
     empty.className = "attachment-card";
@@ -377,8 +407,9 @@ function renderAttachments() {
   for (const attachment of attachments) {
     const card = document.createElement("div");
     card.className = "attachment-card";
-    const icon = attachment.fileName.match(/\.(mp3)$/i) ? "[audio]" : attachment.fileName.match(/\.(mp4)$/i) ? "[video]" : "[text]";
-    card.textContent = `${icon}\n${attachment.fileName}\n${kb(attachment.sizeBytes)}\nrequest: ${attachment.requestId}`;
+    const binaryMetaOnly = attachment.fileName.match(/\.(mp3|mp4)$/i);
+    const icon = attachment.fileName.match(/\.(mp3)$/i) ? "[audio metadata]" : attachment.fileName.match(/\.(mp4)$/i) ? "[video metadata]" : "[text]";
+    card.textContent = `${icon}\n${attachment.fileName}\n${kb(attachment.sizeBytes)}\nrequest: ${attachment.messageId || "-"}${binaryMetaOnly ? "\nmetadata-only / not uploaded yet" : ""}`;
     els.attachmentsList.append(card);
   }
 }
@@ -485,6 +516,7 @@ function selectRequest(requestId) {
   renderRequests();
   renderResponses();
   renderAttachments();
+  send({ type: "attachments_for_request", conversationId: state.currentConversationId, requestId });
 }
 
 function selectResponse(responseId) {
@@ -563,6 +595,7 @@ els.fileInput.addEventListener("change", async () => {
   }
   els.fileNotice.textContent = `${file.name} / ${kb(file.size)}`;
   if (/\.(txt|md)$/i.test(file.name)) els.prompt.value = await file.text();
+  if (/\.(mp3|mp4)$/i.test(file.name)) els.fileNotice.textContent = `${file.name} / ${kb(file.size)} / metadata-only, binary upload not implemented`;
 });
 els.applySelectedBtn.addEventListener("click", () => {
   if (state.currentConversationId && state.currentDraft?.jobId) {

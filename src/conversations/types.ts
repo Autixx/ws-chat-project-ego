@@ -35,3 +35,14 @@ export type ChatMessage = {
 };
 
 export type ResponseDecisionStatus = "pending" | "applied" | "dropped" | "kept";
+
+export type AttachmentMetadata = {
+  id: string;
+  conversationId: string;
+  messageId?: string;
+  fileName: string;
+  mimeType?: string;
+  sizeBytes: number;
+  storagePath: string;
+  createdAt: string;
+};

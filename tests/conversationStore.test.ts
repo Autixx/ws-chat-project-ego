@@ -6,12 +6,45 @@ import test from "node:test";
 import { ConversationStore } from "../src/conversations/conversationStore.js";
 import { MessageStore } from "../src/conversations/messageStore.js";
 import { openDatabase } from "../src/db/database.js";
+import { DraftStore } from "../src/drafts/draftStore.js";
+import type { DraftResult } from "../src/drafts/types.js";
+import { openReferencedDraft } from "../src/ws/draftOpen.js";
 
 const user = {
   username: "tester",
   email: "tester@example.test",
   name: "Tester",
   groups: ["dev"]
+};
+
+const otherUser = {
+  username: "other",
+  email: "other@example.test",
+  name: "Other",
+  groups: ["dev"]
+};
+
+const draftResult: DraftResult = {
+  status: "done",
+  source_summary: "Test source",
+  needs_clarification: [],
+  items: [
+    {
+      title: "Test item",
+      summary: "Summary",
+      details: "Details",
+      project: "Production",
+      module: "Tests",
+      type: "technical",
+      priority: "medium",
+      routing_confidence: "high",
+      labels: ["test"],
+      dependencies: [],
+      acceptance_criteria: ["Works"],
+      needs_clarification: [],
+      source_text: "Source"
+    }
+  ]
 };
 
 function testStores() {
@@ -32,6 +65,7 @@ function testStores() {
     database,
     conversations: new ConversationStore(database),
     messages: new MessageStore(database),
+    drafts: new DraftStore(dir),
     cleanup: () => {
       database.db.close();
       rmSync(dir, { recursive: true, force: true });
@@ -104,6 +138,74 @@ test("draft response metadata stays lightweight", async () => {
     assert.equal(draftMessage.metadata?.jobId, "20260618-010203-abcdef");
     assert.equal("preview" in (draftMessage.metadata ?? {}), false);
     assert.equal("result" in (draftMessage.metadata ?? {}), false);
+  } finally {
+    stores.cleanup();
+  }
+});
+
+test("ConversationStore stores and loads attachment metadata per request", async () => {
+  const stores = testStores();
+  try {
+    const conversation = await stores.conversations.createConversation(user, "Attachments");
+    const request = await stores.messages.appendUserMessage(conversation.id, user, "see file", { mode: "chat" });
+    await stores.conversations.insertAttachment(user, {
+      conversationId: conversation.id,
+      messageId: request.id,
+      fileName: "note.md",
+      mimeType: "text/markdown",
+      sizeBytes: 128,
+      storagePath: `inline-text://${request.id}`
+    });
+    const attachments = await stores.conversations.listAttachments(user, conversation.id, request.id);
+
+    assert.equal(attachments.length, 1);
+    assert.equal(attachments[0].fileName, "note.md");
+    assert.equal(attachments[0].messageId, request.id);
+  } finally {
+    stores.cleanup();
+  }
+});
+
+test("draft_open validates draft_refs ownership", async () => {
+  const stores = testStores();
+  try {
+    const conversation = await stores.conversations.createConversation(user, "Draft open");
+    const saved = await stores.drafts.saveDraft({ mode: "structured_breakdown", source: "test", user, result: draftResult });
+    await stores.conversations.insertDraftRef(user, {
+      conversationId: conversation.id,
+      jobId: saved.draft.jobId,
+      mode: "digest",
+      source: "test",
+      itemsCount: saved.draft.result.items.length
+    });
+
+    await assert.rejects(
+      openReferencedDraft({ conversations: stores.conversations, drafts: stores.drafts, user: otherUser, conversationId: conversation.id, jobId: saved.draft.jobId }),
+      /Conversation not found/
+    );
+  } finally {
+    stores.cleanup();
+  }
+});
+
+test("draft_open emits draft_saved and draft_result from filesystem", async () => {
+  const stores = testStores();
+  try {
+    const conversation = await stores.conversations.createConversation(user, "Draft open payload");
+    const saved = await stores.drafts.saveDraft({ mode: "structured_breakdown", source: "test", user, result: draftResult });
+    await stores.conversations.insertDraftRef(user, {
+      conversationId: conversation.id,
+      jobId: saved.draft.jobId,
+      mode: "digest",
+      source: "test",
+      itemsCount: saved.draft.result.items.length
+    });
+    const payloads = await openReferencedDraft({ conversations: stores.conversations, drafts: stores.drafts, user, conversationId: conversation.id, jobId: saved.draft.jobId });
+
+    assert.equal(payloads.saved.type, "draft_saved");
+    assert.equal(payloads.result.type, "draft_result");
+    assert.equal(payloads.saved.preview.includes(saved.draft.jobId), true);
+    assert.equal(payloads.result.result.items[0].title, "Test item");
   } finally {
     stores.cleanup();
   }

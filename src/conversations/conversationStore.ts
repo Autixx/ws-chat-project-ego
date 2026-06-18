@@ -1,7 +1,7 @@
 import type { AuthenticatedUser } from "../auth/authelia.js";
 import type { AppDatabase } from "../db/database.js";
 import { createId, safeUserId } from "../utils/ids.js";
-import type { Conversation } from "./types.js";
+import type { AttachmentMetadata, Conversation } from "./types.js";
 
 type ConversationRow = {
   id: string;
@@ -12,6 +12,17 @@ type ConversationRow = {
   user_email: string | null;
   user_name: string | null;
   archived: number;
+};
+
+type AttachmentRow = {
+  id: string;
+  conversation_id: string;
+  message_id: string | null;
+  file_name: string;
+  mime_type: string | null;
+  size_bytes: number;
+  storage_path: string;
+  created_at: string;
 };
 
 export class ConversationStore {
@@ -146,6 +157,22 @@ export class ConversationStore {
         createdAt: new Date().toISOString()
       });
   }
+
+  async listAttachments(user: AuthenticatedUser, conversationId: string, requestId?: string): Promise<AttachmentMetadata[]> {
+    await this.loadConversation(user, conversationId);
+    const params: unknown[] = [conversationId];
+    const requestClause = requestId ? "AND message_id = ?" : "";
+    if (requestId) params.push(requestId);
+    const rows = this.database.db
+      .prepare(
+        `SELECT id, conversation_id, message_id, file_name, mime_type, size_bytes, storage_path, created_at
+         FROM attachments
+         WHERE conversation_id = ? ${requestClause}
+         ORDER BY created_at ASC`
+      )
+      .all(...params) as AttachmentRow[];
+    return rows.map(rowToAttachment);
+  }
 }
 
 function rowToConversation(row: ConversationRow): Conversation {
@@ -160,5 +187,18 @@ function rowToConversation(row: ConversationRow): Conversation {
       name: row.user_name ?? undefined
     },
     archived: Boolean(row.archived)
+  };
+}
+
+function rowToAttachment(row: AttachmentRow): AttachmentMetadata {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    messageId: row.message_id ?? undefined,
+    fileName: row.file_name,
+    mimeType: row.mime_type ?? undefined,
+    sizeBytes: row.size_bytes,
+    storagePath: row.storage_path,
+    createdAt: row.created_at
   };
 }

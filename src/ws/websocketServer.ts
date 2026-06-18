@@ -10,11 +10,13 @@ import { openDatabase } from "../db/database.js";
 import { parseApplyExpression } from "../drafts/applyParser.js";
 import { DraftStore } from "../drafts/draftStore.js";
 import { UnclarifiedStore } from "../drafts/unclarifiedStore.js";
+import { N8nClient } from "../integrations/n8nClient.js";
 import { PlaneClient } from "../integrations/planeClient.js";
 import { CodexProvider } from "../llm/codexProvider.js";
 import { MockProvider } from "../llm/mockProvider.js";
 import type { LlmProvider, LlmTaskMode } from "../llm/provider.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
+import { openReferencedDraft } from "./draftOpen.js";
 import { parseClientMessage } from "./protocol.js";
 
 const MAX_TEXT_LENGTH = 256_000;
@@ -41,6 +43,7 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
   const drafts = new DraftStore(config.dataDir);
   const unclarified = new UnclarifiedStore(config.dataDir);
   const plane = new PlaneClient(config);
+  const n8n = new N8nClient(config);
   const provider = providerFromConfig(config);
 
   server.on("upgrade", (req, socket, head) => {
@@ -67,6 +70,12 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
 
   function handleConnection(ws: WebSocket, user: AuthenticatedUser): void {
     send(ws, { type: "connected", user: { username: user.username, email: user.email } });
+    send(ws, {
+      type: "app_status",
+      db: { status: "ok", path: database.path },
+      plane: { status: plane.isConfigured() ? "configured" : "unconfigured" },
+      n8n: { status: n8n.isConfigured() ? "configured" : "unconfigured" }
+    });
 
     ws.on("message", async (data, isBinary) => {
       if (isBinary) {
@@ -117,7 +126,8 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
     if (message.type === "conversation_open") {
       const conversation = await conversations.loadConversation(user, message.conversationId);
       const history = await messages.loadMessages(user, conversation.id);
-      send(ws, { type: "conversation_opened", conversation, messages: history });
+      const attachments = await conversations.listAttachments(user, conversation.id);
+      send(ws, { type: "conversation_opened", conversation, messages: history, attachments });
       return;
     }
 
@@ -149,24 +159,15 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
     }
 
     if (message.type === "draft_open") {
-      await conversations.loadConversation(user, message.conversationId);
-      if (!(await conversations.hasDraftRef(user, message.conversationId, message.jobId))) {
-        throw new Error("Draft is not referenced by this conversation.");
-      }
-      const loaded = await drafts.loadDraftWithPreview(message.jobId, user);
-      send(ws, {
-        type: "draft_saved",
-        conversationId: message.conversationId,
-        jobId: loaded.draft.jobId,
-        itemsCount: loaded.draft.result.items.length,
-        preview: loaded.preview
-      });
-      send(ws, {
-        type: "draft_result",
-        conversationId: message.conversationId,
-        jobId: loaded.draft.jobId,
-        result: loaded.draft.result
-      });
+      const payloads = await openReferencedDraft({ conversations, drafts, user, conversationId: message.conversationId, jobId: message.jobId });
+      send(ws, payloads.saved);
+      send(ws, payloads.result);
+      return;
+    }
+
+    if (message.type === "attachments_for_request") {
+      const attachments = await conversations.listAttachments(user, message.conversationId, message.requestId);
+      send(ws, { type: "attachments_for_request", conversationId: message.conversationId, requestId: message.requestId, attachments });
       return;
     }
 
