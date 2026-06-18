@@ -2,6 +2,7 @@ const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 const state = {
   ws: null,
+  shouldReconnect: true,
   connected: false,
   conversations: [],
   currentConversationId: null,
@@ -88,6 +89,8 @@ function setConnected(value) {
 }
 
 function connect() {
+  if (!state.shouldReconnect) return;
+  if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) return;
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
   state.ws = ws;
@@ -97,7 +100,8 @@ function connect() {
   });
   ws.addEventListener("close", () => {
     setConnected(false);
-    setTimeout(connect, 1500);
+    state.ws = null;
+    if (state.shouldReconnect) setTimeout(connect, 1500);
   });
   ws.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
@@ -715,6 +719,7 @@ authEls.loginForm.addEventListener("submit", async (event) => {
     return;
   }
   authEls.loginPassword.value = "";
+  state.shouldReconnect = true;
   showWorkbench(body.user);
   connect();
 });
@@ -739,15 +744,22 @@ authEls.registerForm.addEventListener("submit", async (event) => {
   }
   authEls.registerPassword.value = "";
   authEls.registerInviteCode.value = "";
+  state.shouldReconnect = true;
   showWorkbench(body.user);
   connect();
 });
 
 authEls.logoutBtn.addEventListener("click", async () => {
+  state.shouldReconnect = false;
   await fetch("/api/auth/logout", { method: "POST" });
   state.ws?.close();
+  state.ws = null;
   state.currentConversationId = null;
   state.messages = [];
+  state.conversations = [];
+  state.attachments = [];
+  state.attachmentsByRequest = {};
+  setConnected(false);
   showAuth("Logged out.");
 });
 

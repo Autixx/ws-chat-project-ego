@@ -6,7 +6,7 @@ Browser request/response workbench for ProjectEGO planning automation. The UI se
 
 - Express HTTP server with `GET /health`.
 - WebSocket endpoint at `GET /ws`.
-- Authelia header auth with local development bypass.
+- Local SQLite-backed authentication with registration, login, logout, and session cookies.
 - SQLite-backed chat history:
   - conversations
   - messages
@@ -17,7 +17,7 @@ Browser request/response workbench for ProjectEGO planning automation. The UI se
   - full draft JSON
   - preview text
   - per-item JSON
-  - future uploaded attachments
+  - uploaded attachment files
 - LLM provider abstraction with `MockProvider` and `CodexProvider` placeholder.
 - Optional Plane and n8n integration stubs.
 - Strict component health checks for SQLite, Plane configuration, and n8n configuration.
@@ -144,7 +144,7 @@ It then emits `draft_saved` and `draft_result` for the inspector.
 
 ## Attachments
 
-Supported UI/file metadata types:
+Supported upload types:
 
 - `.txt`
 - `.md`
@@ -153,7 +153,7 @@ Supported UI/file metadata types:
 
 Maximum size: 25 MB.
 
-For this pass, `.txt` and `.md` are still read into the request text in the browser. Attachment metadata is persisted in SQLite; binary upload/storage is prepared structurally but not implemented yet. Attachment binary data must not be stored in SQLite.
+Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. `.txt` and `.md` may also be inserted into the textarea for visibility. `.mp3` and `.mp4` render with browser audio/video controls. Attachment binary data is never stored in SQLite.
 
 ## Install
 
@@ -183,6 +183,11 @@ DATA_DIR=./data
 SQLITE_PATH=./data/projectego-chat.sqlite
 DEV_AUTH_BYPASS=true
 TRUST_AUTHELIA_HEADERS=false
+AUTH_MODE=local
+SESSION_SECRET=dev-session-secret
+REGISTRATION_ENABLED=true
+REGISTRATION_INVITE_CODE=dev-invite
+COOKIE_SECURE=false
 LLM_PROVIDER=mock
 ```
 
@@ -196,8 +201,11 @@ HOST=127.0.0.1 \
 PORT=19100 \
 DATA_DIR=/var/lib/projectego-ws-chat \
 SQLITE_PATH=/var/lib/projectego-ws-chat/projectego-chat.sqlite \
-DEV_AUTH_BYPASS=false \
-TRUST_AUTHELIA_HEADERS=true \
+AUTH_MODE=local \
+SESSION_SECRET=<long-random-secret> \
+REGISTRATION_ENABLED=true \
+REGISTRATION_INVITE_CODE=<invite-code> \
+COOKIE_SECURE=true \
 npm start
 ```
 
@@ -218,8 +226,11 @@ docker run --rm \
   -e PORT=19100 \
   -e DATA_DIR=/app/data \
   -e SQLITE_PATH=/app/data/projectego-chat.sqlite \
-  -e DEV_AUTH_BYPASS=true \
-  -e TRUST_AUTHELIA_HEADERS=false \
+  -e AUTH_MODE=local \
+  -e SESSION_SECRET=dev-session-secret \
+  -e REGISTRATION_ENABLED=true \
+  -e REGISTRATION_INVITE_CODE=dev-invite \
+  -e COOKIE_SECURE=false \
   -v projectego-ws-chat-data:/app/data \
   projectego-ws-chat:local
 ```

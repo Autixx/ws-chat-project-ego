@@ -108,7 +108,8 @@ export async function streamAttachment(input: {
 }): Promise<void> {
   const absolutePath = path.resolve(input.dataDir, input.attachment.storagePath);
   const dataRoot = path.resolve(input.dataDir);
-  if (!absolutePath.startsWith(dataRoot)) throw new Error("Invalid attachment path.");
+  const relative = path.relative(dataRoot, absolutePath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Invalid attachment path.");
   input.res.setHeader("Content-Type", input.attachment.mimeType ?? "application/octet-stream");
   input.res.setHeader("Content-Disposition", `inline; filename="${input.attachment.fileName.replace(/"/g, "")}"`);
   createReadStream(absolutePath).pipe(input.res);
