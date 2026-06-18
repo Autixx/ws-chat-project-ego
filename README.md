@@ -22,6 +22,7 @@ Browser request/response workbench for ProjectEGO planning automation. The UI se
 - Optional Plane and n8n integration stubs.
 - Strict component health checks for SQLite, Plane configuration, and n8n configuration.
 - Multipart upload API for `.txt`, `.md`, `.mp3`, and `.mp4` attachments.
+- Local SQLite-backed registration, login, logout, and persistent sessions.
 
 ## UI Layout
 
@@ -263,12 +264,7 @@ The SQLite healthcheck verifies `SELECT 1`, `PRAGMA quick_check`, and write acce
 
 ## Caddy + Authelia
 
-The app does not implement login. In production, put it behind Caddy and Authelia. With `TRUST_AUTHELIA_HEADERS=true`, the server reads:
-
-- `Remote-User`
-- `Remote-Groups`
-- `Remote-Email`
-- `Remote-Name`
+The app implements its own local authentication. It can run behind Caddy and Authelia, but it does not depend on Authelia headers in `AUTH_MODE=local`.
 
 Example:
 
@@ -286,6 +282,48 @@ chat.project-ego.online {
     }
 }
 ```
+
+## Local Authentication
+
+The supported auth mode is:
+
+```env
+AUTH_MODE=local
+```
+
+Local auth uses SQLite tables for `users` and `sessions`.
+
+- Passwords are hashed with Argon2id.
+- Raw session tokens are never stored in SQLite; only HMAC hashes are stored.
+- Sessions expire after 30 days.
+- Cookie name: `projectego_session`.
+- Cookie flags: `httpOnly`, `sameSite=lax`, `secure=COOKIE_SECURE`, `path=/`.
+
+Production requires:
+
+```env
+SESSION_SECRET=<long-random-secret>
+```
+
+Registration is invite-code protected:
+
+```env
+REGISTRATION_ENABLED=true
+REGISTRATION_INVITE_CODE=<admin-defined-invite-code>
+```
+
+Auth routes:
+
+```text
+GET  /login
+GET  /register
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/auth/me
+```
+
+Plane is no longer used for chat authentication or authorization. Plane variables remain only for future work-item integration.
 
 ## MockProvider Test
 
@@ -353,30 +391,6 @@ GET /api/attachments/:attachmentId
 
 This endpoint authenticates the user, verifies the attachment belongs to a conversation owned by that user, and streams the file with safe content headers. `.mp3` and `.mp4` are rendered with browser audio/video controls in the workbench.
 
-## Plane Workspace Authorization
-
-Authelia remains the authentication layer. Plane can optionally be used as an authorization source.
-
-```env
-AUTHZ_PROVIDER=none
-```
-
-Options:
-
-- `none`: current behavior; authenticated Authelia users can access the app.
-- `plane_workspace`: after Authelia authentication, the app checks Plane workspace membership through the Plane API.
-
-Required for Plane authorization:
-
-```env
-AUTHZ_PROVIDER=plane_workspace
-PLANE_BASE_URL=
-PLANE_WORKSPACE=projectego
-PLANE_API_KEY=
-```
-
-The membership check matches by email first, then username. If Plane is unavailable or not configured while `AUTHZ_PROVIDER=plane_workspace`, access is denied. This is workspace authorization only; it is not Plane session-cookie login and does not read Plane internals.
-
 ## Backup
 
 Back up both SQLite and artifact files.
@@ -397,9 +411,13 @@ For Docker, back up the mounted `/app/data` volume.
 | `PORT` | Single HTTP/WebSocket port. |
 | `DATA_DIR` | Draft artifacts, attachments, and unclarified files. |
 | `SQLITE_PATH` | SQLite database file for chat history. |
-| `DEV_AUTH_BYPASS` | Local fake auth. Keep false in production. |
-| `TRUST_AUTHELIA_HEADERS` | Trust Authelia `Remote-*` headers. |
-| `AUTHZ_PROVIDER` | `none` or `plane_workspace`. |
+| `AUTH_MODE` | `local`. |
+| `SESSION_SECRET` | Required in production for session hashing. |
+| `REGISTRATION_ENABLED` | Enables or disables new local registrations. |
+| `REGISTRATION_INVITE_CODE` | Required invite code when registration is enabled. |
+| `COOKIE_SECURE` | Sets the secure flag on session cookies. |
+| `DEV_AUTH_BYPASS` | Legacy env retained but not used for local auth access control. |
+| `TRUST_AUTHELIA_HEADERS` | Legacy env retained but not used for local auth access control. |
 | `LLM_PROVIDER` | `mock` or `codex`. |
 | `CODEX_AGENT_URL` | Optional HTTP endpoint for Codex provider. |
 | `CODEX_AGENT_TOKEN` | Optional bearer token for Codex provider. |
@@ -413,10 +431,9 @@ For Docker, back up the mounted `/app/data` volume.
 ## Current Limitations
 
 - Plane work-item creation is still guarded until project ID mapping is implemented.
-- Plane workspace authorization uses the documented/expected workspace members API endpoint and requires a Plane API key.
 - `CodexProvider` is non-streaming unless the configured backend streams or returns incremental events.
 - SQLite is intended for single-node deployment.
 - No database-backed full-text search yet.
-- Binary attachment upload/storage is not implemented yet; only metadata and text-file request input are active.
+- Password reset, email verification, and login rate limiting are not implemented yet.
 - No Telegram integration.
-- No custom login; Authelia remains the authentication layer.
+- Roles exist in the schema, but there is no admin UI or advanced permission system yet.

@@ -7,7 +7,27 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="theme-dark">
-    <main class="workbench">
+    <section id="authScreen" class="auth-screen">
+      <div class="auth-box">
+        <h1>ProjectEGO Login</h1>
+        <p id="authMessage"></p>
+        <form id="loginForm">
+          <input id="loginName" autocomplete="username" placeholder="Username or email" />
+          <input id="loginPassword" autocomplete="current-password" type="password" placeholder="Password" />
+          <button type="submit">Login</button>
+        </form>
+        <form id="registerForm" hidden>
+          <input id="registerUsername" autocomplete="username" placeholder="Username" />
+          <input id="registerEmail" autocomplete="email" placeholder="Email optional" />
+          <input id="registerDisplayName" placeholder="Display name optional" />
+          <input id="registerPassword" autocomplete="new-password" type="password" placeholder="Password" />
+          <input id="registerInviteCode" type="password" placeholder="Invite code" />
+          <button type="submit">Register</button>
+        </form>
+        <button id="toggleAuthMode" type="button">Create account</button>
+      </div>
+    </section>
+    <main id="workbench" class="workbench" hidden>
       <header class="topbar">
         <div class="title-block">
           <h1 id="conversationTitle">PROJECTEGO / CHAT TITLE</h1>
@@ -33,7 +53,7 @@
           <div><span id="planeSquare" class="sq gray"></span>STATUS PLANE <span id="planeText">unknown</span></div>
           <div><span id="n8nSquare" class="sq gray"></span>STATUS n8n <span id="n8nText">unknown</span></div>
           <div><span id="dbSquare" class="sq gray"></span>STATUS DB <span id="dbText">unknown</span></div>
-          <div id="userLine">USER / LOGOUT</div>
+          <div><span id="userLine">USER</span> <button id="logoutBtn" type="button">Logout</button></div>
         </div>
       </header>
 

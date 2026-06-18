@@ -64,3 +64,34 @@ CREATE TABLE IF NOT EXISTS app_migrations (
   name TEXT NOT NULL UNIQUE,
   applied_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  email TEXT UNIQUE,
+  password_hash TEXT NOT NULL,
+  display_name TEXT,
+  role TEXT NOT NULL DEFAULT 'user',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  disabled INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  session_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  revoked_at TEXT,
+  user_agent TEXT,
+  ip_hash TEXT,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_hash ON sessions(session_hash);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);

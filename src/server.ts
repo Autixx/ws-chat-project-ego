@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stageUploadedFile, streamAttachment, validateAttachmentFile, MAX_ATTACHMENT_BYTES } from "./attachments/attachmentService.js";
+import { createAuthRouter } from "./auth/authRoutes.js";
 import { requireUserMiddleware } from "./auth/requireUser.js";
 import { config } from "./config.js";
 import { ConversationStore } from "./conversations/conversationStore.js";
@@ -36,17 +37,18 @@ const upload = multer({
   }
 });
 
+if (process.env.NODE_ENV === "production" && !config.sessionSecret) {
+  throw new Error("SESSION_SECRET is required in production.");
+}
+
 app.disable("x-powered-by");
+app.use(createAuthRouter(config, database));
 
 app.get("/health", (_req, res) => {
   const db = checkDatabaseHealth(database);
-  const planeStatus = plane.isConfigured()
-    ? { status: "configured" }
-    : config.authzProvider === "plane_workspace"
-      ? { status: "error", message: "AUTHZ_PROVIDER requires Plane workspace authorization, but Plane is not configured." }
-      : { status: "unconfigured" };
+  const planeStatus = plane.isConfigured() ? { status: "configured" } : { status: "unconfigured" };
   const body = {
-    status: db.status === "ok" && planeStatus.status !== "error" ? "ok" : "error",
+    status: db.status === "ok" ? "ok" : "error",
     service: "projectego-ws-chat",
     components: {
       db,
@@ -57,7 +59,7 @@ app.get("/health", (_req, res) => {
   res.status(body.status === "ok" ? 200 : 503).json(body);
 });
 
-app.post("/api/uploads", requireUserMiddleware(config), upload.array("files", 8), async (req, res) => {
+app.post("/api/uploads", requireUserMiddleware(config, database), upload.array("files", 8), async (req, res) => {
   try {
     const user = (req as AuthedRequest).auth?.user;
     if (!user) {
@@ -84,7 +86,7 @@ app.post("/api/uploads", requireUserMiddleware(config), upload.array("files", 8)
   }
 });
 
-app.get("/api/attachments/:attachmentId", requireUserMiddleware(config), async (req, res) => {
+app.get("/api/attachments/:attachmentId", requireUserMiddleware(config, database), async (req, res) => {
   try {
     const user = (req as AuthedRequest).auth?.user;
     if (!user) {
@@ -96,6 +98,10 @@ app.get("/api/attachments/:attachmentId", requireUserMiddleware(config), async (
   } catch (error) {
     if (!res.headersSent) res.status(404).json({ error: error instanceof Error ? error.message : String(error) });
   }
+});
+
+app.get(["/login", "/register"], (_req, res) => {
+  res.sendFile(path.join(publicDir, "index.html"));
 });
 
 app.use(express.static(publicDir, { extensions: ["html"] }));

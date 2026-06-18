@@ -39,6 +39,36 @@ body {
   color: var(--text);
 }
 
+.auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+}
+
+.auth-box {
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 22px;
+}
+
+.auth-box form {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.auth-box input {
+  min-height: 36px;
+  padding: 8px;
+}
+
+#authMessage {
+  min-height: 20px;
+  color: var(--muted);
+}
+
 button, input, select, textarea {
   font: inherit;
 }

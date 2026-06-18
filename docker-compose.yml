@@ -11,7 +11,11 @@ services:
       SQLITE_PATH: /app/data/projectego-chat.sqlite
       DEV_AUTH_BYPASS: "false"
       TRUST_AUTHELIA_HEADERS: "true"
-      AUTHZ_PROVIDER: none
+      AUTH_MODE: local
+      SESSION_SECRET: change-me-to-a-long-random-secret
+      REGISTRATION_ENABLED: "true"
+      REGISTRATION_INVITE_CODE: change-me
+      COOKIE_SECURE: "false"
       LLM_PROVIDER: mock
       CODEX_AGENT_URL: ""
       CODEX_AGENT_TOKEN: ""

@@ -52,6 +52,22 @@ const els = {
   unclarifiedPanel: document.getElementById("unclarifiedPanel"),
   debugOutput: document.getElementById("debugOutput")
 };
+const authEls = {
+  authScreen: document.getElementById("authScreen"),
+  workbench: document.getElementById("workbench"),
+  authMessage: document.getElementById("authMessage"),
+  loginForm: document.getElementById("loginForm"),
+  registerForm: document.getElementById("registerForm"),
+  toggleAuthMode: document.getElementById("toggleAuthMode"),
+  loginName: document.getElementById("loginName"),
+  loginPassword: document.getElementById("loginPassword"),
+  registerUsername: document.getElementById("registerUsername"),
+  registerEmail: document.getElementById("registerEmail"),
+  registerDisplayName: document.getElementById("registerDisplayName"),
+  registerPassword: document.getElementById("registerPassword"),
+  registerInviteCode: document.getElementById("registerInviteCode"),
+  logoutBtn: document.getElementById("logoutBtn")
+};
 
 function log(message) {
   els.debugOutput.textContent += `${JSON.stringify(message, null, 2)}\n\n`;
@@ -90,9 +106,32 @@ function connect() {
   });
 }
 
+async function bootAuth() {
+  const response = await fetch("/api/auth/me");
+  if (response.ok) {
+    const body = await response.json();
+    showWorkbench(body.user);
+    connect();
+    return;
+  }
+  showAuth();
+}
+
+function showWorkbench(user) {
+  authEls.authScreen.hidden = true;
+  authEls.workbench.hidden = false;
+  els.userLine.textContent = `${user.username}${user.email ? ` / ${user.email}` : ""}`;
+}
+
+function showAuth(message = "") {
+  authEls.workbench.hidden = true;
+  authEls.authScreen.hidden = false;
+  authEls.authMessage.textContent = message;
+}
+
 function handleServerMessage(message) {
   if (message.type === "connected") {
-    els.userLine.textContent = `${message.user.username}${message.user.email ? ` / ${message.user.email}` : ""} / logout`;
+    els.userLine.textContent = `${message.user.username}${message.user.email ? ` / ${message.user.email}` : ""}`;
   }
 
   if (message.type === "app_status") {
@@ -655,4 +694,61 @@ els.showUnclarifiedBtn.addEventListener("click", () => {
 });
 
 setConnected(false);
-connect();
+authEls.toggleAuthMode.addEventListener("click", () => {
+  const register = authEls.registerForm.hidden;
+  authEls.registerForm.hidden = !register;
+  authEls.loginForm.hidden = register;
+  authEls.toggleAuthMode.textContent = register ? "Back to login" : "Create account";
+  authEls.authMessage.textContent = "";
+});
+
+authEls.loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const response = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ usernameOrEmail: authEls.loginName.value, password: authEls.loginPassword.value })
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    showAuth(body.error || "Login failed.");
+    return;
+  }
+  authEls.loginPassword.value = "";
+  showWorkbench(body.user);
+  connect();
+});
+
+authEls.registerForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const response = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      username: authEls.registerUsername.value,
+      email: authEls.registerEmail.value,
+      displayName: authEls.registerDisplayName.value,
+      password: authEls.registerPassword.value,
+      inviteCode: authEls.registerInviteCode.value
+    })
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    showAuth(body.error || "Registration failed.");
+    return;
+  }
+  authEls.registerPassword.value = "";
+  authEls.registerInviteCode.value = "";
+  showWorkbench(body.user);
+  connect();
+});
+
+authEls.logoutBtn.addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST" });
+  state.ws?.close();
+  state.currentConversationId = null;
+  state.messages = [];
+  showAuth("Logged out.");
+});
+
+bootAuth();

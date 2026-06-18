@@ -57,7 +57,7 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
 
     let user: AuthenticatedUser;
     try {
-      user = await requireUserForRequest(req, config);
+      user = await requireUserForRequest(req, config, database);
     } catch (error) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
@@ -99,7 +99,6 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
 
   function planeStatus(): { status: "configured" | "unconfigured" | "error"; message?: string } {
     if (plane.isConfigured()) return { status: "configured" };
-    if (config.authzProvider === "plane_workspace") return { status: "error", message: "AUTHZ_PROVIDER requires Plane workspace authorization, but Plane is not configured." };
     return { status: "unconfigured" };
   }
 

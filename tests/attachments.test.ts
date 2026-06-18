@@ -20,7 +20,9 @@ function stores() {
     sqlitePath: path.join(dir, "projectego-chat.sqlite"),
     devAuthBypass: true,
     trustAutheliaHeaders: false,
-    authzProvider: "none",
+    authMode: "local",
+    registrationEnabled: true,
+    cookieSecure: false,
     llmProvider: "mock",
     codexFallbackToMock: true,
     planeWorkspace: "projectego"
