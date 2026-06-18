@@ -138,24 +138,36 @@ export class ConversationStore {
 
   async insertAttachment(
     user: AuthenticatedUser,
-    input: { conversationId: string; messageId?: string; fileName: string; mimeType?: string; sizeBytes?: number; storagePath: string }
-  ): Promise<void> {
+    input: { id?: string; conversationId: string; messageId?: string; fileName: string; mimeType?: string; sizeBytes?: number; storagePath: string }
+  ): Promise<AttachmentMetadata> {
     await this.loadConversation(user, input.conversationId);
+    const id = input.id ?? createId("ATT");
+    const createdAt = new Date().toISOString();
     this.database.db
       .prepare(
         `INSERT INTO attachments (id, conversation_id, message_id, file_name, mime_type, size_bytes, storage_path, created_at)
          VALUES (@id, @conversationId, @messageId, @fileName, @mimeType, @sizeBytes, @storagePath, @createdAt)`
       )
       .run({
-        id: createId("ATT"),
+        id,
         conversationId: input.conversationId,
         messageId: input.messageId ?? null,
         fileName: input.fileName,
         mimeType: input.mimeType ?? null,
         sizeBytes: input.sizeBytes ?? 0,
         storagePath: input.storagePath,
-        createdAt: new Date().toISOString()
+        createdAt
       });
+    return {
+      id,
+      conversationId: input.conversationId,
+      messageId: input.messageId,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      sizeBytes: input.sizeBytes ?? 0,
+      storagePath: input.storagePath,
+      createdAt
+    };
   }
 
   async listAttachments(user: AuthenticatedUser, conversationId: string, requestId?: string): Promise<AttachmentMetadata[]> {
@@ -172,6 +184,19 @@ export class ConversationStore {
       )
       .all(...params) as AttachmentRow[];
     return rows.map(rowToAttachment);
+  }
+
+  async loadAttachmentForUser(user: AuthenticatedUser, attachmentId: string): Promise<AttachmentMetadata> {
+    const row = this.database.db
+      .prepare(
+        `SELECT a.id, a.conversation_id, a.message_id, a.file_name, a.mime_type, a.size_bytes, a.storage_path, a.created_at
+         FROM attachments a
+         JOIN conversations c ON c.id = a.conversation_id
+         WHERE a.id = ? AND c.user_id = ?`
+      )
+      .get(attachmentId, safeUserId(user.username)) as AttachmentRow | undefined;
+    if (!row) throw new Error("Attachment not found.");
+    return rowToAttachment(row);
   }
 }
 

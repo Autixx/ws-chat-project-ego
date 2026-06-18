@@ -48,15 +48,15 @@ export class MessageStore {
     return Promise.resolve(updated);
   }
 
-  updateMessageMetadata(user: AuthenticatedUser, messageId: string, metadataPatch: Record<string, unknown>): Promise<ChatMessage> {
+  updateMessageMetadata(user: AuthenticatedUser, conversationId: string, messageId: string, metadataPatch: Record<string, unknown>): Promise<ChatMessage> {
     const row = this.database.db
       .prepare(
         `SELECT m.id, m.conversation_id, m.role, m.kind, m.content, m.created_at, m.job_id, m.metadata_json
          FROM messages m
          JOIN conversations c ON c.id = m.conversation_id
-         WHERE m.id = ? AND c.user_id = ?`
+         WHERE m.id = ? AND m.conversation_id = ? AND c.user_id = ?`
       )
-      .get(messageId, safeUserId(user.username)) as MessageRow | undefined;
+      .get(messageId, conversationId, safeUserId(user.username)) as MessageRow | undefined;
     if (!row) return Promise.reject(new Error("Message not found."));
     const message = rowToMessage(row);
     const metadata = { ...(message.metadata ?? {}), ...metadataPatch };

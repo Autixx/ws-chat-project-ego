@@ -97,7 +97,7 @@ function handleServerMessage(message) {
 
   if (message.type === "app_status") {
     setStatusIndicator(els.dbSquare, els.dbText, message.db.status, message.db.path || message.db.message || message.db.status);
-    setStatusIndicator(els.planeSquare, els.planeText, message.plane.status === "configured" ? "ok" : "error", message.plane.status);
+    setStatusIndicator(els.planeSquare, els.planeText, message.plane.status === "configured" ? "ok" : message.plane.status === "error" ? "error" : "unknown", message.plane.message || message.plane.status);
     setStatusIndicator(els.n8nSquare, els.n8nText, message.n8n.status === "configured" ? "ok" : "error", message.n8n.status);
   }
 
@@ -407,9 +407,30 @@ function renderAttachments() {
   for (const attachment of attachments) {
     const card = document.createElement("div");
     card.className = "attachment-card";
-    const binaryMetaOnly = attachment.fileName.match(/\.(mp3|mp4)$/i);
-    const icon = attachment.fileName.match(/\.(mp3)$/i) ? "[audio metadata]" : attachment.fileName.match(/\.(mp4)$/i) ? "[video metadata]" : "[text]";
-    card.textContent = `${icon}\n${attachment.fileName}\n${kb(attachment.sizeBytes)}\nrequest: ${attachment.messageId || "-"}${binaryMetaOnly ? "\nmetadata-only / not uploaded yet" : ""}`;
+    const icon = attachment.fileName.match(/\.mp3$/i) ? "[audio]" : attachment.fileName.match(/\.mp4$/i) ? "[video]" : "[text]";
+    const label = document.createElement("div");
+    label.textContent = `${icon}\n${attachment.fileName}\n${kb(attachment.sizeBytes)}\nrequest: ${attachment.messageId || "-"}`;
+    card.append(label);
+    const url = `/api/attachments/${encodeURIComponent(attachment.id)}`;
+    if (attachment.fileName.match(/\.mp3$/i)) {
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = url;
+      card.append(audio);
+    } else if (attachment.fileName.match(/\.mp4$/i)) {
+      const video = document.createElement("video");
+      video.controls = true;
+      video.src = url;
+      video.width = 240;
+      card.append(video);
+    } else {
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = "Open / download";
+      card.append(link);
+    }
     els.attachmentsList.append(card);
   }
 }
@@ -542,23 +563,42 @@ function selectedExpression() {
   return parts.length ? parts.join(" ") : "all";
 }
 
-function sendCurrentRequest() {
+async function sendCurrentRequest() {
   if (!state.currentConversationId) return;
   const text = els.prompt.value.trim();
-  if (!text) return;
-  const file = els.fileInput.files[0];
+  const files = Array.from(els.fileInput.files || []);
+  if (!text && !files.length) return;
+  let attachmentUploadIds = [];
+  try {
+    attachmentUploadIds = files.length ? await uploadSelectedFiles() : [];
+  } catch (error) {
+    els.fileNotice.textContent = error instanceof Error ? error.message : String(error);
+    return;
+  }
   send({
     type: "message_send",
     conversationId: state.currentConversationId,
     mode: els.modeSelect.value,
     text,
-    fileName: file?.name,
-    fileSize: file?.size,
-    mimeType: file?.type
+    attachmentUploadIds
   });
   els.prompt.value = "";
   els.fileInput.value = "";
   els.fileNotice.textContent = "";
+}
+
+async function uploadSelectedFiles() {
+  const files = Array.from(els.fileInput.files || []);
+  if (!files.length) return [];
+  const form = new FormData();
+  for (const file of files) form.append("files", file);
+  const response = await fetch("/api/uploads", { method: "POST", body: form });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `Upload failed with HTTP ${response.status}`);
+  }
+  const body = await response.json();
+  return (body.uploads || []).map((upload) => upload.uploadId);
 }
 
 els.themeSelect.addEventListener("change", () => {
@@ -580,22 +620,24 @@ els.prompt.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) sendCurrentRequest();
 });
 els.fileInput.addEventListener("change", async () => {
-  const file = els.fileInput.files[0];
+  const files = Array.from(els.fileInput.files || []);
   els.fileNotice.textContent = "";
-  if (!file) return;
-  if (!/\.(txt|md|mp3|mp4)$/i.test(file.name)) {
-    els.fileNotice.textContent = "Supported: .txt, .md, .mp3, .mp4";
-    els.fileInput.value = "";
-    return;
+  if (!files.length) return;
+  for (const file of files) {
+    if (!/\.(txt|md|mp3|mp4)$/i.test(file.name)) {
+      els.fileNotice.textContent = "Supported: .txt, .md, .mp3, .mp4";
+      els.fileInput.value = "";
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      els.fileNotice.textContent = "Attachment limit is 25 MB per file.";
+      els.fileInput.value = "";
+      return;
+    }
   }
-  if (file.size > MAX_ATTACHMENT_BYTES) {
-    els.fileNotice.textContent = "Attachment limit is 25 MB.";
-    els.fileInput.value = "";
-    return;
-  }
-  els.fileNotice.textContent = `${file.name} / ${kb(file.size)}`;
-  if (/\.(txt|md)$/i.test(file.name)) els.prompt.value = await file.text();
-  if (/\.(mp3|mp4)$/i.test(file.name)) els.fileNotice.textContent = `${file.name} / ${kb(file.size)} / metadata-only, binary upload not implemented`;
+  els.fileNotice.textContent = `${files.length} file(s) ready to upload`;
+  const firstText = files.find((file) => /\.(txt|md)$/i.test(file.name));
+  if (firstText) els.prompt.value = await firstText.text();
 });
 els.applySelectedBtn.addEventListener("click", () => {
   if (state.currentConversationId && state.currentDraft?.jobId) {

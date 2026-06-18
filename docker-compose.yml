@@ -11,6 +11,7 @@ services:
       SQLITE_PATH: /app/data/projectego-chat.sqlite
       DEV_AUTH_BYPASS: "false"
       TRUST_AUTHELIA_HEADERS: "true"
+      AUTHZ_PROVIDER: none
       LLM_PROVIDER: mock
       CODEX_AGENT_URL: ""
       CODEX_AGENT_TOKEN: ""

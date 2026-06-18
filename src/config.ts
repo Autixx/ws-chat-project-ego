@@ -7,6 +7,7 @@ export type AppConfig = {
   sqlitePath: string;
   devAuthBypass: boolean;
   trustAutheliaHeaders: boolean;
+  authzProvider: "none" | "plane_workspace";
   llmProvider: "mock" | "codex";
   codexAgentUrl?: string;
   codexAgentToken?: string;
@@ -35,6 +36,7 @@ export const config: AppConfig = {
   sqlitePath: process.env.SQLITE_PATH ?? path.join(process.env.DATA_DIR ?? "./data", "projectego-chat.sqlite"),
   devAuthBypass: boolFromEnv(process.env.DEV_AUTH_BYPASS, process.env.NODE_ENV !== "production"),
   trustAutheliaHeaders: boolFromEnv(process.env.TRUST_AUTHELIA_HEADERS, false),
+  authzProvider: process.env.AUTHZ_PROVIDER === "plane_workspace" ? "plane_workspace" : "none",
   llmProvider: process.env.LLM_PROVIDER === "codex" ? "codex" : "mock",
   codexAgentUrl: process.env.CODEX_AGENT_URL,
   codexAgentToken: process.env.CODEX_AGENT_TOKEN,

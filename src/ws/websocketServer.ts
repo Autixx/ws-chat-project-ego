@@ -1,12 +1,15 @@
 import type { Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import { getAutheliaUser, type AuthenticatedUser } from "../auth/authelia.js";
+import type { AuthenticatedUser } from "../auth/authelia.js";
+import { requireUserForRequest } from "../auth/requireUser.js";
+import { finalizeStagedUploads } from "../attachments/attachmentService.js";
 import type { Conversation } from "../conversations/types.js";
 import type { AppConfig } from "../config.js";
 import { ConversationStore } from "../conversations/conversationStore.js";
 import { MessageStore } from "../conversations/messageStore.js";
 import { generateConversationTitle } from "../conversations/titleGenerator.js";
 import { openDatabase } from "../db/database.js";
+import { checkDatabaseHealth } from "../db/health.js";
 import { parseApplyExpression } from "../drafts/applyParser.js";
 import { DraftStore } from "../drafts/draftStore.js";
 import { UnclarifiedStore } from "../drafts/unclarifiedStore.js";
@@ -35,9 +38,8 @@ function taskModeFromUiMode(mode: "digest" | "tasks" | "abstract_idea"): LlmTask
   return "structured_breakdown";
 }
 
-export function attachWebSocketServer(server: Server, config: AppConfig): void {
+export function attachWebSocketServer(server: Server, config: AppConfig, database = openDatabase(config)): void {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 });
-  const database = openDatabase(config);
   const conversations = new ConversationStore(database);
   const messages = new MessageStore(database);
   const drafts = new DraftStore(config.dataDir);
@@ -46,18 +48,17 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
   const n8n = new N8nClient(config);
   const provider = providerFromConfig(config);
 
-  server.on("upgrade", (req, socket, head) => {
+  server.on("upgrade", async (req, socket, head) => {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     if (pathname !== "/ws") {
       socket.destroy();
       return;
     }
 
-    const user = getAutheliaUser(req, {
-      devAuthBypass: config.devAuthBypass,
-      trustAutheliaHeaders: config.trustAutheliaHeaders
-    });
-    if (!user) {
+    let user: AuthenticatedUser;
+    try {
+      user = await requireUserForRequest(req, config);
+    } catch (error) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
@@ -72,8 +73,8 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
     send(ws, { type: "connected", user: { username: user.username, email: user.email } });
     send(ws, {
       type: "app_status",
-      db: { status: "ok", path: database.path },
-      plane: { status: plane.isConfigured() ? "configured" : "unconfigured" },
+      db: checkDatabaseHealth(database),
+      plane: planeStatus(),
       n8n: { status: n8n.isConfigured() ? "configured" : "unconfigured" }
     });
 
@@ -94,6 +95,12 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
         });
       }
     });
+  }
+
+  function planeStatus(): { status: "configured" | "unconfigured" | "error"; message?: string } {
+    if (plane.isConfigured()) return { status: "configured" };
+    if (config.authzProvider === "plane_workspace") return { status: "error", message: "AUTHZ_PROVIDER requires Plane workspace authorization, but Plane is not configured." };
+    return { status: "unconfigured" };
   }
 
   async function emitMessage(ws: WebSocket, message: Awaited<ReturnType<MessageStore["appendToolMessage"]>>): Promise<void> {
@@ -153,7 +160,8 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
         text: message.text,
         fileName: message.fileName,
         fileSize: "fileSize" in message ? message.fileSize : undefined,
-        mimeType: "mimeType" in message ? message.mimeType : undefined
+        mimeType: "mimeType" in message ? message.mimeType : undefined,
+        attachmentUploadIds: "attachmentUploadIds" in message ? message.attachmentUploadIds : undefined
       });
       return;
     }
@@ -173,7 +181,7 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
 
     if (message.type === "response_decision_update") {
       await conversations.loadConversation(user, message.conversationId);
-      const updated = await messages.updateMessageMetadata(user, message.messageId, { decisionStatus: message.decisionStatus });
+      const updated = await messages.updateMessageMetadata(user, message.conversationId, message.messageId, { decisionStatus: message.decisionStatus });
       send(ws, { type: "response_decision_updated", conversationId: message.conversationId, message: updated });
       return;
     }
@@ -261,7 +269,15 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
   async function handleConversationMessage(
     ws: WebSocket,
     user: AuthenticatedUser,
-    input: { conversationId?: string; mode: "chat" | "digest" | "tasks" | "abstract_idea"; text: string; fileName?: string; fileSize?: number; mimeType?: string }
+    input: {
+      conversationId?: string;
+      mode: "chat" | "digest" | "tasks" | "abstract_idea";
+      text: string;
+      fileName?: string;
+      fileSize?: number;
+      mimeType?: string;
+      attachmentUploadIds?: string[];
+    }
   ): Promise<void> {
     if (input.text.length > MAX_TEXT_LENGTH) throw new Error("Message text is too large.");
     const conversation = await ensureConversation(ws, user, input.conversationId, input.text);
@@ -271,15 +287,16 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
       fileSize: input.fileSize,
       mimeType: input.mimeType
     });
-    if (input.fileName) {
-      await conversations.insertAttachment(user, {
+    if (input.attachmentUploadIds?.length) {
+      const attachments = await finalizeStagedUploads({
+        dataDir: config.dataDir,
+        conversations,
+        user,
         conversationId: conversation.id,
-        messageId: userMessage.id,
-        fileName: input.fileName,
-        mimeType: input.mimeType,
-        sizeBytes: input.fileSize,
-        storagePath: `inline-text://${userMessage.id}`
+        requestMessageId: userMessage.id,
+        uploadIds: input.attachmentUploadIds
       });
+      send(ws, { type: "attachments_for_request", conversationId: conversation.id, requestId: userMessage.id, attachments });
     }
     send(ws, { type: "message_created", message: userMessage });
 

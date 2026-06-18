@@ -16,6 +16,7 @@ export type ClientMessage =
       fileName?: string;
       fileSize?: number;
       mimeType?: string;
+      attachmentUploadIds?: string[];
     }
   | { type: "draft_open"; conversationId: string; jobId: string }
   | { type: "attachments_for_request"; conversationId: string; requestId: string }
@@ -35,8 +36,8 @@ export type ServerMessage =
   | { type: "attachments_for_request"; conversationId: string; requestId: string; attachments: AttachmentMetadata[] }
   | {
       type: "app_status";
-      db: { status: "ok" | "error"; path?: string; message?: string };
-      plane: { status: "configured" | "unconfigured" };
+      db: { status: "ok" | "error"; path?: string; quickCheck?: string; writable?: boolean; message?: string };
+      plane: { status: "configured" | "unconfigured" | "error"; message?: string };
       n8n: { status: "configured" | "unconfigured" };
     }
   | { type: "conversation_renamed"; conversation: Conversation }
@@ -94,7 +95,8 @@ export function parseClientMessage(raw: unknown): ClientMessage {
       text: msg.text,
       fileName: typeof msg.fileName === "string" ? msg.fileName : undefined,
       fileSize: typeof msg.fileSize === "number" ? msg.fileSize : undefined,
-      mimeType: typeof msg.mimeType === "string" ? msg.mimeType : undefined
+      mimeType: typeof msg.mimeType === "string" ? msg.mimeType : undefined,
+      attachmentUploadIds: Array.isArray(msg.attachmentUploadIds) ? msg.attachmentUploadIds.filter((id): id is string => typeof id === "string") : undefined
     };
   }
 

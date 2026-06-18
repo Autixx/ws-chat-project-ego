@@ -111,7 +111,7 @@ test("MessageStore persists response links and decision status", async () => {
       responseToRequestId: request.id,
       decisionStatus: "pending"
     });
-    const updated = await stores.messages.updateMessageMetadata(user, response.id, { decisionStatus: "kept" });
+    const updated = await stores.messages.updateMessageMetadata(user, conversation.id, response.id, { decisionStatus: "kept" });
     const messages = await stores.messages.loadMessages(user, conversation.id);
 
     assert.equal(messages[1].metadata?.responseToRequestId, request.id);

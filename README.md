@@ -20,6 +20,8 @@ Browser request/response workbench for ProjectEGO planning automation. The UI se
   - future uploaded attachments
 - LLM provider abstraction with `MockProvider` and `CodexProvider` placeholder.
 - Optional Plane and n8n integration stubs.
+- Strict component health checks for SQLite, Plane configuration, and n8n configuration.
+- Multipart upload API for `.txt`, `.md`, `.mp3`, and `.mp4` attachments.
 
 ## UI Layout
 
@@ -75,6 +77,20 @@ Typical production layout:
 /app/data/drafts/
 /app/data/attachments/
 /app/data/unclarified/
+```
+
+Attachment storage layout:
+
+```text
+DATA_DIR/
+└── attachments/
+    ├── staging/
+    │   └── USER_ID/
+    │       └── UPLOAD_ID/
+    │           └── sanitized-file-name.ext
+    └── CONVERSATION_ID/
+        └── REQUEST_MESSAGE_ID/
+            └── ATTACHMENT_ID_original-name.ext
 ```
 
 SQLite stores lightweight chat data only. Draft response metadata stores references such as:
@@ -224,8 +240,26 @@ curl http://127.0.0.1:19100/health
 Expected response:
 
 ```json
-{"status":"ok","service":"projectego-ws-chat"}
+{
+  "status": "ok",
+  "service": "projectego-ws-chat",
+  "components": {
+    "db": {
+      "status": "ok",
+      "quickCheck": "ok",
+      "writable": true
+    },
+    "plane": {
+      "status": "configured"
+    },
+    "n8n": {
+      "status": "unconfigured"
+    }
+  }
+}
 ```
+
+The SQLite healthcheck verifies `SELECT 1`, `PRAGMA quick_check`, and write access to the database directory. Production responses avoid exposing full host paths.
 
 ## Caddy + Authelia
 
@@ -270,6 +304,79 @@ chat.project-ego.online {
 
 If Plane is not configured, the app returns `Plane integration is not configured.` and stores kept items in unclarified storage.
 
+## Upload API
+
+Attachments are uploaded through HTTP multipart, not WebSocket binary frames.
+
+```text
+POST /api/uploads
+```
+
+Form field:
+
+```text
+files
+```
+
+Supported extensions:
+
+- `.txt`
+- `.md`
+- `.mp3`
+- `.mp4`
+
+Limit: 25 MB per file.
+
+Response:
+
+```json
+{
+  "uploads": [
+    {
+      "uploadId": "UP-...",
+      "fileName": "note.md",
+      "mimeType": "text/markdown",
+      "sizeBytes": 1024,
+      "storagePath": "attachments/staging/local-dev/UP-.../note.md"
+    }
+  ]
+}
+```
+
+The frontend sends returned `uploadId`s in `message_send.attachmentUploadIds`. The backend moves staged files into final request attachment storage and inserts SQLite metadata.
+
+Attachment download/open:
+
+```text
+GET /api/attachments/:attachmentId
+```
+
+This endpoint authenticates the user, verifies the attachment belongs to a conversation owned by that user, and streams the file with safe content headers. `.mp3` and `.mp4` are rendered with browser audio/video controls in the workbench.
+
+## Plane Workspace Authorization
+
+Authelia remains the authentication layer. Plane can optionally be used as an authorization source.
+
+```env
+AUTHZ_PROVIDER=none
+```
+
+Options:
+
+- `none`: current behavior; authenticated Authelia users can access the app.
+- `plane_workspace`: after Authelia authentication, the app checks Plane workspace membership through the Plane API.
+
+Required for Plane authorization:
+
+```env
+AUTHZ_PROVIDER=plane_workspace
+PLANE_BASE_URL=
+PLANE_WORKSPACE=projectego
+PLANE_API_KEY=
+```
+
+The membership check matches by email first, then username. If Plane is unavailable or not configured while `AUTHZ_PROVIDER=plane_workspace`, access is denied. This is workspace authorization only; it is not Plane session-cookie login and does not read Plane internals.
+
 ## Backup
 
 Back up both SQLite and artifact files.
@@ -292,6 +399,7 @@ For Docker, back up the mounted `/app/data` volume.
 | `SQLITE_PATH` | SQLite database file for chat history. |
 | `DEV_AUTH_BYPASS` | Local fake auth. Keep false in production. |
 | `TRUST_AUTHELIA_HEADERS` | Trust Authelia `Remote-*` headers. |
+| `AUTHZ_PROVIDER` | `none` or `plane_workspace`. |
 | `LLM_PROVIDER` | `mock` or `codex`. |
 | `CODEX_AGENT_URL` | Optional HTTP endpoint for Codex provider. |
 | `CODEX_AGENT_TOKEN` | Optional bearer token for Codex provider. |
@@ -305,6 +413,7 @@ For Docker, back up the mounted `/app/data` volume.
 ## Current Limitations
 
 - Plane work-item creation is still guarded until project ID mapping is implemented.
+- Plane workspace authorization uses the documented/expected workspace members API endpoint and requires a Plane API key.
 - `CodexProvider` is non-streaming unless the configured backend streams or returns incremental events.
 - SQLite is intended for single-node deployment.
 - No database-backed full-text search yet.
