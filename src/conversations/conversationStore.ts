@@ -116,6 +116,36 @@ export class ConversationStore {
         itemsCount: input.itemsCount
       });
   }
+
+  async hasDraftRef(user: AuthenticatedUser, conversationId: string, jobId: string): Promise<boolean> {
+    await this.loadConversation(user, conversationId);
+    const row = this.database.db
+      .prepare("SELECT 1 FROM draft_refs WHERE conversation_id = ? AND job_id = ? LIMIT 1")
+      .get(conversationId, jobId) as { 1: number } | undefined;
+    return Boolean(row);
+  }
+
+  async insertAttachment(
+    user: AuthenticatedUser,
+    input: { conversationId: string; messageId?: string; fileName: string; mimeType?: string; sizeBytes?: number; storagePath: string }
+  ): Promise<void> {
+    await this.loadConversation(user, input.conversationId);
+    this.database.db
+      .prepare(
+        `INSERT INTO attachments (id, conversation_id, message_id, file_name, mime_type, size_bytes, storage_path, created_at)
+         VALUES (@id, @conversationId, @messageId, @fileName, @mimeType, @sizeBytes, @storagePath, @createdAt)`
+      )
+      .run({
+        id: createId("ATT"),
+        conversationId: input.conversationId,
+        messageId: input.messageId ?? null,
+        fileName: input.fileName,
+        mimeType: input.mimeType ?? null,
+        sizeBytes: input.sizeBytes ?? 0,
+        storagePath: input.storagePath,
+        createdAt: new Date().toISOString()
+      });
+  }
 }
 
 function rowToConversation(row: ConversationRow): Conversation {

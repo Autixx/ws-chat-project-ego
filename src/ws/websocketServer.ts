@@ -141,8 +141,39 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
         conversationId: message.conversationId,
         mode,
         text: message.text,
-        fileName: message.fileName
+        fileName: message.fileName,
+        fileSize: "fileSize" in message ? message.fileSize : undefined,
+        mimeType: "mimeType" in message ? message.mimeType : undefined
       });
+      return;
+    }
+
+    if (message.type === "draft_open") {
+      await conversations.loadConversation(user, message.conversationId);
+      if (!(await conversations.hasDraftRef(user, message.conversationId, message.jobId))) {
+        throw new Error("Draft is not referenced by this conversation.");
+      }
+      const loaded = await drafts.loadDraftWithPreview(message.jobId, user);
+      send(ws, {
+        type: "draft_saved",
+        conversationId: message.conversationId,
+        jobId: loaded.draft.jobId,
+        itemsCount: loaded.draft.result.items.length,
+        preview: loaded.preview
+      });
+      send(ws, {
+        type: "draft_result",
+        conversationId: message.conversationId,
+        jobId: loaded.draft.jobId,
+        result: loaded.draft.result
+      });
+      return;
+    }
+
+    if (message.type === "response_decision_update") {
+      await conversations.loadConversation(user, message.conversationId);
+      const updated = await messages.updateMessageMetadata(user, message.messageId, { decisionStatus: message.decisionStatus });
+      send(ws, { type: "response_decision_updated", conversationId: message.conversationId, message: updated });
       return;
     }
 
@@ -158,6 +189,7 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
       const toolMessage = await messages.appendToolMessage(message.conversationId, user, content, {
         kind: "apply_result",
         jobId: draft.jobId,
+        decisionStatus: "applied",
         selection,
         requestedApplyCount: applyItems.length
       });
@@ -204,6 +236,7 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
       await conversations.loadConversation(user, message.conversationId);
       const item = await unclarified.loadUnclarifiedItem(message.unclarifiedId);
       const userMessage = await messages.appendUserMessage(message.conversationId, user, `Clarification for ${message.unclarifiedId}: ${message.text}`, {
+        mode: "clarify",
         unclarifiedId: message.unclarifiedId
       });
       await emitMessage(ws, userMessage);
@@ -227,14 +260,26 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
   async function handleConversationMessage(
     ws: WebSocket,
     user: AuthenticatedUser,
-    input: { conversationId?: string; mode: "chat" | "digest" | "tasks" | "abstract_idea"; text: string; fileName?: string }
+    input: { conversationId?: string; mode: "chat" | "digest" | "tasks" | "abstract_idea"; text: string; fileName?: string; fileSize?: number; mimeType?: string }
   ): Promise<void> {
     if (input.text.length > MAX_TEXT_LENGTH) throw new Error("Message text is too large.");
     const conversation = await ensureConversation(ws, user, input.conversationId, input.text);
     const userMessage = await messages.appendUserMessage(conversation.id, user, input.text, {
       mode: input.mode,
-      fileName: input.fileName
+      fileName: input.fileName,
+      fileSize: input.fileSize,
+      mimeType: input.mimeType
     });
+    if (input.fileName) {
+      await conversations.insertAttachment(user, {
+        conversationId: conversation.id,
+        messageId: userMessage.id,
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        sizeBytes: input.fileSize,
+        storagePath: `inline-text://${userMessage.id}`
+      });
+    }
     send(ws, { type: "message_created", message: userMessage });
 
     if (conversation.title === "New conversation") {
@@ -246,9 +291,9 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
       conversationId: conversation.id,
       user,
       role: "assistant",
-      kind: "chat",
+      kind: "response",
       content: "",
-      metadata: { mode: input.mode }
+      metadata: { mode: input.mode, responseToRequestId: userMessage.id, decisionStatus: "pending" }
     });
     await messages.appendMessage(assistantMessage);
     send(ws, { type: "assistant_message_start", conversationId: conversation.id, messageId: assistantMessage.id });
@@ -272,7 +317,8 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
       if (event.type === "status") {
         const statusMessage = await messages.appendToolMessage(conversation.id, user, event.message, {
           kind: "status",
-          mode: input.mode
+          mode: input.mode,
+          responseToRequestId: userMessage.id
         });
         await emitMessage(ws, statusMessage);
         send(ws, { type: "status", conversationId: conversation.id, messageId: assistantMessage.id, jobId: "pending", message: event.message });
@@ -286,7 +332,8 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
       if (event.type === "error") {
         const errorMessage = await messages.appendToolMessage(conversation.id, user, event.message, {
           kind: "error",
-          mode: input.mode
+          mode: input.mode,
+          responseToRequestId: userMessage.id
         });
         await emitMessage(ws, errorMessage);
         send(ws, { type: "error", message: event.message });
@@ -294,40 +341,25 @@ export function attachWebSocketServer(server: Server, config: AppConfig): void {
 
       if (event.type === "result") {
         const saved = await drafts.saveDraft({ mode: taskMode, source, fileName: input.fileName, user, result: event.result });
-        await conversations.insertDraftRef(user, {
-          conversationId: conversation.id,
-          jobId: saved.draft.jobId,
-          messageId: assistantMessage.id,
-          mode: input.mode,
-          source,
-          fileName: input.fileName,
-          itemsCount: saved.draft.result.items.length
-        });
         assistantContent += `\n\nI created draft ${saved.draft.jobId} with ${saved.draft.result.items.length} item(s).`;
         const draftMessage = await messages.appendToolMessage(conversation.id, user, `Draft ${saved.draft.jobId}: ${saved.draft.result.items.length} item(s).`, {
           kind: "draft",
           jobId: saved.draft.jobId,
           itemsCount: saved.draft.result.items.length,
-          preview: saved.preview,
-          result: saved.draft.result,
-          mode: input.mode
+          mode: input.mode,
+          responseToRequestId: userMessage.id,
+          decisionStatus: "pending"
+        });
+        await conversations.insertDraftRef(user, {
+          conversationId: conversation.id,
+          jobId: saved.draft.jobId,
+          messageId: draftMessage.id,
+          mode: input.mode,
+          source,
+          fileName: input.fileName,
+          itemsCount: saved.draft.result.items.length
         });
         await emitMessage(ws, draftMessage);
-        send(ws, {
-          type: "draft_saved",
-          conversationId: conversation.id,
-          messageId: assistantMessage.id,
-          jobId: saved.draft.jobId,
-          itemsCount: saved.draft.result.items.length,
-          preview: saved.preview
-        });
-        send(ws, {
-          type: "draft_result",
-          conversationId: conversation.id,
-          messageId: assistantMessage.id,
-          jobId: saved.draft.jobId,
-          result: saved.draft.result
-        });
       }
     }
 

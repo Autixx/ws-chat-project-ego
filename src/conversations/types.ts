@@ -14,7 +14,8 @@ export type Conversation = {
 export type ChatMessageRole = "user" | "assistant" | "system" | "tool";
 
 export type ChatMessageKind =
-  | "chat"
+  | "request"
+  | "response"
   | "status"
   | "token"
   | "draft"
@@ -32,3 +33,5 @@ export type ChatMessage = {
   jobId?: string;
   metadata?: Record<string, unknown>;
 };
+
+export type ResponseDecisionStatus = "pending" | "applied" | "dropped" | "kept";

@@ -1,6 +1,6 @@
-# ProjectEGO WebSocket Chat Workbench
+# ProjectEGO Request/Response Chat Workbench
 
-Browser chat/workbench for ProjectEGO planning automation. The app keeps persistent conversations in SQLite, streams WebSocket events to the browser, and preserves the existing ProjectEGO draft workflow as chat artifacts.
+Browser request/response workbench for ProjectEGO planning automation. The UI separates user requests, agent/system responses, linked attachments, and draft decisions instead of rendering a single ChatGPT-like vertical timeline.
 
 ## Architecture
 
@@ -20,6 +20,33 @@ Browser chat/workbench for ProjectEGO planning automation. The app keeps persist
   - future uploaded attachments
 - LLM provider abstraction with `MockProvider` and `CodexProvider` placeholder.
 - Optional Plane and n8n integration stubs.
+
+## UI Layout
+
+The primary screen is a compact technical workbench:
+
+- top status bar with WS, Plane, n8n, DB and user indicators
+- request search field
+- response search field
+- left request panel with answer status squares
+- right response panel with decision status squares
+- attachments panel linked to the selected request
+- request input field with mode selector, file attach and Ctrl+Enter send
+- draft inspector opened explicitly from a draft response
+
+Request answer status:
+
+- red square: `no_response`
+- green square: `has_response`
+
+Response decision status:
+
+- white square: `pending`
+- green square: `applied`
+- red square: `dropped`
+- gray square: `kept`
+
+Expanded pending responses expose response-level `Apply`, `Drop`, and `Keep` buttons. These persist decision status in SQLite metadata. Item-level draft Apply/Keep/Drop remains in the Draft Inspector.
 
 ## Storage
 
@@ -49,6 +76,67 @@ Typical production layout:
 /app/data/attachments/
 /app/data/unclarified/
 ```
+
+SQLite stores lightweight chat data only. Draft response metadata stores references such as:
+
+```json
+{
+  "kind": "draft",
+  "jobId": "20260618-010203-abcdef",
+  "itemsCount": 3,
+  "mode": "tasks",
+  "responseToRequestId": "M-...",
+  "decisionStatus": "pending"
+}
+```
+
+Full `draft.json`, `preview.txt`, and per-item JSON files are loaded from the filesystem by `draft_open`.
+
+## Request / Response Linking
+
+User submissions are stored as `request` messages. Assistant, tool, status, draft, apply, unclarified, and error messages are response-side messages linked through metadata:
+
+```json
+{
+  "responseToRequestId": "M-request-id"
+}
+```
+
+Selecting a request highlights linked responses. Selecting a response highlights the linked request.
+
+## Draft Open Flow
+
+Draft generation saves artifact files and inserts a lightweight row in `draft_refs`. The response panel shows a draft row with `Open in Draft Inspector`.
+
+Client request:
+
+```json
+{
+  "type": "draft_open",
+  "conversationId": "C-...",
+  "jobId": "20260618-010203-abcdef"
+}
+```
+
+The backend validates that the conversation belongs to the current user and that `jobId` is referenced by `draft_refs`, then loads:
+
+- `DATA_DIR/drafts/JOB_ID/draft.json`
+- `DATA_DIR/drafts/JOB_ID/preview.txt`
+
+It then emits `draft_saved` and `draft_result` for the inspector.
+
+## Attachments
+
+Supported UI/file metadata types:
+
+- `.txt`
+- `.md`
+- `.mp3`
+- `.mp4`
+
+Maximum size: 25 MB.
+
+For this pass, `.txt` and `.md` are still read into the request text in the browser. Attachment metadata is persisted in SQLite; binary upload/storage is prepared structurally but not implemented yet. Attachment binary data must not be stored in SQLite.
 
 ## Install
 
@@ -169,12 +257,16 @@ chat.project-ego.online {
 
 1. Start with `LLM_PROVIDER=mock`.
 2. Open the UI.
-3. Create a conversation or let the app create one.
-4. Send `Chat`, `Digest`, `Tasks`, or `Abstract idea`.
-5. Confirm the message history persists after reload.
-6. For draft modes, open the draft inspector.
-7. Choose Apply/Keep/Drop per item.
-8. Click `Apply selected`.
+3. Create or open a conversation.
+4. Send a `Chat` request.
+5. Confirm the request appears in the left panel and the response appears in the right panel.
+6. Reload and confirm both persist.
+7. Send `Digest`, `Tasks`, or `Abstract idea`.
+8. Click the draft response.
+9. Click `Open in Draft Inspector`.
+10. Choose Apply/Keep/Drop per item.
+11. Click `Apply selected`.
+12. Change response-level Apply/Drop/Keep status and reload to verify persistence.
 
 If Plane is not configured, the app returns `Plane integration is not configured.` and stores kept items in unclarified storage.
 
@@ -216,5 +308,6 @@ For Docker, back up the mounted `/app/data` volume.
 - `CodexProvider` is non-streaming unless the configured backend streams or returns incremental events.
 - SQLite is intended for single-node deployment.
 - No database-backed full-text search yet.
+- Binary attachment upload/storage is not implemented yet; only metadata and text-file request input are active.
 - No Telegram integration.
 - No custom login; Authelia remains the authentication layer.

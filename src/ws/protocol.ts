@@ -8,7 +8,17 @@ export type ClientMessage =
   | { type: "conversation_open"; conversationId: string }
   | { type: "conversation_rename"; conversationId: string; title: string }
   | { type: "conversation_archive"; conversationId: string }
-  | { type: "message_send"; conversationId: string; mode: "chat" | "digest" | "tasks" | "abstract_idea"; text: string; fileName?: string }
+  | {
+      type: "message_send";
+      conversationId: string;
+      mode: "chat" | "digest" | "tasks" | "abstract_idea";
+      text: string;
+      fileName?: string;
+      fileSize?: number;
+      mimeType?: string;
+    }
+  | { type: "draft_open"; conversationId: string; jobId: string }
+  | { type: "response_decision_update"; conversationId: string; messageId: string; decisionStatus: "pending" | "applied" | "dropped" | "kept" }
   | { type: "digest"; conversationId?: string; text: string; fileName?: string }
   | { type: "tasks"; conversationId?: string; text: string; fileName?: string }
   | { type: "apply"; conversationId: string; jobId: string; expression: string }
@@ -30,6 +40,7 @@ export type ServerMessage =
   | { type: "token"; conversationId?: string; messageId?: string; jobId?: string; text: string }
   | { type: "draft_saved"; conversationId?: string; messageId?: string; jobId: string; itemsCount: number; preview: string }
   | { type: "draft_result"; conversationId?: string; messageId?: string; jobId: string; result: DraftResult }
+  | { type: "response_decision_updated"; conversationId: string; message: ChatMessage }
   | { type: "apply_result"; conversationId?: string; jobId: string; appliedCount: number; keptCount: number; droppedCount: number; message: string }
   | { type: "unclarified_index"; conversationId?: string; text: string }
   | { type: "error"; message: string; details?: string };
@@ -73,7 +84,32 @@ export function parseClientMessage(raw: unknown): ClientMessage {
       conversationId: msg.conversationId,
       mode: msg.mode as "chat" | "digest" | "tasks" | "abstract_idea",
       text: msg.text,
-      fileName: typeof msg.fileName === "string" ? msg.fileName : undefined
+      fileName: typeof msg.fileName === "string" ? msg.fileName : undefined,
+      fileSize: typeof msg.fileSize === "number" ? msg.fileSize : undefined,
+      mimeType: typeof msg.mimeType === "string" ? msg.mimeType : undefined
+    };
+  }
+
+  if (msg.type === "draft_open") {
+    if (typeof msg.conversationId !== "string" || typeof msg.jobId !== "string") {
+      throw new Error("draft_open requires conversationId and jobId.");
+    }
+    return { type: "draft_open", conversationId: msg.conversationId, jobId: msg.jobId };
+  }
+
+  if (msg.type === "response_decision_update") {
+    if (
+      typeof msg.conversationId !== "string" ||
+      typeof msg.messageId !== "string" ||
+      !["pending", "applied", "dropped", "kept"].includes(String(msg.decisionStatus))
+    ) {
+      throw new Error("response_decision_update requires conversationId, messageId and valid decisionStatus.");
+    }
+    return {
+      type: "response_decision_update",
+      conversationId: msg.conversationId,
+      messageId: msg.messageId,
+      decisionStatus: msg.decisionStatus as "pending" | "applied" | "dropped" | "kept"
     };
   }
 

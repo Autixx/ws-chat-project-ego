@@ -48,6 +48,22 @@ export class MessageStore {
     return Promise.resolve(updated);
   }
 
+  updateMessageMetadata(user: AuthenticatedUser, messageId: string, metadataPatch: Record<string, unknown>): Promise<ChatMessage> {
+    const row = this.database.db
+      .prepare(
+        `SELECT m.id, m.conversation_id, m.role, m.kind, m.content, m.created_at, m.job_id, m.metadata_json
+         FROM messages m
+         JOIN conversations c ON c.id = m.conversation_id
+         WHERE m.id = ? AND c.user_id = ?`
+      )
+      .get(messageId, safeUserId(user.username)) as MessageRow | undefined;
+    if (!row) return Promise.reject(new Error("Message not found."));
+    const message = rowToMessage(row);
+    const metadata = { ...(message.metadata ?? {}), ...metadataPatch };
+    this.database.db.prepare("UPDATE messages SET metadata_json = ? WHERE id = ?").run(JSON.stringify(metadata), messageId);
+    return Promise.resolve({ ...message, metadata });
+  }
+
   async loadMessages(user: AuthenticatedUser, conversationId: string, limit = 200, before?: string): Promise<ChatMessage[]> {
     await this.conversations.loadConversation(user, conversationId);
     const params: unknown[] = [conversationId];
@@ -75,11 +91,11 @@ export class MessageStore {
   }
 
   appendUserMessage(conversationId: string, user: AuthenticatedUser, content: string, metadata?: Record<string, unknown>): Promise<ChatMessage> {
-    return this.appendRoleMessage(conversationId, user, "user", "chat", content, metadata);
+    return this.appendRoleMessage(conversationId, user, "user", "request", content, metadata);
   }
 
   appendAssistantMessage(conversationId: string, user: AuthenticatedUser, content: string, metadata?: Record<string, unknown>): Promise<ChatMessage> {
-    return this.appendRoleMessage(conversationId, user, "assistant", "chat", content, metadata);
+    return this.appendRoleMessage(conversationId, user, "assistant", "response", content, metadata);
   }
 
   appendSystemMessage(conversationId: string, user: AuthenticatedUser, content: string, metadata?: Record<string, unknown>): Promise<ChatMessage> {

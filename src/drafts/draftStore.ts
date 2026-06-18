@@ -57,6 +57,13 @@ export class DraftStore {
     return JSON.parse(raw) as StoredDraft;
   }
 
+  async loadDraftWithPreview(jobId: string, user: AuthenticatedUser): Promise<StoredDraftResult> {
+    const resolvedJobId = jobId === "latest" ? await this.loadLatestJobId(user) : jobId;
+    const draft = await this.loadDraft(resolvedJobId, user);
+    const preview = await fs.readFile(path.join(this.dataDir, "drafts", resolvedJobId, "preview.txt"), "utf8");
+    return { draft, preview };
+  }
+
   async discardDraft(jobId: string, user: AuthenticatedUser): Promise<string> {
     const resolvedJobId = jobId === "latest" ? await this.loadLatestJobId(user) : jobId;
     await fs.rm(path.join(this.dataDir, "drafts", resolvedJobId), { recursive: true, force: true });

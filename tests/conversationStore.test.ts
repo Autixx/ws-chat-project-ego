@@ -62,6 +62,48 @@ test("MessageStore appends and loads messages in created order", async () => {
     const messages = await stores.messages.loadMessages(user, conversation.id);
 
     assert.deepEqual(messages.map((message) => message.content), ["first", "second"]);
+    assert.deepEqual(messages.map((message) => message.kind), ["request", "response"]);
+  } finally {
+    stores.cleanup();
+  }
+});
+
+test("MessageStore persists response links and decision status", async () => {
+  const stores = testStores();
+  try {
+    const conversation = await stores.conversations.createConversation(user, "Links");
+    const request = await stores.messages.appendUserMessage(conversation.id, user, "request", { mode: "digest" });
+    const response = await stores.messages.appendAssistantMessage(conversation.id, user, "response", {
+      responseToRequestId: request.id,
+      decisionStatus: "pending"
+    });
+    const updated = await stores.messages.updateMessageMetadata(user, response.id, { decisionStatus: "kept" });
+    const messages = await stores.messages.loadMessages(user, conversation.id);
+
+    assert.equal(messages[1].metadata?.responseToRequestId, request.id);
+    assert.equal(updated.metadata?.decisionStatus, "kept");
+  } finally {
+    stores.cleanup();
+  }
+});
+
+test("draft response metadata stays lightweight", async () => {
+  const stores = testStores();
+  try {
+    const conversation = await stores.conversations.createConversation(user, "Draft metadata");
+    const request = await stores.messages.appendUserMessage(conversation.id, user, "request", { mode: "tasks" });
+    const draftMessage = await stores.messages.appendToolMessage(conversation.id, user, "Draft JOB: 2 item(s).", {
+      kind: "draft",
+      jobId: "20260618-010203-abcdef",
+      itemsCount: 2,
+      mode: "tasks",
+      responseToRequestId: request.id,
+      decisionStatus: "pending"
+    });
+
+    assert.equal(draftMessage.metadata?.jobId, "20260618-010203-abcdef");
+    assert.equal("preview" in (draftMessage.metadata ?? {}), false);
+    assert.equal("result" in (draftMessage.metadata ?? {}), false);
   } finally {
     stores.cleanup();
   }
