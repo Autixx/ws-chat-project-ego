@@ -243,6 +243,58 @@ docker compose up --build
 
 Only one HTTP/WebSocket port is exposed. Runtime state should live in the mounted `/app/data` volume.
 
+## TrueNAS Apps / GHCR Updates
+
+For TrueNAS Apps, use the published registry image instead of local `build: .`.
+
+GitHub Actions publishes this image to GitHub Container Registry:
+
+```text
+ghcr.io/autixx/ws-chat-project-ego:latest
+```
+
+If the GHCR package is private, either make it public in GitHub Packages or configure TrueNAS registry credentials with a GitHub token that can read packages.
+
+Every push to `main` publishes:
+
+- `latest`
+- `sha-<commit>`
+
+Every Git tag like `v0.1.1` also publishes:
+
+- `v0.1.1`
+
+Example registry compose file:
+
+```bash
+docker compose -f docker-compose.registry.yml up -d
+```
+
+TrueNAS custom app settings should use:
+
+```text
+Image: ghcr.io/autixx/ws-chat-project-ego:latest
+Pull policy: always
+Container port: 19100
+Host port: 19100
+Volume mount: /app/data
+```
+
+To update from the TrueNAS Apps UI:
+
+1. Push changes to GitHub and wait for the `Docker image` Action to finish.
+2. Open the app in TrueNAS.
+3. Use redeploy/update so TrueNAS pulls the current image.
+4. Hard refresh the browser after the container is recreated.
+
+For predictable production rollouts, prefer a fixed tag such as:
+
+```text
+ghcr.io/autixx/ws-chat-project-ego:v0.1.1
+```
+
+Then update the tag in TrueNAS when moving to a newer release.
+
 ## Health Check
 
 ```bash
