@@ -122,6 +122,10 @@ async function bootAuth() {
 }
 
 function showWorkbench(user) {
+  if (!user?.username) {
+    showAuth("Login response did not include user data.");
+    return;
+  }
   authEls.authScreen.hidden = true;
   authEls.workbench.hidden = false;
   els.userLine.textContent = `${user.username}${user.email ? ` / ${user.email}` : ""}`;
@@ -718,6 +722,10 @@ authEls.loginForm.addEventListener("submit", async (event) => {
     showAuth(body.error || "Login failed.");
     return;
   }
+  if (!body.user?.username) {
+    showAuth("Login failed: unexpected server response.");
+    return;
+  }
   authEls.loginPassword.value = "";
   state.shouldReconnect = true;
   showWorkbench(body.user);
@@ -740,6 +748,10 @@ authEls.registerForm.addEventListener("submit", async (event) => {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     showAuth(body.error || "Registration failed.");
+    return;
+  }
+  if (!body.user?.username) {
+    showAuth("Registration failed: unexpected server response.");
     return;
   }
   authEls.registerPassword.value = "";
