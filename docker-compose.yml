@@ -1,8 +1,14 @@
 services:
-  projectego-ws-chat:
-    build: .
-    image: projectego-ws-chat:local
+  projectego-chat:
+    build:
+      context: https://github.com/Autixx/ws-chat-project-ego.git#main
+      dockerfile: Dockerfile
+    container_name: projectego-chat
     restart: unless-stopped
+    user: "568:568"
+    ports:
+      - "19100:19100"
+    image: projectego-ws-chat:local
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -25,10 +31,8 @@ services:
       PLANE_API_KEY: ""
       N8N_BASE_URL: ""
       N8N_WEBHOOK_TOKEN: ""
-    ports:
-      - "19100:19100"
     volumes:
-      - projectego-ws-chat-data:/app/data
+      - projectego-chat-data:/app/data
 
 volumes:
-  projectego-ws-chat-data:
+  projectego-chat-data:

@@ -1,8 +1,10 @@
 services:
-  projectego-ws-chat:
+  projectego-chat:
     image: ghcr.io/autixx/ws-chat-project-ego:latest
+    container_name: projectego-chat
     pull_policy: always
     restart: unless-stopped
+    user: "568:568"
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -28,7 +30,7 @@ services:
     ports:
       - "19100:19100"
     volumes:
-      - projectego-ws-chat-data:/app/data
+      - projectego-chat-data:/app/data
 
 volumes:
-  projectego-ws-chat-data:
+  projectego-chat-data:

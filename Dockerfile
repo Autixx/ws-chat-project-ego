@@ -22,7 +22,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY public ./public
-RUN mkdir -p /app/data && chown -R node:node /app
+RUN mkdir -p /app/data && chown -R node:node /app && chmod 0777 /app/data
 USER node
 EXPOSE 19100
 CMD ["node", "dist/server.js"]

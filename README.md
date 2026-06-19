@@ -231,7 +231,7 @@ docker run --rm \
   -e REGISTRATION_ENABLED=true \
   -e REGISTRATION_INVITE_CODE=dev-invite \
   -e COOKIE_SECURE=false \
-  -v projectego-ws-chat-data:/app/data \
+  -v projectego-chat-data:/app/data \
   projectego-ws-chat:local
 ```
 
@@ -239,6 +239,12 @@ Compose:
 
 ```bash
 docker compose up --build
+```
+
+The included `docker-compose.yml` is shaped for TrueNAS-compatible deployment and runs the container as:
+
+```yaml
+user: "568:568"
 ```
 
 Only one HTTP/WebSocket port is exposed. Runtime state should live in the mounted `/app/data` volume.
@@ -275,6 +281,7 @@ TrueNAS custom app settings should use:
 ```text
 Image: ghcr.io/autixx/ws-chat-project-ego:latest
 Pull policy: always
+Run as user/group: 568:568
 Container port: 19100
 Host port: 19100
 Volume mount: /app/data
