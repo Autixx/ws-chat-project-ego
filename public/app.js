@@ -31,7 +31,7 @@ const els = {
   conversationSelect: document.getElementById("conversationSelect"),
   newConversationBtn: document.getElementById("newConversationBtn"),
   archiveConversationBtn: document.getElementById("archiveConversationBtn"),
-  themeSelect: document.getElementById("themeSelect"),
+  themeButtons: Array.from(document.querySelectorAll("[data-theme]")),
   displayMode: document.getElementById("displayMode"),
   requestSearch: document.getElementById("requestSearch"),
   responseSearch: document.getElementById("responseSearch"),
@@ -265,6 +265,11 @@ function handleServerMessage(message) {
 function setStatusIndicator(square, text, status, label) {
   square.className = `sq ${status === "ok" ? "green" : status === "error" ? "red" : "gray"}`;
   text.textContent = label;
+}
+
+function setTheme(theme) {
+  document.body.className = theme;
+  for (const button of els.themeButtons) button.classList.toggle("active", button.dataset.theme === theme);
 }
 
 function isResponse(message) {
@@ -648,9 +653,7 @@ async function uploadSelectedFiles() {
   return (body.uploads || []).map((upload) => upload.uploadId);
 }
 
-els.themeSelect.addEventListener("change", () => {
-  document.body.className = els.themeSelect.value;
-});
+for (const button of els.themeButtons) button.addEventListener("click", () => setTheme(button.dataset.theme));
 els.displayMode.addEventListener("change", () => {
   renderRequests();
   renderResponses();
