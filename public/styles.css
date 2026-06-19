@@ -96,7 +96,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .workbench {
   height: 100vh;
   display: grid;
-  grid-template-rows: auto auto auto minmax(360px, 1fr) 250px auto;
+  grid-template-rows: auto auto auto minmax(300px, .85fr) minmax(320px, 1fr) auto;
   overflow: hidden;
 }
 
@@ -216,21 +216,19 @@ h2 {
 .work-grid {
   display: grid;
   grid-template-columns: 1fr 1.18fr;
+  grid-template-rows: minmax(180px, 1fr) 130px 46px;
+  grid-template-areas:
+    "request response"
+    "input attachments"
+    "input actions";
   min-height: 0;
 }
 
-.request-column, .response-column {
-  display: grid;
-  min-height: 0;
-}
-
-.request-column {
-  grid-template-rows: minmax(180px, 1fr) 176px;
-}
-
-.response-column {
-  grid-template-rows: minmax(180px, 1fr) 130px auto;
-}
+.request-panel { grid-area: request; }
+.response-panel { grid-area: response; }
+.input { grid-area: input; }
+.attachments { grid-area: attachments; }
+.draft-actions { grid-area: actions; }
 
 .panel {
   border-right: 1px solid var(--line);
@@ -311,6 +309,7 @@ h2 {
 .draft {
   display: grid;
   grid-template-columns: 340px 1fr 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -330,6 +329,10 @@ h2 {
   align-items: center;
   padding: 8px 10px;
   border-right: 1px solid var(--line);
+}
+
+.draft-actions button {
+  min-height: 28px;
 }
 
 .items-list {
@@ -379,6 +382,55 @@ textarea {
 .input-controls {
   display: grid;
   gap: 7px;
+  align-content: start;
+}
+
+.request-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: var(--accent);
+}
+
+.icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.send-icon svg {
+  fill: currentColor;
+  stroke: none;
 }
 
 #fileNotice {
@@ -405,8 +457,14 @@ textarea {
   .topbar, .search-row, .work-grid, .draft, .input-grid {
     grid-template-columns: 1fr;
   }
-  .request-column, .response-column {
+  .work-grid {
     grid-template-rows: auto;
+    grid-template-areas:
+      "request"
+      "response"
+      "input"
+      "attachments"
+      "actions";
   }
   .row-list { height: 360px; }
   .input, .attachments {

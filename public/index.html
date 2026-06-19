@@ -67,48 +67,56 @@
       </section>
 
       <section class="work-grid">
-        <div class="request-column">
-          <section class="panel request-panel">
-            <h2>REQUEST WINDOW</h2>
-            <div id="requestList" class="row-list"></div>
-          </section>
+        <section class="panel request-panel">
+          <h2>REQUEST WINDOW</h2>
+          <div id="requestList" class="row-list"></div>
+        </section>
 
-          <section class="input panel">
-            <h2>REQUEST INPUT FIELD</h2>
-            <div class="input-grid">
-              <textarea id="prompt" rows="4" placeholder="Enter request. Ctrl+Enter sends."></textarea>
-              <div class="input-controls">
-                <select id="modeSelect">
-                  <option value="chat">Chat</option>
-                  <option value="digest">Digest</option>
-                  <option value="tasks">Tasks</option>
-                  <option value="abstract_idea">Abstract idea</option>
-                </select>
-                <input id="fileInput" type="file" multiple accept=".txt,.md,.mp3,.mp4,text/plain,text/markdown,audio/mpeg,video/mp4" />
-                <span id="fileNotice"></span>
-                <button id="sendBtn" type="button">Send</button>
+        <section class="panel response-panel">
+          <h2>RESPONSE WINDOW</h2>
+          <div id="responseList" class="row-list"></div>
+        </section>
+
+        <section class="input panel">
+          <h2>REQUEST INPUT FIELD</h2>
+          <div class="input-grid">
+            <textarea id="prompt" rows="4" placeholder="Enter request. Ctrl+Enter sends."></textarea>
+            <div class="input-controls">
+              <select id="modeSelect">
+                <option value="chat">Chat</option>
+                <option value="digest">Digest</option>
+                <option value="tasks">Tasks</option>
+                <option value="abstract_idea">Abstract idea</option>
+              </select>
+              <div class="request-buttons">
+                <label class="icon-button" for="fileInput" aria-label="Attach files" title="Attach files">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8.5 12.5 15 6a3.2 3.2 0 0 1 4.5 4.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.4-8.4" />
+                    <path d="m10.3 14.3 7-7" />
+                  </svg>
+                </label>
+                <input id="fileInput" class="visually-hidden" type="file" multiple accept=".txt,.md,.mp3,.mp4,text/plain,text/markdown,audio/mpeg,video/mp4" />
+                <button id="sendBtn" class="icon-button send-icon" type="button" aria-label="Send request" title="Send request">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3 20 21 12 3 4l3.4 7.2L14 12l-7.6.8L3 20Z" />
+                  </svg>
+                </button>
               </div>
+              <span id="fileNotice"></span>
             </div>
-          </section>
-        </div>
-
-        <div class="response-column">
-          <section class="panel response-panel">
-            <h2>RESPONSE WINDOW</h2>
-            <div id="responseList" class="row-list"></div>
-          </section>
-
-          <section class="attachments panel">
-            <h2>ATTACHMENTS WINDOW</h2>
-            <div id="attachmentsList" class="attachment-list"></div>
-          </section>
-
-          <div class="draft-actions">
-            <button id="applySelectedBtn" type="button">Apply selected</button>
-            <button id="applyAllBtn" type="button">Apply all</button>
-            <button id="keepAllBtn" type="button">Keep all</button>
-            <button id="showUnclarifiedBtn" type="button">Show unclarified</button>
           </div>
+        </section>
+
+        <section class="attachments panel">
+          <h2>ATTACHMENTS WINDOW</h2>
+          <div id="attachmentsList" class="attachment-list"></div>
+        </section>
+
+        <div class="draft-actions">
+          <button id="applySelectedBtn" type="button">Apply selected</button>
+          <button id="applyAllBtn" type="button">Apply all</button>
+          <button id="keepAllBtn" type="button">Keep all</button>
+          <button id="showUnclarifiedBtn" type="button">Show unclarified</button>
         </div>
       </section>
 
