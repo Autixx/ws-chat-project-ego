@@ -310,10 +310,35 @@ h2 {
 }
 
 .attachment-card {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
   border: 1px solid var(--line);
   padding: 8px;
   min-width: 180px;
   color: var(--muted);
+}
+
+.attachment-info {
+  min-height: 64px;
+}
+
+.attachment-thumb-button {
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  min-height: 64px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--field);
+}
+
+.attachment-thumb {
+  height: 100%;
+  max-height: 72px;
+  width: auto;
+  max-width: 160px;
+  object-fit: contain;
 }
 
 .attachment-empty {
@@ -507,7 +532,7 @@ textarea {
   text-underline-offset: 3px;
 }
 
-.prompt-editor, .upload-inspector {
+.prompt-editor, .upload-inspector, .image-viewer {
   position: fixed;
   z-index: 50;
   border: 1px solid var(--accent);
@@ -537,7 +562,16 @@ textarea {
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
-.prompt-editor-header, .upload-inspector-header {
+.image-viewer {
+  left: 12.5vw;
+  top: 12.5vh;
+  width: 75vw;
+  height: 75vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.prompt-editor-header, .upload-inspector-header, .image-viewer-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -549,7 +583,7 @@ textarea {
   user-select: none;
 }
 
-.prompt-editor-header button, .upload-inspector-header button {
+.prompt-editor-header button, .upload-inspector-header button, .image-viewer-header button {
   min-height: 24px;
   padding: 2px 8px;
 }
@@ -595,6 +629,23 @@ textarea {
   border-top: 1px solid var(--line);
   display: flex;
   justify-content: flex-end;
+}
+
+.image-viewer-body {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  background: var(--field);
+}
+
+#imageViewerImg {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  transform-origin: center center;
+  user-select: none;
 }
 
 .debug {

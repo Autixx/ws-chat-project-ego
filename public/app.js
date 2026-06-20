@@ -15,8 +15,10 @@ const state = {
   currentDraftItems: [],
   attachments: [],
   attachmentsByRequest: {},
+  pendingFiles: [],
   requestMode: "chat",
-  displayMode: "text"
+  displayMode: "text",
+  imageZoom: 1
 };
 
 const els = {
@@ -52,8 +54,15 @@ const els = {
   closeEditorBtn: document.getElementById("closeEditorBtn"),
   uploadInspector: document.getElementById("uploadInspector"),
   uploadInspectorList: document.getElementById("uploadInspectorList"),
+  uploadInspectorHeader: document.getElementById("uploadInspectorHeader"),
   closeUploadInspectorBtn: document.getElementById("closeUploadInspectorBtn"),
   clearUploadsBtn: document.getElementById("clearUploadsBtn"),
+  imageViewer: document.getElementById("imageViewer"),
+  imageViewerHeader: document.getElementById("imageViewerHeader"),
+  imageViewerTitle: document.getElementById("imageViewerTitle"),
+  imageViewerBody: document.getElementById("imageViewerBody"),
+  imageViewerImg: document.getElementById("imageViewerImg"),
+  closeImageViewerBtn: document.getElementById("closeImageViewerBtn"),
   draftJobId: document.getElementById("draftJobId"),
   draftPreview: document.getElementById("draftPreview"),
   itemsList: document.getElementById("itemsList"),
@@ -340,27 +349,48 @@ function maybeOpenPromptEditor() {
   openPromptEditor({ auto: true });
 }
 
-function wirePromptEditorDrag() {
+function wireDraggableWindow(panel, handle, ignoredButton) {
   let drag = null;
-  els.promptEditorHeader.addEventListener("pointerdown", (event) => {
-    if (event.target === els.closeEditorBtn) return;
-    const rect = els.promptEditor.getBoundingClientRect();
+  handle.addEventListener("pointerdown", (event) => {
+    if (ignoredButton && event.target === ignoredButton) return;
+    const rect = panel.getBoundingClientRect();
     drag = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
-    els.promptEditorHeader.setPointerCapture(event.pointerId);
+    handle.setPointerCapture(event.pointerId);
   });
-  els.promptEditorHeader.addEventListener("pointermove", (event) => {
+  handle.addEventListener("pointermove", (event) => {
     if (!drag) return;
     const nextLeft = Math.max(0, Math.min(window.innerWidth - 80, drag.left + event.clientX - drag.x));
     const nextTop = Math.max(0, Math.min(window.innerHeight - 60, drag.top + event.clientY - drag.y));
-    els.promptEditor.style.left = `${nextLeft}px`;
-    els.promptEditor.style.top = `${nextTop}px`;
+    panel.style.left = `${nextLeft}px`;
+    panel.style.top = `${nextTop}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
   });
-  els.promptEditorHeader.addEventListener("pointerup", () => {
+  handle.addEventListener("pointerup", () => {
     drag = null;
   });
-  els.promptEditorHeader.addEventListener("pointercancel", () => {
+  handle.addEventListener("pointercancel", () => {
     drag = null;
   });
+}
+
+function setImageZoom(zoom) {
+  state.imageZoom = Math.max(0.2, Math.min(6, zoom));
+  els.imageViewerImg.style.transform = `scale(${state.imageZoom})`;
+}
+
+function openImageViewer(url, fileName) {
+  state.imageZoom = 1;
+  els.imageViewerImg.src = url;
+  els.imageViewerImg.alt = fileName;
+  els.imageViewerTitle.textContent = fileName;
+  els.imageViewer.hidden = false;
+  setImageZoom(1);
+}
+
+function closeImageViewer() {
+  els.imageViewer.hidden = true;
+  els.imageViewerImg.removeAttribute("src");
 }
 
 function isResponse(message) {
@@ -557,6 +587,7 @@ function renderAttachments() {
     card.className = "attachment-card";
     const icon = attachment.fileName.match(/\.mp3$/i) ? "[audio]" : attachment.fileName.match(/\.mp4$/i) ? "[video]" : attachment.fileName.match(/\.(jpg|png|svg)$/i) ? "[image]" : "[text]";
     const label = document.createElement("div");
+    label.className = "attachment-info";
     label.textContent = `${icon}\n${attachment.fileName}\n${kb(attachment.sizeBytes)}\nrequest: ${attachment.messageId || "-"}`;
     card.append(label);
     const url = `/api/attachments/${encodeURIComponent(attachment.id)}`;
@@ -571,12 +602,17 @@ function renderAttachments() {
       video.src = url;
       video.width = 240;
       card.append(video);
-    } else if (attachment.fileName.match(/\.(jpg|png)$/i)) {
+    } else if (attachment.fileName.match(/\.(jpg|png|svg)$/i)) {
+      const thumbButton = document.createElement("button");
+      thumbButton.type = "button";
+      thumbButton.className = "attachment-thumb-button";
       const image = document.createElement("img");
+      image.className = "attachment-thumb";
       image.src = url;
       image.alt = attachment.fileName;
-      image.width = 180;
-      card.append(image);
+      thumbButton.append(image);
+      thumbButton.addEventListener("click", () => openImageViewer(url, attachment.fileName));
+      card.append(thumbButton);
     } else {
       const link = document.createElement("a");
       link.href = url;
@@ -720,7 +756,7 @@ function selectedExpression() {
 async function sendCurrentRequest() {
   if (!state.currentConversationId) return;
   const text = els.prompt.value.trim();
-  const files = Array.from(els.fileInput.files || []);
+  const files = selectedFiles();
   if (!text && !files.length) return;
   let attachmentUploadIds = [];
   try {
@@ -740,11 +776,13 @@ async function sendCurrentRequest() {
   els.promptEditorText.value = "";
   els.promptEditor.hidden = true;
   els.fileInput.value = "";
+  state.pendingFiles = [];
+  els.uploadInspector.hidden = true;
   updateSelectedFileNotice();
 }
 
 async function uploadSelectedFiles() {
-  const files = Array.from(els.fileInput.files || []);
+  const files = selectedFiles();
   if (!files.length) return [];
   const form = new FormData();
   for (const file of files) form.append("files", file);
@@ -758,19 +796,19 @@ async function uploadSelectedFiles() {
 }
 
 function selectedFiles() {
-  return Array.from(els.fileInput.files || []);
+  return state.pendingFiles;
 }
 
 function setSelectedFiles(files) {
-  const transfer = new DataTransfer();
-  for (const file of files) transfer.items.add(file);
-  els.fileInput.files = transfer.files;
+  state.pendingFiles = files;
+  els.fileInput.value = "";
   updateSelectedFileNotice();
   renderUploadInspector();
 }
 
 function clearSelectedFiles() {
   els.fileInput.value = "";
+  state.pendingFiles = [];
   updateSelectedFileNotice();
   renderUploadInspector();
   els.uploadInspector.hidden = true;
@@ -840,6 +878,13 @@ els.closeUploadInspectorBtn.addEventListener("click", () => {
   els.uploadInspector.hidden = true;
 });
 els.clearUploadsBtn.addEventListener("click", clearSelectedFiles);
+els.closeImageViewerBtn.addEventListener("click", closeImageViewer);
+els.imageViewerBody.addEventListener("wheel", (event) => {
+  if (els.imageViewer.hidden) return;
+  event.preventDefault();
+  const delta = event.deltaY < 0 ? 0.12 : -0.12;
+  setImageZoom(state.imageZoom + delta);
+});
 els.prompt.addEventListener("input", () => {
   syncEditorFromPrompt();
   maybeOpenPromptEditor();
@@ -853,10 +898,9 @@ els.promptEditorText.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closePromptEditor();
 });
 els.fileInput.addEventListener("change", async () => {
-  const files = selectedFiles();
-  updateSelectedFileNotice();
-  if (!files.length) return;
-  for (const file of files) {
+  const incomingFiles = Array.from(els.fileInput.files || []);
+  if (!incomingFiles.length) return;
+  for (const file of incomingFiles) {
     if (!/\.(txt|md|mp3|mp4|jpg|png|svg)$/i.test(file.name)) {
       els.fileNotice.textContent = "Supported: .txt, .md, .mp3, .mp4, .jpg, .png, .svg";
       els.fileNotice.classList.remove("has-files");
@@ -872,14 +916,8 @@ els.fileInput.addEventListener("change", async () => {
       return;
     }
   }
-  updateSelectedFileNotice();
+  setSelectedFiles([...selectedFiles(), ...incomingFiles]);
   renderUploadInspector();
-  const firstText = files.find((file) => /\.(txt|md)$/i.test(file.name));
-  if (firstText) {
-    els.prompt.value = await firstText.text();
-    syncEditorFromPrompt();
-    maybeOpenPromptEditor();
-  }
 });
 els.applySelectedBtn.addEventListener("click", () => {
   if (state.currentConversationId && state.currentDraft?.jobId) {
@@ -897,7 +935,9 @@ els.showUnclarifiedBtn.addEventListener("click", () => {
 });
 
 setConnected(false);
-wirePromptEditorDrag();
+wireDraggableWindow(els.promptEditor, els.promptEditorHeader, els.closeEditorBtn);
+wireDraggableWindow(els.uploadInspector, els.uploadInspectorHeader, els.closeUploadInspectorBtn);
+wireDraggableWindow(els.imageViewer, els.imageViewerHeader, els.closeImageViewerBtn);
 authEls.toggleAuthMode.addEventListener("click", () => {
   const register = authEls.registerForm.hidden;
   authEls.registerForm.hidden = !register;
