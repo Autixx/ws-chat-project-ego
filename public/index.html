@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ProjectEGO Request/Response Workbench</title>
+    <title>ProjectEGO Dashboard</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="theme-dark">
@@ -30,29 +30,36 @@
     <main id="workbench" class="workbench" hidden>
       <header class="topbar">
         <div class="title-block">
-          <h1 id="conversationTitle">PROJECTEGO / CHAT TITLE</h1>
+          <h1 id="conversationTitle">PROJECTEGO DASHBOARD</h1>
           <div class="status-line"><span id="wsSquare" class="sq red"></span><span>STATUS WS</span><span id="wsText">disconnected</span></div>
           <div class="status-line user-status"><span id="userLine">USER</span> <button id="logoutBtn" type="button">Logout</button></div>
         </div>
         <div class="toolbar">
-          <button id="showArchivedBtn" class="toggle-button" type="button">Show archived</button>
-          <button id="newConversationBtn" type="button">New</button>
-          <select id="conversationSelect" aria-label="Workbenches"></select>
-          <button id="renameConversationBtn" type="button">Rename</button>
-          <button id="unarchiveConversationBtn" type="button">Unarchive</button>
-          <button id="archiveConversationBtn" type="button">Archive</button>
-          <button id="deleteConversationBtn" class="danger-button" type="button">Delete</button>
-        </div>
-        <div class="status-block">
           <div class="theme-picker" aria-label="Theme">
             <span>Theme</span>
-            <button class="theme-swatch light" type="button" data-theme="theme-light" aria-label="Light theme"></button>
+            <button class="theme-swatch custom" type="button" data-theme="theme-custom" aria-label="Custom theme"></button>
             <button class="theme-swatch dark active" type="button" data-theme="theme-dark" aria-label="Dark theme"></button>
             <button class="theme-swatch contrast" type="button" data-theme="theme-contrast" aria-label="Black contrast theme"></button>
+            <label>BG<input id="customBgColor" type="color" value="#050808" /></label>
+            <label>Fields<input id="customFieldColor" type="color" value="#020606" /></label>
+            <label>Text<input id="customTextColor" type="color" value="#f2fbf8" /></label>
+            <label>Lines<input id="customLineColor" type="color" value="#29413f" /></label>
           </div>
-          <div><span id="planeSquare" class="sq gray"></span>STATUS PLANE <span id="planeText">unknown</span></div>
-          <div><span id="n8nSquare" class="sq gray"></span>STATUS n8n <span id="n8nText">unknown</span></div>
-          <div><span id="dbSquare" class="sq gray"></span>STATUS DB <span id="dbText">unknown</span></div>
+          <div class="workbench-controls">
+            <button id="showArchivedBtn" class="toggle-button" type="button">Show archived</button>
+            <button id="newConversationBtn" type="button">New</button>
+            <select id="conversationSelect" aria-label="Workbenches"></select>
+            <button id="renameConversationBtn" type="button">Rename</button>
+            <button id="unarchiveConversationBtn" type="button">Unarchive</button>
+            <button id="archiveConversationBtn" type="button">Archive</button>
+            <button id="deleteConversationBtn" class="danger-button" type="button">Delete</button>
+          </div>
+        </div>
+        <div class="status-block">
+          <div><span id="dbSquare" class="sq gray"></span>DB: <span id="dbText">unknown</span></div>
+          <div><span id="llmSquare" class="sq gray"></span>LLM-agent: <span id="llmText">unknown</span></div>
+          <div><span id="n8nSquare" class="sq gray"></span>n8n: <span id="n8nText">unknown</span></div>
+          <div><span id="planeSquare" class="sq gray"></span>Plane: <span id="planeText">unknown</span></div>
         </div>
       </header>
 

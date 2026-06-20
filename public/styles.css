@@ -14,16 +14,6 @@
   font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
 }
 
-body.theme-light {
-  --bg: #e8eceb;
-  --panel: #f7f9f8;
-  --panel-2: #eef3f2;
-  --line: #879895;
-  --field: #dde4e2;
-  --text: #06100e;
-  --muted: #2f4540;
-}
-
 body.theme-contrast {
   --bg: #000;
   --panel: #000;
@@ -32,6 +22,16 @@ body.theme-contrast {
   --field: #000;
   --text: #fff;
   --muted: #e0e0e0;
+}
+
+body.theme-custom {
+  --bg: var(--custom-bg, #050808);
+  --panel: var(--custom-panel, #0a1111);
+  --panel-2: var(--custom-field, #020606);
+  --line: var(--custom-line, #29413f);
+  --field: var(--custom-field, #020606);
+  --text: var(--custom-text, #f2fbf8);
+  --muted: var(--custom-muted, #b7c8c4);
 }
 
 * { box-sizing: border-box; }
@@ -153,12 +153,31 @@ h2 {
 }
 
 .toolbar {
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
 }
 
 .theme-picker {
   color: var(--muted);
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.theme-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.theme-picker input[type="color"] {
+  width: 28px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--field);
 }
 
 .theme-swatch {
@@ -170,7 +189,7 @@ h2 {
   cursor: pointer;
 }
 
-.theme-swatch.light { background: #fff; }
+.theme-swatch.custom { background: linear-gradient(135deg, var(--field) 0 48%, var(--text) 48% 52%, var(--line) 52% 100%); }
 .theme-swatch.dark { background: #737b7a; }
 .theme-swatch.contrast { background: #000; }
 
@@ -217,6 +236,14 @@ h2 {
 #conversationSelect {
   width: min(340px, 28vw);
   min-width: 240px;
+}
+
+.workbench-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 * {

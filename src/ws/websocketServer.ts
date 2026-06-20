@@ -9,17 +9,15 @@ import { ConversationStore } from "../conversations/conversationStore.js";
 import { MessageStore } from "../conversations/messageStore.js";
 import { generateConversationTitle } from "../conversations/titleGenerator.js";
 import { openDatabase } from "../db/database.js";
-import { checkDatabaseHealth } from "../db/health.js";
 import { parseApplyExpression } from "../drafts/applyParser.js";
 import { DraftStore } from "../drafts/draftStore.js";
 import { UnclarifiedStore } from "../drafts/unclarifiedStore.js";
-import { N8nClient } from "../integrations/n8nClient.js";
-import { PlaneClient } from "../integrations/planeClient.js";
 import { JobStore, type Job, type JobEvent } from "../jobs/jobStore.js";
 import { updateResponseDecision } from "../jobs/responseDecision.js";
 import { CodexProvider } from "../llm/codexProvider.js";
 import { MockProvider } from "../llm/mockProvider.js";
 import type { LlmProvider, LlmTaskMode } from "../llm/provider.js";
+import { ComponentStatusMonitor } from "../status/componentStatus.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import { openReferencedDraft } from "./draftOpen.js";
 import { parseClientMessage } from "./protocol.js";
@@ -40,7 +38,12 @@ function taskModeFromUiMode(mode: "digest" | "tasks" | "abstract_idea"): LlmTask
   return "structured_breakdown";
 }
 
-export function attachWebSocketServer(server: Server, config: AppConfig, database = openDatabase(config)): { notifyJobUpdated: (job: Job, event?: JobEvent) => Promise<void> } {
+export function attachWebSocketServer(
+  server: Server,
+  config: AppConfig,
+  database = openDatabase(config),
+  componentStatus = new ComponentStatusMonitor(config)
+): { notifyJobUpdated: (job: Job, event?: JobEvent) => Promise<void> } {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 });
   const clients = new Set<{ ws: WebSocket; user: AuthenticatedUser }>();
   const conversations = new ConversationStore(database);
@@ -48,9 +51,9 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
   const jobs = new JobStore(database);
   const drafts = new DraftStore(config.dataDir);
   const unclarified = new UnclarifiedStore(config.dataDir);
-  const plane = new PlaneClient(config);
-  const n8n = new N8nClient(config);
   const provider = providerFromConfig(config);
+
+  componentStatus.start(() => broadcastAppStatus());
 
   server.on("upgrade", async (req, socket, head) => {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
@@ -81,13 +84,7 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
       }
     });
     send(ws, { type: "connected", user: { username: user.username, email: user.email } });
-    send(ws, {
-      type: "app_status",
-      db: checkDatabaseHealth(database),
-      plane: planeStatus(),
-      n8n: { status: n8n.isConfigured() ? "configured" : "unconfigured" },
-      jobs: { callbackConfigured: Boolean(config.jobCallbackToken) }
-    });
+    send(ws, { type: "app_status", ...componentStatus.snapshot(database).components });
 
     ws.on("message", async (data, isBinary) => {
       if (isBinary) {
@@ -106,11 +103,6 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
         });
       }
     });
-  }
-
-  function planeStatus(): { status: "configured" | "unconfigured" | "error"; message?: string } {
-    if (plane.isConfigured()) return { status: "configured" };
-    return { status: "unconfigured" };
   }
 
   async function emitMessage(ws: WebSocket, message: Awaited<ReturnType<MessageStore["appendToolMessage"]>>): Promise<void> {
@@ -233,9 +225,8 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
       const selection = parseApplyExpression(message.expression, draft.result.items.length);
       const applyItems = drafts.selectItems(draft, selection.apply);
       const keepItems = drafts.selectItems(draft, selection.keep);
-      const planeResult = await plane.createWorkItems(applyItems);
       await unclarified.storeUnclarifiedItems(keepItems, user);
-      const content = `Apply result for ${draft.jobId}: applied=${planeResult.createdCount}, kept=${keepItems.length}, dropped=${selection.drop.length}. ${planeResult.message}`;
+      const content = `Apply result for ${draft.jobId}: queued=${applyItems.length}, kept=${keepItems.length}, dropped=${selection.drop.length}. Dashboard does not write Plane directly; n8n workflow execution is tracked separately.`;
       const toolMessage = await messages.appendToolMessage(message.conversationId, user, content, {
         kind: "apply_result",
         jobId: draft.jobId,
@@ -249,10 +240,10 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
         type: "apply_result",
         conversationId: message.conversationId,
         jobId: draft.jobId,
-        appliedCount: planeResult.createdCount,
+        appliedCount: 0,
         keptCount: keepItems.length,
         droppedCount: selection.drop.length,
-        message: planeResult.message
+        message: "Dashboard does not create Plane work-items directly. n8n is the workflow executor."
       });
       return;
     }
@@ -319,6 +310,11 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
         }
       })
     );
+  }
+
+  function broadcastAppStatus(): void {
+    const status = componentStatus.snapshot(database).components;
+    for (const client of clients) send(client.ws, { type: "app_status", ...status });
   }
 
   async function handleConversationMessage(

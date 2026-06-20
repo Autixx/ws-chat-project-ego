@@ -9,11 +9,9 @@ import { requireUserMiddleware } from "./auth/requireUser.js";
 import { config } from "./config.js";
 import { ConversationStore } from "./conversations/conversationStore.js";
 import { openDatabase } from "./db/database.js";
-import { checkDatabaseHealth } from "./db/health.js";
-import { N8nClient } from "./integrations/n8nClient.js";
-import { PlaneClient } from "./integrations/planeClient.js";
 import { handleJobCallback } from "./jobs/jobCallback.js";
 import { JobStore } from "./jobs/jobStore.js";
+import { ComponentStatusMonitor } from "./status/componentStatus.js";
 import { attachWebSocketServer } from "./ws/websocketServer.js";
 
 const app = express();
@@ -24,8 +22,7 @@ const publicDir = path.resolve(__dirname, "..", "public");
 const database = openDatabase(config);
 const conversations = new ConversationStore(database);
 const jobs = new JobStore(database);
-const plane = new PlaneClient(config);
-const n8n = new N8nClient(config);
+const componentStatus = new ComponentStatusMonitor(config);
 const uploadTempDir = path.join(config.dataDir, "attachments", "tmp");
 await fs.mkdir(uploadTempDir, { recursive: true });
 const upload = multer({
@@ -50,18 +47,7 @@ app.use(express.json({ limit: "64kb" }));
 app.use(createAuthRouter(config, database));
 
 app.get("/health", (_req, res) => {
-  const db = checkDatabaseHealth(database);
-  const planeStatus = plane.isConfigured() ? { status: "configured" } : { status: "unconfigured" };
-  const body = {
-    status: db.status === "ok" ? "ok" : "error",
-    service: "projectego-ws-chat",
-    components: {
-      db,
-      plane: planeStatus,
-      n8n: { status: n8n.isConfigured() ? "configured" : "unconfigured" },
-      jobs: { callbackConfigured: Boolean(config.jobCallbackToken) }
-    }
-  };
+  const body = componentStatus.snapshot(database);
   res.status(body.status === "ok" ? 200 : 503).json(body);
 });
 
@@ -130,7 +116,7 @@ app.get(["/login", "/register"], (_req, res) => {
 app.use(express.static(publicDir, { extensions: ["html"] }));
 
 const server = app.listen(config.port, config.host, () => {
-  console.log(`ProjectEGO WebSocket Chat listening on http://${config.host}:${config.port}`);
+  console.log(`ProjectEGO Dashboard listening on http://${config.host}:${config.port}`);
 });
 
-webSocketRuntime = attachWebSocketServer(server, config, database);
+webSocketRuntime = attachWebSocketServer(server, config, database, componentStatus);

@@ -1,7 +1,7 @@
 {
   "name": "projectego-ws-chat",
-  "version": "0.1.16",
-  "description": "ProjectEGO WebSocket Chat Gateway MVP",
+  "version": "0.1.17",
+  "description": "ProjectEGO Dashboard",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",

@@ -33,6 +33,8 @@ const els = {
   planeText: document.getElementById("planeText"),
   n8nSquare: document.getElementById("n8nSquare"),
   n8nText: document.getElementById("n8nText"),
+  llmSquare: document.getElementById("llmSquare"),
+  llmText: document.getElementById("llmText"),
   dbSquare: document.getElementById("dbSquare"),
   dbText: document.getElementById("dbText"),
   userLine: document.getElementById("userLine"),
@@ -45,6 +47,10 @@ const els = {
   unarchiveConversationBtn: document.getElementById("unarchiveConversationBtn"),
   deleteConversationBtn: document.getElementById("deleteConversationBtn"),
   themeButtons: Array.from(document.querySelectorAll("[data-theme]")),
+  customBgColor: document.getElementById("customBgColor"),
+  customFieldColor: document.getElementById("customFieldColor"),
+  customTextColor: document.getElementById("customTextColor"),
+  customLineColor: document.getElementById("customLineColor"),
   displayButtons: Array.from(document.querySelectorAll("[data-display]")),
   requestSearch: document.getElementById("requestSearch"),
   responseSearch: document.getElementById("responseSearch"),
@@ -208,9 +214,10 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "app_status") {
-    setStatusIndicator(els.dbSquare, els.dbText, message.db.status, message.db.path || message.db.message || message.db.status);
-    setStatusIndicator(els.planeSquare, els.planeText, message.plane.status === "configured" ? "ok" : message.plane.status === "error" ? "error" : "unknown", message.plane.message || message.plane.status);
-    setStatusIndicator(els.n8nSquare, els.n8nText, message.n8n.status === "configured" ? "ok" : "error", message.n8n.status);
+    setStatusIndicator(els.dbSquare, els.dbText, message.db.status, statusLabel(message.db.status, message.db.path || message.db.message));
+    setStatusIndicator(els.llmSquare, els.llmText, componentTone(message.llmAgent?.status), statusLabel(message.llmAgent?.status, message.llmAgent?.message || message.llmAgent?.lastError));
+    setStatusIndicator(els.n8nSquare, els.n8nText, componentTone(message.n8n?.status), statusLabel(message.n8n?.status, message.n8n?.message || message.n8n?.lastError));
+    setStatusIndicator(els.planeSquare, els.planeText, componentTone(message.plane?.status, { informational: true }), statusLabel(message.plane?.status, message.plane?.message || message.plane?.lastError));
   }
 
   if (message.type === "conversation_list") {
@@ -369,13 +376,49 @@ function handleServerMessage(message) {
 }
 
 function setStatusIndicator(square, text, status, label) {
-  square.className = `sq ${status === "ok" ? "green" : status === "error" ? "red" : "gray"}`;
+  square.className = `sq ${status === "ok" ? "green" : status === "error" ? "red" : status === "warn" ? "yellow" : "gray"}`;
   text.textContent = label;
 }
 
+function componentTone(status, options = {}) {
+  if (status === "reachable" || status === "configured") return "ok";
+  if (options.informational && status === "unreachable") return "warn";
+  if (status === "mock") return "ok";
+  if (status === "unconfigured" || status === "misconfigured") return "warn";
+  return "error";
+}
+
+function statusLabel(status, detail = "") {
+  const label = formatStatus(status || "unknown");
+  return detail ? `${label} (${detail})` : label;
+}
+
 function setTheme(theme) {
-  document.body.className = theme;
+  document.body.classList.remove("theme-dark", "theme-contrast", "theme-custom");
+  document.body.classList.add(theme);
   for (const button of els.themeButtons) button.classList.toggle("active", button.dataset.theme === theme);
+  if (theme === "theme-custom") applyCustomTheme();
+}
+
+function applyCustomTheme() {
+  document.documentElement.style.setProperty("--custom-bg", els.customBgColor.value);
+  document.documentElement.style.setProperty("--custom-panel", mixColor(els.customBgColor.value, "#ffffff", 0.06));
+  document.documentElement.style.setProperty("--custom-field", els.customFieldColor.value);
+  document.documentElement.style.setProperty("--custom-text", els.customTextColor.value);
+  document.documentElement.style.setProperty("--custom-muted", mixColor(els.customTextColor.value, els.customBgColor.value, 0.35));
+  document.documentElement.style.setProperty("--custom-line", els.customLineColor.value);
+}
+
+function mixColor(first, second, secondRatio) {
+  const a = parseHex(first);
+  const b = parseHex(second);
+  const mixed = a.map((value, index) => Math.round(value * (1 - secondRatio) + b[index] * secondRatio));
+  return `#${mixed.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function parseHex(value) {
+  const normalized = value.replace("#", "");
+  return [0, 2, 4].map((start) => parseInt(normalized.slice(start, start + 2), 16));
 }
 
 function setRequestMode(mode) {
@@ -1218,6 +1261,12 @@ function openUploadInspector() {
 }
 
 for (const button of els.themeButtons) button.addEventListener("click", () => setTheme(button.dataset.theme));
+for (const input of [els.customBgColor, els.customFieldColor, els.customTextColor, els.customLineColor]) {
+  input.addEventListener("input", () => {
+    applyCustomTheme();
+    setTheme("theme-custom");
+  });
+}
 for (const button of els.modeButtons) button.addEventListener("click", () => setRequestMode(button.dataset.mode));
 for (const button of els.displayButtons) button.addEventListener("click", () => toggleDisplayMode(button.dataset.display));
 els.conversationSelect.addEventListener("change", () => openConversation(els.conversationSelect.value));

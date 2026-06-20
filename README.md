@@ -1,6 +1,6 @@
-# ProjectEGO Request/Response Chat Workbench
+# ProjectEGO Dashboard
 
-Browser request/response workbench for ProjectEGO planning automation. The UI separates user requests, agent/system responses, linked attachments, and draft decisions instead of rendering a single ChatGPT-like vertical timeline.
+Browser dashboard for ProjectEGO planning automation. The UI separates user requests, agent/system responses, linked attachments, draft decisions, execution jobs, and component reachability instead of rendering a single ChatGPT-like vertical timeline.
 
 ## Architecture
 
@@ -19,16 +19,17 @@ Browser request/response workbench for ProjectEGO planning automation. The UI se
   - per-item JSON
   - uploaded attachment files
 - LLM provider abstraction with `MockProvider` and `CodexProvider` placeholder.
-- Optional Plane and n8n integration stubs.
-- Strict component health checks for SQLite, Plane configuration, and n8n configuration.
+- Background component reachability polling for SQLite, LLM-agent/codex-agent, n8n, and Plane.
+- n8n is the controlled workflow executor and future writer to Plane.
+- Plane is informational reachability only from the Dashboard; Dashboard does not create Plane work-items directly.
 - Multipart upload API for `.txt`, `.md`, `.mp3`, `.mp4`, `.jpg`, `.png`, and `.svg` attachments.
 - Local SQLite-backed registration, login, logout, and persistent sessions.
 
 ## UI Layout
 
-The primary screen is a compact technical workbench:
+The primary screen is a compact technical dashboard:
 
-- top status bar with WS, Plane, n8n, DB and user indicators
+- top status bar with WS, DB, LLM-agent, n8n, Plane and user indicators
 - request search field
 - response search field
 - left request panel with answer status squares
@@ -51,7 +52,7 @@ Response decision status:
 
 Expanded pending responses expose response-level `Apply`, `Drop`, and `Keep` buttons. These persist decision status in SQLite metadata. Item-level draft Apply/Keep/Drop remains in the Draft Inspector.
 
-Execution status is tracked separately from decision status. Clicking response-level `Apply` records the user decision and creates a backend execution job, but the job remains `not_started` until a workflow callback updates it. A green decision square therefore means "user chose Apply", not "Plane/n8n work succeeded".
+Execution status is tracked separately from decision status. Clicking response-level `Apply` records the user decision and creates a backend execution job, but the job remains `not_started` until a workflow callback updates it. A green decision square therefore means "user chose Apply", not "n8n/Plane work succeeded".
 
 ## Storage
 
@@ -346,24 +347,32 @@ Expected response:
 ```json
 {
   "status": "ok",
-  "service": "projectego-ws-chat",
+  "service": "projectego-dashboard",
   "components": {
     "db": {
       "status": "ok",
       "quickCheck": "ok",
       "writable": true
     },
-    "plane": {
-      "status": "configured"
+    "llmAgent": {
+      "status": "reachable"
     },
     "n8n": {
-      "status": "unconfigured"
+      "status": "configured"
+    },
+    "plane": {
+      "status": "reachable"
+    },
+    "jobs": {
+      "callbackConfigured": true
     }
   }
 }
 ```
 
-The SQLite healthcheck verifies `SELECT 1`, `PRAGMA quick_check`, and write access to the database directory. Production responses avoid exposing full host paths.
+The SQLite healthcheck verifies `SELECT 1`, `PRAGMA quick_check`, and write access to the database directory. Production responses avoid exposing full host paths. Dashboard global health returns `error` only when DB health fails; LLM-agent, n8n, and Plane failures are exposed as component statuses.
+
+Component status polling runs in the background. `LLM_PROVIDER=codex` requires `CODEX_AGENT_URL` for generation; `CODEX_AGENT_HEALTH_URL` can override the probe URL. n8n must have `N8N_BASE_URL` and `N8N_WEBHOOK_TOKEN` to be considered configured. Plane reachability is informational only.
 
 ## Caddy + Authelia
 
@@ -426,7 +435,7 @@ POST /api/auth/logout
 GET  /api/auth/me
 ```
 
-Plane is no longer used for chat authentication or authorization. Plane variables remain only for future work-item integration.
+Plane is no longer used for chat authentication or authorization. Plane variables are used only for informational reachability from the Dashboard. n8n is the workflow executor and the intended writer to Plane.
 
 ## MockProvider Test
 
@@ -443,7 +452,7 @@ Plane is no longer used for chat authentication or authorization. Plane variable
 11. Click `Apply selected`.
 12. Change response-level Apply/Drop/Keep status and reload to verify persistence.
 
-If Plane is not configured, the app returns `Plane integration is not configured.` and stores kept items in unclarified storage.
+Dashboard does not create Plane work-items directly. Apply workflow execution is tracked as jobs and should be handled by n8n callbacks.
 
 ## Upload API
 
@@ -526,18 +535,23 @@ For Docker, back up the mounted `/app/data` volume.
 | `TRUST_AUTHELIA_HEADERS` | Legacy env retained but not used for local auth access control. |
 | `LLM_PROVIDER` | `mock` or `codex`. |
 | `CODEX_AGENT_URL` | Optional HTTP endpoint for Codex provider. |
+| `CODEX_AGENT_HEALTH_URL` | Optional health URL for LLM-agent reachability polling. |
 | `CODEX_AGENT_TOKEN` | Optional bearer token for Codex provider. |
 | `CODEX_FALLBACK_TO_MOCK` | Fall back to mock if Codex is not configured. |
-| `PLANE_BASE_URL` | Optional Plane API base URL. |
+| `PLANE_BASE_URL` | Optional Plane base URL for informational reachability. |
+| `PLANE_HEALTH_URL` | Optional Plane health URL for reachability polling. |
 | `PLANE_WORKSPACE` | Plane workspace slug. |
-| `PLANE_API_KEY` | Optional Plane API key. |
+| `PLANE_API_KEY` | Optional Plane API key retained for future integration; Dashboard is not a Plane writer. |
 | `N8N_BASE_URL` | Optional n8n base URL. |
+| `N8N_HEALTH_URL` | Optional n8n health URL for reachability polling. |
 | `N8N_WEBHOOK_TOKEN` | Optional n8n webhook token. |
 | `JOB_CALLBACK_TOKEN` | Optional bearer token for `POST /api/jobs/:jobId/events`. Required before workflow callbacks are accepted. |
+| `COMPONENT_STATUS_INTERVAL_MS` | Component reachability polling interval. Default `15000`. |
+| `COMPONENT_STATUS_TIMEOUT_MS` | Per-probe timeout. Default `2000`. |
 
 ## Current Limitations
 
-- Plane work-item creation is still guarded until project ID mapping is implemented.
+- Plane work-item creation is out of scope for Dashboard; route execution through n8n.
 - `CodexProvider` is non-streaming unless the configured backend streams or returns incremental events.
 - SQLite is intended for single-node deployment.
 - No database-backed full-text search yet.
