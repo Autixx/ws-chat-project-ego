@@ -18,7 +18,10 @@ const state = {
   pendingFiles: [],
   requestMode: "chat",
   displayMode: "text",
-  imageZoom: 1
+  imageZoom: 1,
+  imagePanX: 0,
+  imagePanY: 0,
+  imageDragging: null
 };
 
 const els = {
@@ -63,6 +66,11 @@ const els = {
   imageViewerBody: document.getElementById("imageViewerBody"),
   imageViewerImg: document.getElementById("imageViewerImg"),
   closeImageViewerBtn: document.getElementById("closeImageViewerBtn"),
+  textPreview: document.getElementById("textPreview"),
+  textPreviewHeader: document.getElementById("textPreviewHeader"),
+  textPreviewTitle: document.getElementById("textPreviewTitle"),
+  textPreviewText: document.getElementById("textPreviewText"),
+  closeTextPreviewBtn: document.getElementById("closeTextPreviewBtn"),
   draftJobId: document.getElementById("draftJobId"),
   draftPreview: document.getElementById("draftPreview"),
   itemsList: document.getElementById("itemsList"),
@@ -376,21 +384,47 @@ function wireDraggableWindow(panel, handle, ignoredButton) {
 
 function setImageZoom(zoom) {
   state.imageZoom = Math.max(0.2, Math.min(6, zoom));
-  els.imageViewerImg.style.transform = `scale(${state.imageZoom})`;
+  updateImageTransform();
+}
+
+function updateImageTransform() {
+  els.imageViewerImg.style.transform = `translate(${state.imagePanX}px, ${state.imagePanY}px) scale(${state.imageZoom})`;
 }
 
 function openImageViewer(url, fileName) {
   state.imageZoom = 1;
+  state.imagePanX = 0;
+  state.imagePanY = 0;
   els.imageViewerImg.src = url;
   els.imageViewerImg.alt = fileName;
   els.imageViewerTitle.textContent = fileName;
   els.imageViewer.hidden = false;
-  setImageZoom(1);
+  updateImageTransform();
 }
 
 function closeImageViewer() {
   els.imageViewer.hidden = true;
   els.imageViewerImg.removeAttribute("src");
+  els.imageViewerBody.classList.remove("dragging");
+  state.imageDragging = null;
+}
+
+async function openTextPreview(url, fileName) {
+  els.textPreviewTitle.textContent = fileName;
+  els.textPreviewText.value = "Loading...";
+  els.textPreview.hidden = false;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    els.textPreviewText.value = await response.text();
+  } catch (error) {
+    els.textPreviewText.value = `Failed to load text preview: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+function closeTextPreview() {
+  els.textPreview.hidden = true;
+  els.textPreviewText.value = "";
 }
 
 function isResponse(message) {
@@ -613,6 +647,12 @@ function renderAttachments() {
       thumbButton.append(image);
       thumbButton.addEventListener("click", () => openImageViewer(url, attachment.fileName));
       card.append(thumbButton);
+    } else if (attachment.fileName.match(/\.(txt|md)$/i)) {
+      const preview = document.createElement("button");
+      preview.type = "button";
+      preview.textContent = "Preview";
+      preview.addEventListener("click", () => openTextPreview(url, attachment.fileName));
+      card.append(preview);
     } else {
       const link = document.createElement("a");
       link.href = url;
@@ -885,6 +925,27 @@ els.imageViewerBody.addEventListener("wheel", (event) => {
   const delta = event.deltaY < 0 ? 0.12 : -0.12;
   setImageZoom(state.imageZoom + delta);
 });
+els.imageViewerBody.addEventListener("pointerdown", (event) => {
+  if (els.imageViewer.hidden || event.button !== 0) return;
+  state.imageDragging = { x: event.clientX, y: event.clientY, panX: state.imagePanX, panY: state.imagePanY };
+  els.imageViewerBody.classList.add("dragging");
+  els.imageViewerBody.setPointerCapture(event.pointerId);
+});
+els.imageViewerBody.addEventListener("pointermove", (event) => {
+  if (!state.imageDragging) return;
+  state.imagePanX = state.imageDragging.panX + event.clientX - state.imageDragging.x;
+  state.imagePanY = state.imageDragging.panY + event.clientY - state.imageDragging.y;
+  updateImageTransform();
+});
+els.imageViewerBody.addEventListener("pointerup", () => {
+  state.imageDragging = null;
+  els.imageViewerBody.classList.remove("dragging");
+});
+els.imageViewerBody.addEventListener("pointercancel", () => {
+  state.imageDragging = null;
+  els.imageViewerBody.classList.remove("dragging");
+});
+els.closeTextPreviewBtn.addEventListener("click", closeTextPreview);
 els.prompt.addEventListener("input", () => {
   syncEditorFromPrompt();
   maybeOpenPromptEditor();
@@ -938,6 +999,7 @@ setConnected(false);
 wireDraggableWindow(els.promptEditor, els.promptEditorHeader, els.closeEditorBtn);
 wireDraggableWindow(els.uploadInspector, els.uploadInspectorHeader, els.closeUploadInspectorBtn);
 wireDraggableWindow(els.imageViewer, els.imageViewerHeader, els.closeImageViewerBtn);
+wireDraggableWindow(els.textPreview, els.textPreviewHeader, els.closeTextPreviewBtn);
 authEls.toggleAuthMode.addEventListener("click", () => {
   const register = authEls.registerForm.hidden;
   authEls.registerForm.hidden = !register;

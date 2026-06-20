@@ -532,7 +532,7 @@ textarea {
   text-underline-offset: 3px;
 }
 
-.prompt-editor, .upload-inspector, .image-viewer {
+.prompt-editor, .upload-inspector, .image-viewer, .text-preview {
   position: fixed;
   z-index: 50;
   border: 1px solid var(--accent);
@@ -542,6 +542,18 @@ textarea {
 }
 
 .prompt-editor {
+  left: 18vw;
+  top: 16vh;
+  width: min(760px, 72vw);
+  height: min(540px, 70vh);
+  min-width: 360px;
+  min-height: 220px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  resize: both;
+}
+
+.text-preview {
   left: 18vw;
   top: 16vh;
   width: min(760px, 72vw);
@@ -571,7 +583,7 @@ textarea {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
-.prompt-editor-header, .upload-inspector-header, .image-viewer-header {
+.prompt-editor-header, .upload-inspector-header, .image-viewer-header, .text-preview-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -583,7 +595,7 @@ textarea {
   user-select: none;
 }
 
-.prompt-editor-header button, .upload-inspector-header button, .image-viewer-header button {
+.prompt-editor-header button, .upload-inspector-header button, .image-viewer-header button, .text-preview-header button {
   min-height: 24px;
   padding: 2px 8px;
 }
@@ -594,6 +606,15 @@ textarea {
   resize: none;
   padding: 10px;
   line-height: 1.4;
+}
+
+#textPreviewText {
+  border: 0;
+  min-height: 0;
+  resize: none;
+  padding: 10px;
+  line-height: 1.4;
+  color: var(--text);
 }
 
 .upload-inspector-list {
@@ -637,6 +658,11 @@ textarea {
   display: grid;
   place-items: center;
   background: var(--field);
+  cursor: grab;
+}
+
+.image-viewer-body.dragging {
+  cursor: grabbing;
 }
 
 #imageViewerImg {
@@ -646,6 +672,7 @@ textarea {
   height: auto;
   transform-origin: center center;
   user-select: none;
+  pointer-events: none;
 }
 
 .debug {
