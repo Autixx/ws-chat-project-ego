@@ -59,12 +59,13 @@ export class ConversationStore {
     return Promise.resolve(conversation);
   }
 
-  listConversations(user: AuthenticatedUser): Promise<Conversation[]> {
+  listConversations(user: AuthenticatedUser, includeArchived = false): Promise<Conversation[]> {
+    const archivedClause = includeArchived ? "" : "AND archived = 0";
     const rows = this.database.db
       .prepare(
         `SELECT id, title, created_at, updated_at, username, user_email, user_name, archived
          FROM conversations
-         WHERE user_id = ? AND archived = 0
+         WHERE user_id = ? ${archivedClause}
          ORDER BY updated_at DESC`
       )
       .all(safeUserId(user.username)) as ConversationRow[];
@@ -85,9 +86,10 @@ export class ConversationStore {
 
   async renameConversation(user: AuthenticatedUser, conversationId: string, title: string): Promise<Conversation> {
     await this.loadConversation(user, conversationId);
+    const normalizedTitle = title.trim().slice(0, 64) || "New conversation";
     this.database.db
       .prepare("UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?")
-      .run(title.trim() || "New conversation", new Date().toISOString(), conversationId, safeUserId(user.username));
+      .run(normalizedTitle, new Date().toISOString(), conversationId, safeUserId(user.username));
     return this.loadConversation(user, conversationId);
   }
 
@@ -96,6 +98,14 @@ export class ConversationStore {
     this.database.db
       .prepare("UPDATE conversations SET archived = 1, updated_at = ? WHERE id = ? AND user_id = ?")
       .run(new Date().toISOString(), conversationId, safeUserId(user.username));
+  }
+
+  async unarchiveConversation(user: AuthenticatedUser, conversationId: string): Promise<Conversation> {
+    await this.loadConversation(user, conversationId);
+    this.database.db
+      .prepare("UPDATE conversations SET archived = 0, updated_at = ? WHERE id = ? AND user_id = ?")
+      .run(new Date().toISOString(), conversationId, safeUserId(user.username));
+    return this.loadConversation(user, conversationId);
   }
 
   async touchConversation(user: AuthenticatedUser, conversationId: string): Promise<void> {

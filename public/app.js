@@ -5,6 +5,7 @@ const state = {
   shouldReconnect: true,
   connected: false,
   conversations: [],
+  showArchived: false,
   currentConversationId: null,
   messages: [],
   selectedRequestId: null,
@@ -38,7 +39,10 @@ const els = {
   conversationTitle: document.getElementById("conversationTitle"),
   conversationSelect: document.getElementById("conversationSelect"),
   newConversationBtn: document.getElementById("newConversationBtn"),
+  showArchivedBtn: document.getElementById("showArchivedBtn"),
+  renameConversationBtn: document.getElementById("renameConversationBtn"),
   archiveConversationBtn: document.getElementById("archiveConversationBtn"),
+  unarchiveConversationBtn: document.getElementById("unarchiveConversationBtn"),
   themeButtons: Array.from(document.querySelectorAll("[data-theme]")),
   displayButtons: Array.from(document.querySelectorAll("[data-display]")),
   requestSearch: document.getElementById("requestSearch"),
@@ -77,6 +81,11 @@ const els = {
   textPreviewTitle: document.getElementById("textPreviewTitle"),
   textPreviewText: document.getElementById("textPreviewText"),
   closeTextPreviewBtn: document.getElementById("closeTextPreviewBtn"),
+  renameOverlay: document.getElementById("renameOverlay"),
+  renameDialog: document.getElementById("renameDialog"),
+  renameInput: document.getElementById("renameInput"),
+  cancelRenameBtn: document.getElementById("cancelRenameBtn"),
+  applyRenameBtn: document.getElementById("applyRenameBtn"),
   draftJobId: document.getElementById("draftJobId"),
   draftPreview: document.getElementById("draftPreview"),
   itemsList: document.getElementById("itemsList"),
@@ -117,9 +126,21 @@ function setConnected(value) {
   state.connected = value;
   els.wsSquare.className = `sq ${value ? "green" : "red"}`;
   els.wsText.textContent = value ? "connected" : "disconnected";
-  for (const button of [els.newConversationBtn, els.archiveConversationBtn, els.sendBtn, els.applySelectedBtn, els.applyAllBtn, els.keepAllBtn, els.showUnclarifiedBtn]) {
+  for (const button of [
+    els.newConversationBtn,
+    els.showArchivedBtn,
+    els.renameConversationBtn,
+    els.archiveConversationBtn,
+    els.unarchiveConversationBtn,
+    els.sendBtn,
+    els.applySelectedBtn,
+    els.applyAllBtn,
+    els.keepAllBtn,
+    els.showUnclarifiedBtn
+  ]) {
     button.disabled = !value;
   }
+  if (value) renderHeader();
 }
 
 function connect() {
@@ -130,7 +151,7 @@ function connect() {
   state.ws = ws;
   ws.addEventListener("open", () => {
     setConnected(true);
-    send({ type: "conversation_list" });
+    requestConversationList();
   });
   ws.addEventListener("close", () => {
     setConnected(false);
@@ -183,7 +204,14 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "conversation_list") {
-    state.conversations = message.conversations;
+    state.conversations = state.showArchived ? message.conversations : message.conversations.filter((conversation) => !conversation.archived);
+    if (state.currentConversationId && !state.conversations.some((conversation) => conversation.id === state.currentConversationId)) {
+      state.currentConversationId = null;
+      state.messages = [];
+      state.attachments = [];
+      state.attachmentsByRequest = {};
+      state.jobs = [];
+    }
     renderConversationSelect();
     if (!state.currentConversationId) {
       if (state.conversations.length) openConversation(state.conversations[0].id);
@@ -217,11 +245,20 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "conversation_archived") {
-    state.conversations = state.conversations.filter((item) => item.id !== message.conversationId);
-    state.currentConversationId = null;
-    state.messages = [];
+    const conversation = state.conversations.find((item) => item.id === message.conversationId);
+    if (conversation) conversation.archived = true;
+    if (!state.showArchived && state.currentConversationId === message.conversationId) {
+      state.currentConversationId = null;
+      state.messages = [];
+    }
     renderAll();
-    send({ type: "conversation_list" });
+    requestConversationList();
+  }
+
+  if (message.type === "conversation_unarchived") {
+    upsertConversation(message.conversation);
+    renderAll();
+    requestConversationList();
   }
 
   if (message.type === "message_created") {
@@ -366,7 +403,7 @@ function closePromptEditor() {
 
 function shouldAutoOpenEditor() {
   if (!els.prompt.value.trim()) return false;
-  return els.prompt.value.length > 700 || els.prompt.scrollHeight > els.prompt.clientHeight + 4;
+  return els.prompt.value.split(/\r?\n/).some((line) => line.length > 100);
 }
 
 function maybeOpenPromptEditor() {
@@ -409,14 +446,53 @@ function updateImageTransform() {
 }
 
 function openImageViewer(url, fileName) {
-  state.imageZoom = 1;
-  state.imagePanX = 0;
-  state.imagePanY = 0;
-  els.imageViewerImg.src = url;
-  els.imageViewerImg.alt = fileName;
-  els.imageViewerTitle.textContent = fileName;
-  els.imageViewer.hidden = false;
-  updateImageTransform();
+  const viewer = createFloatingWindow("image-viewer", fileName);
+  const body = document.createElement("div");
+  body.className = "image-viewer-body";
+  const image = document.createElement("img");
+  image.className = "image-viewer-img";
+  image.src = url;
+  image.alt = fileName;
+  image.draggable = false;
+  body.append(image);
+  viewer.panel.append(body);
+  let zoom = 1;
+  let panX = 0;
+  let panY = 0;
+  let drag = null;
+  const update = () => {
+    image.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  };
+  image.addEventListener("dragstart", (event) => event.preventDefault());
+  body.addEventListener("dragstart", (event) => event.preventDefault());
+  body.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    zoom = Math.max(0.2, Math.min(6, zoom + (event.deltaY < 0 ? 0.12 : -0.12)));
+    update();
+  });
+  body.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    drag = { x: event.clientX, y: event.clientY, panX, panY };
+    document.body.classList.add("no-text-select");
+    body.classList.add("dragging");
+    body.setPointerCapture(event.pointerId);
+  });
+  body.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    panX = drag.panX + event.clientX - drag.x;
+    panY = drag.panY + event.clientY - drag.y;
+    update();
+  });
+  const stopDrag = () => {
+    drag = null;
+    document.body.classList.remove("no-text-select");
+    body.classList.remove("dragging");
+  };
+  body.addEventListener("pointerup", stopDrag);
+  body.addEventListener("pointercancel", stopDrag);
+  viewer.onClose = () => document.body.classList.remove("no-text-select");
+  update();
 }
 
 function closeImageViewer() {
@@ -428,9 +504,20 @@ function closeImageViewer() {
 }
 
 function openMediaViewer(url, fileName) {
-  els.mediaViewerVideo.src = url;
-  els.mediaViewerTitle.textContent = fileName;
-  els.mediaViewer.hidden = false;
+  const viewer = createFloatingWindow("media-viewer", fileName);
+  const body = document.createElement("div");
+  body.className = "media-viewer-body";
+  const video = document.createElement("video");
+  video.controls = true;
+  video.playsInline = true;
+  video.src = url;
+  body.append(video);
+  viewer.panel.append(body);
+  viewer.onClose = () => {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  };
 }
 
 function closeMediaViewer() {
@@ -438,6 +525,33 @@ function closeMediaViewer() {
   els.mediaViewerVideo.pause();
   els.mediaViewerVideo.removeAttribute("src");
   els.mediaViewerVideo.load();
+}
+
+function createFloatingWindow(className, title) {
+  const panel = document.createElement("section");
+  panel.className = `${className} floating-window`;
+  const offset = document.querySelectorAll(".floating-window").length * 18;
+  panel.style.left = `calc(12.5vw + ${offset}px)`;
+  panel.style.top = `calc(12.5vh + ${offset}px)`;
+  const header = document.createElement("header");
+  header.className = `${className}-header`;
+  const label = document.createElement("span");
+  label.textContent = title;
+  const close = document.createElement("button");
+  close.className = "window-close";
+  close.type = "button";
+  close.setAttribute("aria-label", "Close");
+  close.textContent = "×";
+  header.append(label, close);
+  panel.append(header);
+  document.body.append(panel);
+  const floating = { panel, onClose: null };
+  close.addEventListener("click", () => {
+    if (floating.onClose) floating.onClose();
+    panel.remove();
+  });
+  wireDraggableWindow(panel, header, close);
+  return floating;
 }
 
 async function openTextPreview(url, fileName) {
@@ -495,6 +609,10 @@ function upsertJob(job) {
   state.jobs.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 
+function requestConversationList() {
+  send({ type: "conversation_list", includeArchived: state.showArchived });
+}
+
 function openConversation(conversationId) {
   send({ type: "conversation_open", conversationId });
 }
@@ -510,7 +628,11 @@ function renderAll() {
 
 function renderHeader() {
   const conversation = state.conversations.find((item) => item.id === state.currentConversationId);
-  els.conversationTitle.textContent = conversation?.title || "PROJECTEGO / CHAT TITLE";
+  els.conversationTitle.textContent = conversation ? displayConversationTitle(conversation) : "PROJECTEGO / CHAT TITLE";
+  els.archiveConversationBtn.disabled = !conversation || conversation.archived;
+  els.unarchiveConversationBtn.disabled = !conversation || !conversation.archived;
+  els.renameConversationBtn.disabled = !conversation;
+  els.showArchivedBtn.classList.toggle("active", state.showArchived);
 }
 
 function renderConversationSelect() {
@@ -518,10 +640,36 @@ function renderConversationSelect() {
   for (const conversation of state.conversations) {
     const option = document.createElement("option");
     option.value = conversation.id;
-    option.textContent = conversation.title;
+    option.textContent = displayConversationTitle(conversation);
     option.selected = conversation.id === state.currentConversationId;
     els.conversationSelect.append(option);
   }
+}
+
+function displayConversationTitle(conversation) {
+  return `${conversation.title}${conversation.archived ? " Archived" : ""}`;
+}
+
+function openRenameDialog() {
+  const conversation = state.conversations.find((item) => item.id === state.currentConversationId);
+  if (!conversation) return;
+  els.renameInput.value = conversation.title.slice(0, 64);
+  els.renameOverlay.hidden = false;
+  requestAnimationFrame(() => {
+    els.renameInput.focus();
+    els.renameInput.select();
+  });
+}
+
+function closeRenameDialog() {
+  els.renameOverlay.hidden = true;
+}
+
+function applyRename() {
+  const title = els.renameInput.value.trim().slice(0, 64);
+  if (!state.currentConversationId || !title) return;
+  send({ type: "conversation_rename", conversationId: state.currentConversationId, title });
+  closeRenameDialog();
 }
 
 function requestHasResponse(requestId) {
@@ -599,7 +747,14 @@ function renderResponses() {
     row.className = `rr-row ${expanded ? "expanded" : ""} ${linked ? "linked" : ""}`;
     row.addEventListener("click", () => selectResponse(response.id));
     const status = document.createElement("span");
-    status.className = `sq ${decisionClass(response)}`;
+    status.className = "status-stack";
+    const decision = document.createElement("span");
+    decision.className = `sq ${decisionClass(response)}`;
+    decision.title = `Decision: ${formatStatus(decisionStatus(response))}`;
+    const execution = document.createElement("span");
+    execution.className = `sq ${executionClass(response)}`;
+    execution.title = `Execution: ${formatStatus(executionStatus(response))}`;
+    status.append(decision, execution);
     row.append(status);
 
     if (expanded) {
@@ -974,8 +1129,25 @@ for (const button of els.modeButtons) button.addEventListener("click", () => set
 for (const button of els.displayButtons) button.addEventListener("click", () => toggleDisplayMode(button.dataset.display));
 els.conversationSelect.addEventListener("change", () => openConversation(els.conversationSelect.value));
 els.newConversationBtn.addEventListener("click", () => send({ type: "conversation_create", title: "ProjectEGO Workbench" }));
+els.showArchivedBtn.addEventListener("click", () => {
+  state.showArchived = !state.showArchived;
+  renderHeader();
+  requestConversationList();
+});
+els.renameConversationBtn.addEventListener("click", openRenameDialog);
 els.archiveConversationBtn.addEventListener("click", () => {
   if (state.currentConversationId) send({ type: "conversation_archive", conversationId: state.currentConversationId });
+});
+els.unarchiveConversationBtn.addEventListener("click", () => {
+  if (state.currentConversationId) send({ type: "conversation_unarchive", conversationId: state.currentConversationId });
+});
+els.renameDialog.addEventListener("submit", (event) => {
+  event.preventDefault();
+  applyRename();
+});
+els.cancelRenameBtn.addEventListener("click", closeRenameDialog);
+els.renameOverlay.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeRenameDialog();
 });
 els.requestSearch.addEventListener("input", renderRequests);
 els.responseSearch.addEventListener("input", renderResponses);

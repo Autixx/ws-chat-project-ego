@@ -136,7 +136,7 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
     }
 
     if (message.type === "conversation_list") {
-      send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user) });
+      send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user, message.includeArchived), includeArchived: message.includeArchived });
       return;
     }
 
@@ -152,14 +152,21 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
     if (message.type === "conversation_rename") {
       const conversation = await conversations.renameConversation(user, message.conversationId, message.title);
       send(ws, { type: "conversation_renamed", conversation });
-      send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user) });
+      send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user, true), includeArchived: true });
       return;
     }
 
     if (message.type === "conversation_archive") {
       await conversations.archiveConversation(user, message.conversationId);
       send(ws, { type: "conversation_archived", conversationId: message.conversationId });
-      send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user) });
+      send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user, true), includeArchived: true });
+      return;
+    }
+
+    if (message.type === "conversation_unarchive") {
+      const conversation = await conversations.unarchiveConversation(user, message.conversationId);
+      send(ws, { type: "conversation_unarchived", conversation });
+      send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user, true), includeArchived: true });
       return;
     }
 

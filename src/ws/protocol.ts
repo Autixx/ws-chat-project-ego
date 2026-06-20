@@ -5,10 +5,11 @@ import type { Job, JobEvent } from "../jobs/jobStore.js";
 
 export type ClientMessage =
   | { type: "conversation_create"; title?: string }
-  | { type: "conversation_list" }
+  | { type: "conversation_list"; includeArchived?: boolean }
   | { type: "conversation_open"; conversationId: string }
   | { type: "conversation_rename"; conversationId: string; title: string }
   | { type: "conversation_archive"; conversationId: string }
+  | { type: "conversation_unarchive"; conversationId: string }
   | {
       type: "message_send";
       conversationId: string;
@@ -33,7 +34,7 @@ export type ClientMessage =
 export type ServerMessage =
   | { type: "connected"; user: Pick<AuthenticatedUser, "username" | "email"> }
   | { type: "conversation_created"; conversation: Conversation }
-  | { type: "conversation_list"; conversations: Conversation[] }
+  | { type: "conversation_list"; conversations: Conversation[]; includeArchived?: boolean }
   | { type: "conversation_opened"; conversation: Conversation; messages: ChatMessage[]; attachments: AttachmentMetadata[]; jobs?: Job[] }
   | { type: "attachments_for_request"; conversationId: string; requestId: string; attachments: AttachmentMetadata[] }
   | { type: "job_list"; conversationId: string; jobs: Job[] }
@@ -49,6 +50,7 @@ export type ServerMessage =
     }
   | { type: "conversation_renamed"; conversation: Conversation }
   | { type: "conversation_archived"; conversationId: string }
+  | { type: "conversation_unarchived"; conversation: Conversation }
   | { type: "message_created"; message: ChatMessage }
   | { type: "assistant_message_start"; conversationId: string; messageId: string }
   | { type: "assistant_message_done"; conversationId: string; messageId: string }
@@ -69,7 +71,7 @@ export function parseClientMessage(raw: unknown): ClientMessage {
     return { type: "conversation_create", title: typeof msg.title === "string" ? msg.title : undefined };
   }
 
-  if (msg.type === "conversation_list") return { type: "conversation_list" };
+  if (msg.type === "conversation_list") return { type: "conversation_list", includeArchived: Boolean(msg.includeArchived) };
 
   if (msg.type === "conversation_open") {
     if (typeof msg.conversationId !== "string") throw new Error("conversation_open requires conversationId.");
@@ -86,6 +88,11 @@ export function parseClientMessage(raw: unknown): ClientMessage {
   if (msg.type === "conversation_archive") {
     if (typeof msg.conversationId !== "string") throw new Error("conversation_archive requires conversationId.");
     return { type: "conversation_archive", conversationId: msg.conversationId };
+  }
+
+  if (msg.type === "conversation_unarchive") {
+    if (typeof msg.conversationId !== "string") throw new Error("conversation_unarchive requires conversationId.");
+    return { type: "conversation_unarchive", conversationId: msg.conversationId };
   }
 
   if (msg.type === "message_send") {

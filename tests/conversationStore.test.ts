@@ -90,6 +90,39 @@ test("ConversationStore creates, lists and loads scoped conversations", async ()
   }
 });
 
+test("ConversationStore lists archived conversations only when requested and can unarchive", async () => {
+  const stores = testStores();
+  try {
+    const conversation = await stores.conversations.createConversation(user, "Archived");
+    await stores.conversations.archiveConversation(user, conversation.id);
+
+    assert.equal((await stores.conversations.listConversations(user)).length, 0);
+    const archived = await stores.conversations.listConversations(user, true);
+    assert.equal(archived.length, 1);
+    assert.equal(archived[0].archived, true);
+
+    const restored = await stores.conversations.unarchiveConversation(user, conversation.id);
+    assert.equal(restored.archived, false);
+    assert.equal((await stores.conversations.listConversations(user)).length, 1);
+  } finally {
+    stores.cleanup();
+  }
+});
+
+test("ConversationStore renames conversations with a 64 character limit and unicode support", async () => {
+  const stores = testStores();
+  try {
+    const conversation = await stores.conversations.createConversation(user, "Rename");
+    const longTitle = `Рабочая область ${"x".repeat(80)}`;
+    const renamed = await stores.conversations.renameConversation(user, conversation.id, longTitle);
+
+    assert.equal(renamed.title.length, 64);
+    assert.match(renamed.title, /^Рабочая область/);
+  } finally {
+    stores.cleanup();
+  }
+});
+
 test("MessageStore appends and loads messages in created order", async () => {
   const stores = testStores();
   try {

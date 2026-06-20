@@ -35,6 +35,11 @@
           <div class="status-line user-status"><span id="userLine">USER</span> <button id="logoutBtn" type="button">Logout</button></div>
         </div>
         <div class="toolbar">
+          <button id="showArchivedBtn" class="toggle-button" type="button">Show archived</button>
+          <select id="conversationSelect" aria-label="Workbenches"></select>
+          <button id="renameConversationBtn" type="button">Rename</button>
+          <button id="unarchiveConversationBtn" type="button">Unarchive</button>
+          <button id="archiveConversationBtn" type="button">Archive</button>
           <div class="theme-picker" aria-label="Theme">
             <span>Theme</span>
             <button class="theme-swatch light" type="button" data-theme="theme-light" aria-label="Light theme"></button>
@@ -49,11 +54,6 @@
           <div><span id="dbSquare" class="sq gray"></span>STATUS DB <span id="dbText">unknown</span></div>
         </div>
       </header>
-
-      <section class="conversation-strip">
-        <select id="conversationSelect"></select>
-        <button id="archiveConversationBtn" type="button">Archive</button>
-      </section>
 
       <section class="search-row">
         <label>REQUEST SEARCH<input id="requestSearch" type="search" placeholder="date, status, mode, text" /></label>
@@ -148,7 +148,7 @@
       <section id="imageViewer" class="image-viewer" hidden>
         <header id="imageViewerHeader" class="image-viewer-header">
           <span id="imageViewerTitle">IMAGE PREVIEW</span>
-          <button id="closeImageViewerBtn" type="button">Close</button>
+          <button id="closeImageViewerBtn" class="window-close" type="button" aria-label="Close">×</button>
         </header>
         <div id="imageViewerBody" class="image-viewer-body">
           <img id="imageViewerImg" alt="" draggable="false" />
@@ -158,11 +158,24 @@
       <section id="mediaViewer" class="media-viewer" hidden>
         <header id="mediaViewerHeader" class="media-viewer-header">
           <span id="mediaViewerTitle">VIDEO PREVIEW</span>
-          <button id="closeMediaViewerBtn" type="button">Close</button>
+          <button id="closeMediaViewerBtn" class="window-close" type="button" aria-label="Close">×</button>
         </header>
         <div class="media-viewer-body">
           <video id="mediaViewerVideo" controls playsinline></video>
         </div>
+      </section>
+
+      <section id="renameOverlay" class="modal-overlay" hidden>
+        <form id="renameDialog" class="rename-dialog">
+          <label>
+            Workbench name
+            <input id="renameInput" maxlength="64" />
+          </label>
+          <div class="rename-actions">
+            <button id="cancelRenameBtn" type="button">Cancel</button>
+            <button id="applyRenameBtn" type="submit">Apply</button>
+          </div>
+        </form>
       </section>
 
       <section id="textPreview" class="text-preview" hidden>

@@ -99,13 +99,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .workbench {
   height: 100vh;
   display: grid;
-  grid-template-rows: auto auto auto minmax(588px, 1fr) minmax(190px, .6fr) auto;
+  grid-template-rows: auto auto minmax(588px, 1fr) minmax(230px, .6fr) auto;
   overflow: hidden;
 }
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) auto 250px;
+  grid-template-columns: minmax(240px, 1fr) minmax(520px, auto) minmax(220px, 1fr);
   gap: 10px;
   align-items: center;
   padding: 6px 14px;
@@ -122,7 +122,7 @@ h2 {
   border-bottom: 1px solid var(--line);
 }
 
-.status-line, .status-block div, .toolbar, .conversation-strip, .theme-picker {
+.status-line, .status-block div, .toolbar, .theme-picker {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -148,11 +148,12 @@ h2 {
   gap: 3px;
   color: var(--muted);
   font-size: 12px;
+  justify-self: end;
 }
 
 .toolbar {
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 .theme-picker {
@@ -195,16 +196,27 @@ h2 {
   vertical-align: -1px;
 }
 
-.conversation-strip, .search-row, .input, .attachments, .draft, .debug, .draft-actions, .mode-actions {
+.status-stack {
+  display: inline-grid;
+  grid-template-rows: repeat(2, 10px);
+  gap: 4px;
+  align-self: start;
+}
+
+.toggle-button.active {
+  border-color: var(--accent);
+  background: var(--field);
+}
+
+.search-row, .input, .attachments, .draft, .debug, .draft-actions, .mode-actions {
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
 
-.conversation-strip {
-  padding: 8px 14px;
+#conversationSelect {
+  width: min(360px, 30vw);
+  min-width: 240px;
 }
-
-#conversationSelect { min-width: 320px; }
 
 .search-row {
   display: grid;
@@ -576,8 +588,11 @@ textarea {
   bottom: 76px;
   width: min(460px, calc(100vw - 48px));
   max-height: min(420px, calc(100vh - 120px));
+  min-width: 300px;
+  min-height: 180px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  resize: both;
 }
 
 .image-viewer, .media-viewer {
@@ -585,8 +600,11 @@ textarea {
   top: 12.5vh;
   width: 75vw;
   height: 75vh;
+  min-width: 360px;
+  min-height: 240px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  resize: both;
 }
 
 .prompt-editor-header, .upload-inspector-header, .image-viewer-header, .media-viewer-header, .text-preview-header {
@@ -604,6 +622,14 @@ textarea {
 .prompt-editor-header button, .upload-inspector-header button, .image-viewer-header button, .media-viewer-header button, .text-preview-header button {
   min-height: 24px;
   padding: 2px 8px;
+}
+
+.window-close {
+  width: 24px;
+  min-width: 24px;
+  padding: 0;
+  line-height: 1;
+  font-size: 18px;
 }
 
 #promptEditorText {
@@ -675,7 +701,7 @@ body.no-text-select, body.no-text-select * {
   user-select: none !important;
 }
 
-#imageViewerImg {
+#imageViewerImg, .image-viewer-img {
   max-width: 100%;
   max-height: 100%;
   width: auto;
@@ -695,11 +721,49 @@ body.no-text-select, body.no-text-select * {
   background: var(--field);
 }
 
-#mediaViewerVideo {
+#mediaViewerVideo, .media-viewer video {
   max-width: 100%;
   max-height: 100%;
   width: auto;
   height: auto;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, .58);
+}
+
+.rename-dialog {
+  width: min(64ch, calc(100vw - 48px));
+  border: 1px solid var(--accent);
+  background: var(--panel);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .45);
+}
+
+.rename-dialog label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.rename-dialog input {
+  min-height: 34px;
+  padding: 6px 8px;
+  background: var(--field);
+}
+
+.rename-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .debug {
