@@ -1,4 +1,5 @@
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const THEME_STORAGE_KEY = "projectego-dashboard-theme";
 
 const state = {
   ws: null,
@@ -393,11 +394,12 @@ function statusLabel(status, detail = "") {
   return detail ? `${label} (${detail})` : label;
 }
 
-function setTheme(theme) {
+function setTheme(theme, { persist = true } = {}) {
   document.body.classList.remove("theme-dark", "theme-contrast", "theme-custom");
   document.body.classList.add(theme);
   for (const button of els.themeButtons) button.classList.toggle("active", button.dataset.theme === theme);
   if (theme === "theme-custom") applyCustomTheme();
+  if (persist) saveThemeSettings(theme);
 }
 
 function applyCustomTheme() {
@@ -407,6 +409,62 @@ function applyCustomTheme() {
   document.documentElement.style.setProperty("--custom-text", els.customTextColor.value);
   document.documentElement.style.setProperty("--custom-muted", mixColor(els.customTextColor.value, els.customBgColor.value, 0.35));
   document.documentElement.style.setProperty("--custom-line", els.customLineColor.value);
+}
+
+function saveThemeSettings(theme = activeTheme()) {
+  try {
+    localStorage.setItem(
+      THEME_STORAGE_KEY,
+      JSON.stringify({
+        theme,
+        colors: customThemeColors()
+      })
+    );
+  } catch {
+    // Theme persistence is best-effort.
+  }
+}
+
+function loadThemeSettings() {
+  try {
+    const raw = localStorage.getItem(THEME_STORAGE_KEY);
+    if (!raw) {
+      applyCustomTheme();
+      setTheme("theme-dark", { persist: false });
+      return;
+    }
+    const saved = JSON.parse(raw);
+    if (saved?.colors && typeof saved.colors === "object") {
+      setColorInput(els.customBgColor, saved.colors.bg);
+      setColorInput(els.customFieldColor, saved.colors.field);
+      setColorInput(els.customTextColor, saved.colors.text);
+      setColorInput(els.customLineColor, saved.colors.line);
+    }
+    const theme = ["theme-dark", "theme-contrast", "theme-custom"].includes(saved?.theme) ? saved.theme : "theme-dark";
+    setTheme(theme, { persist: false });
+  } catch {
+    applyCustomTheme();
+    setTheme("theme-dark", { persist: false });
+  }
+}
+
+function customThemeColors() {
+  return {
+    bg: els.customBgColor.value,
+    field: els.customFieldColor.value,
+    text: els.customTextColor.value,
+    line: els.customLineColor.value
+  };
+}
+
+function activeTheme() {
+  if (document.body.classList.contains("theme-custom")) return "theme-custom";
+  if (document.body.classList.contains("theme-contrast")) return "theme-contrast";
+  return "theme-dark";
+}
+
+function setColorInput(input, value) {
+  if (typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value)) input.value = value;
 }
 
 function mixColor(first, second, secondRatio) {
@@ -1395,6 +1453,7 @@ els.showUnclarifiedBtn.addEventListener("click", () => {
 });
 
 setConnected(false);
+loadThemeSettings();
 wireDraggableWindow(els.promptEditor, els.promptEditorHeader, els.closeEditorBtn);
 wireDraggableWindow(els.uploadInspector, els.uploadInspectorHeader, els.closeUploadInspectorBtn);
 wireDraggableWindow(els.imageViewer, els.imageViewerHeader, els.closeImageViewerBtn);
