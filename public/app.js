@@ -43,6 +43,11 @@ const els = {
   fileInput: document.getElementById("fileInput"),
   fileNotice: document.getElementById("fileNotice"),
   sendBtn: document.getElementById("sendBtn"),
+  openEditorBtn: document.getElementById("openEditorBtn"),
+  promptEditor: document.getElementById("promptEditor"),
+  promptEditorHeader: document.getElementById("promptEditorHeader"),
+  promptEditorText: document.getElementById("promptEditorText"),
+  closeEditorBtn: document.getElementById("closeEditorBtn"),
   draftJobId: document.getElementById("draftJobId"),
   draftPreview: document.getElementById("draftPreview"),
   itemsList: document.getElementById("itemsList"),
@@ -270,6 +275,70 @@ function setStatusIndicator(square, text, status, label) {
 function setTheme(theme) {
   document.body.className = theme;
   for (const button of els.themeButtons) button.classList.toggle("active", button.dataset.theme === theme);
+}
+
+function syncEditorFromPrompt() {
+  if (els.promptEditorText.value !== els.prompt.value) els.promptEditorText.value = els.prompt.value;
+}
+
+function syncPromptFromEditor() {
+  if (els.prompt.value !== els.promptEditorText.value) els.prompt.value = els.promptEditorText.value;
+}
+
+function openPromptEditor({ auto = false } = {}) {
+  if (auto && !shouldAutoOpenEditor()) return;
+  const start = els.prompt.selectionStart ?? els.prompt.value.length;
+  const end = els.prompt.selectionEnd ?? start;
+  syncEditorFromPrompt();
+  els.promptEditor.hidden = false;
+  requestAnimationFrame(() => {
+    els.promptEditorText.focus();
+    els.promptEditorText.setSelectionRange(start, end);
+  });
+}
+
+function closePromptEditor() {
+  const start = els.promptEditorText.selectionStart ?? els.promptEditorText.value.length;
+  const end = els.promptEditorText.selectionEnd ?? start;
+  syncPromptFromEditor();
+  els.promptEditor.hidden = true;
+  requestAnimationFrame(() => {
+    els.prompt.focus();
+    els.prompt.setSelectionRange(start, end);
+  });
+}
+
+function shouldAutoOpenEditor() {
+  if (!els.prompt.value.trim()) return false;
+  return els.prompt.value.length > 700 || els.prompt.scrollHeight > els.prompt.clientHeight + 4;
+}
+
+function maybeOpenPromptEditor() {
+  if (!els.promptEditor.hidden) return;
+  openPromptEditor({ auto: true });
+}
+
+function wirePromptEditorDrag() {
+  let drag = null;
+  els.promptEditorHeader.addEventListener("pointerdown", (event) => {
+    if (event.target === els.closeEditorBtn) return;
+    const rect = els.promptEditor.getBoundingClientRect();
+    drag = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+    els.promptEditorHeader.setPointerCapture(event.pointerId);
+  });
+  els.promptEditorHeader.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    const nextLeft = Math.max(0, Math.min(window.innerWidth - 80, drag.left + event.clientX - drag.x));
+    const nextTop = Math.max(0, Math.min(window.innerHeight - 60, drag.top + event.clientY - drag.y));
+    els.promptEditor.style.left = `${nextLeft}px`;
+    els.promptEditor.style.top = `${nextTop}px`;
+  });
+  els.promptEditorHeader.addEventListener("pointerup", () => {
+    drag = null;
+  });
+  els.promptEditorHeader.addEventListener("pointercancel", () => {
+    drag = null;
+  });
 }
 
 function isResponse(message) {
@@ -635,6 +704,8 @@ async function sendCurrentRequest() {
     attachmentUploadIds
   });
   els.prompt.value = "";
+  els.promptEditorText.value = "";
+  els.promptEditor.hidden = true;
   els.fileInput.value = "";
   els.fileNotice.textContent = "";
 }
@@ -666,8 +737,19 @@ els.archiveConversationBtn.addEventListener("click", () => {
 els.requestSearch.addEventListener("input", renderRequests);
 els.responseSearch.addEventListener("input", renderResponses);
 els.sendBtn.addEventListener("click", sendCurrentRequest);
+els.openEditorBtn.addEventListener("click", () => openPromptEditor());
+els.closeEditorBtn.addEventListener("click", closePromptEditor);
+els.prompt.addEventListener("input", () => {
+  syncEditorFromPrompt();
+  maybeOpenPromptEditor();
+});
 els.prompt.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) sendCurrentRequest();
+});
+els.promptEditorText.addEventListener("input", syncPromptFromEditor);
+els.promptEditorText.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) sendCurrentRequest();
+  if (event.key === "Escape") closePromptEditor();
 });
 els.fileInput.addEventListener("change", async () => {
   const files = Array.from(els.fileInput.files || []);
@@ -687,7 +769,11 @@ els.fileInput.addEventListener("change", async () => {
   }
   els.fileNotice.textContent = `${files.length} file(s) ready to upload`;
   const firstText = files.find((file) => /\.(txt|md)$/i.test(file.name));
-  if (firstText) els.prompt.value = await firstText.text();
+  if (firstText) {
+    els.prompt.value = await firstText.text();
+    syncEditorFromPrompt();
+    maybeOpenPromptEditor();
+  }
 });
 els.applySelectedBtn.addEventListener("click", () => {
   if (state.currentConversationId && state.currentDraft?.jobId) {
@@ -705,6 +791,7 @@ els.showUnclarifiedBtn.addEventListener("click", () => {
 });
 
 setConnected(false);
+wirePromptEditorDrag();
 authEls.toggleAuthMode.addEventListener("click", () => {
   const register = authEls.registerForm.hidden;
   authEls.registerForm.hidden = !register;

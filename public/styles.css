@@ -186,7 +186,7 @@ h2 {
 .sq.gray { background: var(--gray); }
 .sq.white { background: var(--white); }
 
-.conversation-strip, .search-row, .input, .attachments, .draft, .debug, .draft-actions {
+.conversation-strip, .search-row, .input, .attachments, .draft, .debug, .draft-actions, .mode-actions {
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
@@ -216,11 +216,12 @@ h2 {
 .work-grid {
   display: grid;
   grid-template-columns: 1fr 1.18fr;
-  grid-template-rows: minmax(180px, 1fr) 130px 46px;
+  grid-template-rows: minmax(180px, 1fr) 130px 108px 46px;
   grid-template-areas:
     "request response"
-    "input attachments"
-    "input actions";
+    "attachments actions"
+    "input ."
+    "mode .";
   min-height: 0;
 }
 
@@ -229,6 +230,7 @@ h2 {
 .input { grid-area: input; }
 .attachments { grid-area: attachments; }
 .draft-actions { grid-area: actions; }
+.mode-actions { grid-area: mode; }
 
 .panel {
   border-right: 1px solid var(--line);
@@ -365,11 +367,14 @@ h2 {
 }
 
 .input-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
-  gap: 10px;
+  display: block;
   padding-top: 8px;
   height: calc(100% - 30px);
+}
+
+.prompt-shell {
+  position: relative;
+  height: 100%;
 }
 
 textarea {
@@ -379,16 +384,31 @@ textarea {
   padding: 8px;
 }
 
-.input-controls {
-  display: grid;
-  gap: 7px;
-  align-content: start;
+#prompt {
+  padding-right: 50px;
+  overflow: hidden;
 }
 
 .request-buttons {
+  position: absolute;
+  top: 8px;
+  right: 8px;
   display: flex;
+  flex-direction: column;
   gap: 8px;
   align-items: center;
+}
+
+.mode-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-right: 1px solid var(--line);
+}
+
+.mode-actions select {
+  min-height: 30px;
 }
 
 .visually-hidden {
@@ -439,6 +459,49 @@ textarea {
   font-size: 12px;
 }
 
+.prompt-editor {
+  position: fixed;
+  left: 18vw;
+  top: 16vh;
+  z-index: 50;
+  width: min(760px, 72vw);
+  height: min(540px, 70vh);
+  min-width: 360px;
+  min-height: 220px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--accent);
+  background: var(--panel);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .45);
+  resize: both;
+  overflow: hidden;
+}
+
+.prompt-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  cursor: move;
+  user-select: none;
+}
+
+.prompt-editor-header button {
+  min-height: 24px;
+  padding: 2px 8px;
+}
+
+#promptEditorText {
+  border: 0;
+  min-height: 0;
+  resize: none;
+  padding: 10px;
+  line-height: 1.4;
+}
+
 .debug {
   padding: 6px 10px;
 }
@@ -462,9 +525,10 @@ textarea {
     grid-template-areas:
       "request"
       "response"
-      "input"
       "attachments"
-      "actions";
+      "actions"
+      "input"
+      "mode";
   }
   .row-list { height: 360px; }
   .input, .attachments {

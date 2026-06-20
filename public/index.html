@@ -77,17 +77,16 @@
           <div id="responseList" class="row-list"></div>
         </section>
 
+        <section class="attachments panel">
+          <h2>ATTACHMENTS WINDOW</h2>
+          <div id="attachmentsList" class="attachment-list"></div>
+        </section>
+
         <section class="input panel">
           <h2>REQUEST INPUT FIELD</h2>
           <div class="input-grid">
-            <textarea id="prompt" rows="4" placeholder="Enter request. Ctrl+Enter sends."></textarea>
-            <div class="input-controls">
-              <select id="modeSelect">
-                <option value="chat">Chat</option>
-                <option value="digest">Digest</option>
-                <option value="tasks">Tasks</option>
-                <option value="abstract_idea">Abstract idea</option>
-              </select>
+            <div class="prompt-shell">
+              <textarea id="prompt" rows="4" placeholder="Enter request. Ctrl+Enter sends."></textarea>
               <div class="request-buttons">
                 <label class="icon-button" for="fileInput" aria-label="Attach files" title="Attach files">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -96,21 +95,33 @@
                   </svg>
                 </label>
                 <input id="fileInput" class="visually-hidden" type="file" multiple accept=".txt,.md,.mp3,.mp4,text/plain,text/markdown,audio/mpeg,video/mp4" />
+                <button id="openEditorBtn" class="icon-button" type="button" aria-label="Open prompt editor" title="Open prompt editor">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 3H3v5" />
+                    <path d="M16 3h5v5" />
+                    <path d="M21 16v5h-5" />
+                    <path d="M3 16v5h5" />
+                  </svg>
+                </button>
                 <button id="sendBtn" class="icon-button send-icon" type="button" aria-label="Send request" title="Send request">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M3 20 21 12 3 4l3.4 7.2L14 12l-7.6.8L3 20Z" />
                   </svg>
                 </button>
               </div>
-              <span id="fileNotice"></span>
             </div>
           </div>
         </section>
 
-        <section class="attachments panel">
-          <h2>ATTACHMENTS WINDOW</h2>
-          <div id="attachmentsList" class="attachment-list"></div>
-        </section>
+        <div class="mode-actions">
+          <select id="modeSelect">
+            <option value="chat">Chat</option>
+            <option value="digest">Digest</option>
+            <option value="tasks">Tasks</option>
+            <option value="abstract_idea">Abstract idea</option>
+          </select>
+          <span id="fileNotice"></span>
+        </div>
 
         <div class="draft-actions">
           <button id="applySelectedBtn" type="button">Apply selected</button>
@@ -118,6 +129,14 @@
           <button id="keepAllBtn" type="button">Keep all</button>
           <button id="showUnclarifiedBtn" type="button">Show unclarified</button>
         </div>
+      </section>
+
+      <section id="promptEditor" class="prompt-editor" hidden>
+        <header id="promptEditorHeader" class="prompt-editor-header">
+          <span>REQUEST EDITOR</span>
+          <button id="closeEditorBtn" type="button">Close</button>
+        </header>
+        <textarea id="promptEditorText" spellcheck="true"></textarea>
       </section>
 
       <section class="draft panel">
