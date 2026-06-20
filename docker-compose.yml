@@ -31,6 +31,7 @@ services:
       PLANE_API_KEY: ""
       N8N_BASE_URL: ""
       N8N_WEBHOOK_TOKEN: ""
+      JOB_CALLBACK_TOKEN: ""
     volumes:
       - projectego-chat-data:/app/data
 

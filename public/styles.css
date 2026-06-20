@@ -188,6 +188,12 @@ h2 {
 .sq.red { background: var(--red); }
 .sq.gray { background: var(--gray); }
 .sq.white { background: var(--white); }
+.sq.blue { background: #3aa8ff; }
+.sq.yellow { background: #e7c94d; }
+.inline-sq {
+  margin: 0 4px;
+  vertical-align: -1px;
+}
 
 .conversation-strip, .search-row, .input, .attachments, .draft, .debug, .draft-actions, .mode-actions {
   border-bottom: 1px solid var(--line);

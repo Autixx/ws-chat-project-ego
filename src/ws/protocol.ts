@@ -1,6 +1,7 @@
 import type { AuthenticatedUser } from "../auth/authelia.js";
 import type { AttachmentMetadata, ChatMessage, Conversation } from "../conversations/types.js";
 import type { DraftResult } from "../drafts/types.js";
+import type { Job, JobEvent } from "../jobs/jobStore.js";
 
 export type ClientMessage =
   | { type: "conversation_create"; title?: string }
@@ -19,6 +20,7 @@ export type ClientMessage =
       attachmentUploadIds?: string[];
     }
   | { type: "draft_open"; conversationId: string; jobId: string }
+  | { type: "job_list"; conversationId: string }
   | { type: "attachments_for_request"; conversationId: string; requestId: string }
   | { type: "response_decision_update"; conversationId: string; messageId: string; decisionStatus: "pending" | "applied" | "dropped" | "kept" }
   | { type: "digest"; conversationId?: string; text: string; fileName?: string }
@@ -32,13 +34,18 @@ export type ServerMessage =
   | { type: "connected"; user: Pick<AuthenticatedUser, "username" | "email"> }
   | { type: "conversation_created"; conversation: Conversation }
   | { type: "conversation_list"; conversations: Conversation[] }
-  | { type: "conversation_opened"; conversation: Conversation; messages: ChatMessage[]; attachments: AttachmentMetadata[] }
+  | { type: "conversation_opened"; conversation: Conversation; messages: ChatMessage[]; attachments: AttachmentMetadata[]; jobs?: Job[] }
   | { type: "attachments_for_request"; conversationId: string; requestId: string; attachments: AttachmentMetadata[] }
+  | { type: "job_list"; conversationId: string; jobs: Job[] }
+  | { type: "job_created"; job: Job }
+  | { type: "job_updated"; job: Job }
+  | { type: "job_event"; jobId: string; event: JobEvent }
   | {
       type: "app_status";
       db: { status: "ok" | "error"; path?: string; quickCheck?: string; writable?: boolean; message?: string };
       plane: { status: "configured" | "unconfigured" | "error"; message?: string };
       n8n: { status: "configured" | "unconfigured" };
+      jobs?: { callbackConfigured: boolean };
     }
   | { type: "conversation_renamed"; conversation: Conversation }
   | { type: "conversation_archived"; conversationId: string }
@@ -105,6 +112,11 @@ export function parseClientMessage(raw: unknown): ClientMessage {
       throw new Error("draft_open requires conversationId and jobId.");
     }
     return { type: "draft_open", conversationId: msg.conversationId, jobId: msg.jobId };
+  }
+
+  if (msg.type === "job_list") {
+    if (typeof msg.conversationId !== "string") throw new Error("job_list requires conversationId.");
+    return { type: "job_list", conversationId: msg.conversationId };
   }
 
   if (msg.type === "attachments_for_request") {

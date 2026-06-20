@@ -15,6 +15,7 @@ const state = {
   currentDraftItems: [],
   attachments: [],
   attachmentsByRequest: {},
+  jobs: [],
   pendingFiles: [],
   requestMode: "chat",
   displayMode: "text",
@@ -201,6 +202,7 @@ function handleServerMessage(message) {
     state.messages = message.messages;
     state.attachments = message.attachments || [];
     state.attachmentsByRequest = groupAttachmentsByRequest(state.attachments);
+    state.jobs = message.jobs || [];
     state.selectedRequestId = firstRequest()?.id || null;
     state.expandedRequestId = state.selectedRequestId;
     state.selectedResponseId = null;
@@ -258,6 +260,16 @@ function handleServerMessage(message) {
 
   if (message.type === "response_decision_updated" && message.conversationId === state.currentConversationId) {
     upsertMessage(message.message);
+    renderResponses();
+  }
+
+  if (message.type === "job_created" || message.type === "job_updated") {
+    upsertJob(message.job);
+    renderResponses();
+  }
+
+  if (message.type === "job_list" && message.conversationId === state.currentConversationId) {
+    state.jobs = message.jobs || [];
     renderResponses();
   }
 
@@ -476,6 +488,13 @@ function upsertMessage(message) {
   state.messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+function upsertJob(job) {
+  const index = state.jobs.findIndex((item) => item.id === job.id);
+  if (index >= 0) state.jobs[index] = job;
+  else state.jobs.push(job);
+  state.jobs.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
 function openConversation(conversationId) {
   send({ type: "conversation_open", conversationId });
 }
@@ -587,7 +606,8 @@ function renderResponses() {
       const main = document.createElement("div");
       main.className = "row-main";
       appendLine(main, `${shortDate(response.createdAt)} / ${response.kind} / ${projectHint(response)} / ${kb(byteSize(response.content))}`);
-      appendLine(main, `decision: ${decisionStatus(response)}`);
+      appendLine(main, `Decision: ${formatStatus(decisionStatus(response))}`);
+      appendStatusLine(main, "Execution", executionStatus(response), executionClass(response));
       const body = document.createElement("div");
       body.className = "expanded-body";
       body.textContent = contentForDisplay(response);
@@ -762,6 +782,36 @@ function decisionClass(response) {
   return "white";
 }
 
+function jobForResponse(response) {
+  return state.jobs.find((job) => job.responseMessageId === response.id);
+}
+
+function executionStatus(response) {
+  return jobForResponse(response)?.status || "not_started";
+}
+
+function executionClass(response) {
+  const status = executionStatus(response);
+  if (status === "succeeded") return "green";
+  if (status === "failed") return "red";
+  if (status === "running") return "blue";
+  if (status === "partial") return "yellow";
+  if (status === "cancelled" || status === "not_started") return "gray";
+  return "white";
+}
+
+function formatStatus(status) {
+  return String(status).replace(/_/g, " ").replace(/^\w/, (match) => match.toUpperCase());
+}
+
+function appendStatusLine(parent, label, status, className) {
+  const line = document.createElement("div");
+  const square = document.createElement("span");
+  square.className = `sq inline-sq ${className}`;
+  line.append(`${label}: `, square, ` ${formatStatus(status)}`);
+  parent.append(line);
+}
+
 function projectHint(response) {
   return response.metadata?.project || response.metadata?.mode || response.metadata?.jobId || "-";
 }
@@ -774,7 +824,7 @@ function requestMatches(request, query) {
 
 function responseMatches(response, query) {
   if (!query) return true;
-  const text = `${response.createdAt} ${response.kind} ${projectHint(response)} ${response.content} ${JSON.stringify(response.metadata || {})}`.toLowerCase();
+  const text = `${response.createdAt} ${response.kind} ${projectHint(response)} ${decisionStatus(response)} ${executionStatus(response)} ${response.content} ${JSON.stringify(response.metadata || {})}`.toLowerCase();
   return text.includes(query);
 }
 
@@ -1097,6 +1147,7 @@ authEls.logoutBtn.addEventListener("click", async () => {
   state.conversations = [];
   state.attachments = [];
   state.attachmentsByRequest = {};
+  state.jobs = [];
   setConnected(false);
   showAuth("Logged out.");
 });

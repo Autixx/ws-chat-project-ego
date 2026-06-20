@@ -15,6 +15,8 @@ import { DraftStore } from "../drafts/draftStore.js";
 import { UnclarifiedStore } from "../drafts/unclarifiedStore.js";
 import { N8nClient } from "../integrations/n8nClient.js";
 import { PlaneClient } from "../integrations/planeClient.js";
+import { JobStore, type Job, type JobEvent } from "../jobs/jobStore.js";
+import { updateResponseDecision } from "../jobs/responseDecision.js";
 import { CodexProvider } from "../llm/codexProvider.js";
 import { MockProvider } from "../llm/mockProvider.js";
 import type { LlmProvider, LlmTaskMode } from "../llm/provider.js";
@@ -38,10 +40,12 @@ function taskModeFromUiMode(mode: "digest" | "tasks" | "abstract_idea"): LlmTask
   return "structured_breakdown";
 }
 
-export function attachWebSocketServer(server: Server, config: AppConfig, database = openDatabase(config)): void {
+export function attachWebSocketServer(server: Server, config: AppConfig, database = openDatabase(config)): { notifyJobUpdated: (job: Job, event?: JobEvent) => Promise<void> } {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 });
+  const clients = new Set<{ ws: WebSocket; user: AuthenticatedUser }>();
   const conversations = new ConversationStore(database);
   const messages = new MessageStore(database);
+  const jobs = new JobStore(database);
   const drafts = new DraftStore(config.dataDir);
   const unclarified = new UnclarifiedStore(config.dataDir);
   const plane = new PlaneClient(config);
@@ -70,12 +74,19 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
   });
 
   function handleConnection(ws: WebSocket, user: AuthenticatedUser): void {
+    clients.add({ ws, user });
+    ws.on("close", () => {
+      for (const client of clients) {
+        if (client.ws === ws) clients.delete(client);
+      }
+    });
     send(ws, { type: "connected", user: { username: user.username, email: user.email } });
     send(ws, {
       type: "app_status",
       db: checkDatabaseHealth(database),
       plane: planeStatus(),
-      n8n: { status: n8n.isConfigured() ? "configured" : "unconfigured" }
+      n8n: { status: n8n.isConfigured() ? "configured" : "unconfigured" },
+      jobs: { callbackConfigured: Boolean(config.jobCallbackToken) }
     });
 
     ws.on("message", async (data, isBinary) => {
@@ -133,7 +144,8 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
       const conversation = await conversations.loadConversation(user, message.conversationId);
       const history = await messages.loadMessages(user, conversation.id);
       const attachments = await conversations.listAttachments(user, conversation.id);
-      send(ws, { type: "conversation_opened", conversation, messages: history, attachments });
+      const conversationJobs = await jobs.listJobsForConversation(user, conversation.id);
+      send(ws, { type: "conversation_opened", conversation, messages: history, attachments, jobs: conversationJobs });
       return;
     }
 
@@ -178,10 +190,25 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
       return;
     }
 
-    if (message.type === "response_decision_update") {
+    if (message.type === "job_list") {
       await conversations.loadConversation(user, message.conversationId);
-      const updated = await messages.updateMessageMetadata(user, message.conversationId, message.messageId, { decisionStatus: message.decisionStatus });
-      send(ws, { type: "response_decision_updated", conversationId: message.conversationId, message: updated });
+      send(ws, { type: "job_list", conversationId: message.conversationId, jobs: await jobs.listJobsForConversation(user, message.conversationId) });
+      return;
+    }
+
+    if (message.type === "response_decision_update") {
+      const result = await updateResponseDecision({
+        conversations,
+        messages,
+        jobs,
+        user,
+        conversationId: message.conversationId,
+        messageId: message.messageId,
+        decisionStatus: message.decisionStatus
+      });
+      send(ws, { type: "response_decision_updated", conversationId: message.conversationId, message: result.message });
+      if (result.job) send(ws, { type: "job_created", job: result.job });
+      if (result.job && result.event) send(ws, { type: "job_event", jobId: result.job.id, event: result.event });
       return;
     }
 
@@ -263,6 +290,20 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
       await emitMessage(ws, toolMessage);
       send(ws, { type: "status", conversationId: message.conversationId, jobId: message.unclarifiedId, message: "Clarification recorded; unclarified item preserved." });
     }
+  }
+
+  async function notifyJobUpdated(job: Job, event?: JobEvent): Promise<void> {
+    await Promise.all(
+      Array.from(clients).map(async (client) => {
+        try {
+          await conversations.loadConversation(client.user, job.conversationId);
+          send(client.ws, { type: "job_updated", job });
+          if (event) send(client.ws, { type: "job_event", jobId: job.id, event });
+        } catch {
+          // Not this user's conversation.
+        }
+      })
+    );
   }
 
   async function handleConversationMessage(
@@ -385,4 +426,6 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
     send(ws, { type: "message_created", message: updatedAssistant });
     send(ws, { type: "assistant_message_done", conversationId: conversation.id, messageId: assistantMessage.id });
   }
+
+  return { notifyJobUpdated };
 }

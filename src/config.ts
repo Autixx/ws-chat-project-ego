@@ -21,6 +21,7 @@ export type AppConfig = {
   planeApiKey?: string;
   n8nBaseUrl?: string;
   n8nWebhookToken?: string;
+  jobCallbackToken?: string;
 };
 
 function boolFromEnv(value: string | undefined, fallback = false): boolean {
@@ -53,5 +54,6 @@ export const config: AppConfig = {
   planeWorkspace: process.env.PLANE_WORKSPACE ?? "projectego",
   planeApiKey: process.env.PLANE_API_KEY,
   n8nBaseUrl: process.env.N8N_BASE_URL,
-  n8nWebhookToken: process.env.N8N_WEBHOOK_TOKEN
+  n8nWebhookToken: process.env.N8N_WEBHOOK_TOKEN,
+  jobCallbackToken: process.env.JOB_CALLBACK_TOKEN
 };

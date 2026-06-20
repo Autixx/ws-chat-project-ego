@@ -12,14 +12,18 @@ import { openDatabase } from "./db/database.js";
 import { checkDatabaseHealth } from "./db/health.js";
 import { N8nClient } from "./integrations/n8nClient.js";
 import { PlaneClient } from "./integrations/planeClient.js";
+import { handleJobCallback } from "./jobs/jobCallback.js";
+import { JobStore } from "./jobs/jobStore.js";
 import { attachWebSocketServer } from "./ws/websocketServer.js";
 
 const app = express();
 type AuthedRequest = express.Request & { auth?: { user: import("./auth/authelia.js").AuthenticatedUser } };
+let webSocketRuntime: ReturnType<typeof attachWebSocketServer> | undefined;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "..", "public");
 const database = openDatabase(config);
 const conversations = new ConversationStore(database);
+const jobs = new JobStore(database);
 const plane = new PlaneClient(config);
 const n8n = new N8nClient(config);
 const uploadTempDir = path.join(config.dataDir, "attachments", "tmp");
@@ -42,6 +46,7 @@ if (process.env.NODE_ENV === "production" && !config.sessionSecret) {
 }
 
 app.disable("x-powered-by");
+app.use(express.json({ limit: "64kb" }));
 app.use(createAuthRouter(config, database));
 
 app.get("/health", (_req, res) => {
@@ -53,10 +58,28 @@ app.get("/health", (_req, res) => {
     components: {
       db,
       plane: planeStatus,
-      n8n: { status: n8n.isConfigured() ? "configured" : "unconfigured" }
+      n8n: { status: n8n.isConfigured() ? "configured" : "unconfigured" },
+      jobs: { callbackConfigured: Boolean(config.jobCallbackToken) }
     }
   };
   res.status(body.status === "ok" ? 200 : 503).json(body);
+});
+
+app.post("/api/jobs/:jobId/events", async (req, res) => {
+  try {
+    const result = await handleJobCallback({
+      config,
+      jobs,
+      jobId: req.params.jobId,
+      authorization: req.headers.authorization,
+      body: req.body ?? {}
+    });
+    await webSocketRuntime?.notifyJobUpdated(result.job, result.event);
+    res.json(result);
+  } catch (error) {
+    const statusCode = typeof error === "object" && error && "statusCode" in error && typeof error.statusCode === "number" ? error.statusCode : 404;
+    res.status(statusCode).json({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 app.post("/api/uploads", requireUserMiddleware(config, database), upload.array("files", 8), async (req, res) => {
@@ -110,4 +133,4 @@ const server = app.listen(config.port, config.host, () => {
   console.log(`ProjectEGO WebSocket Chat listening on http://${config.host}:${config.port}`);
 });
 
-attachWebSocketServer(server, config, database);
+webSocketRuntime = attachWebSocketServer(server, config, database);

@@ -51,6 +51,8 @@ Response decision status:
 
 Expanded pending responses expose response-level `Apply`, `Drop`, and `Keep` buttons. These persist decision status in SQLite metadata. Item-level draft Apply/Keep/Drop remains in the Draft Inspector.
 
+Execution status is tracked separately from decision status. Clicking response-level `Apply` records the user decision and creates a backend execution job, but the job remains `not_started` until a workflow callback updates it. A green decision square therefore means "user chose Apply", not "Plane/n8n work succeeded".
+
 ## Storage
 
 SQLite path is controlled by:
@@ -156,7 +158,35 @@ Supported upload types:
 
 Maximum size: 25 MB.
 
-Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. `.txt` and `.md` may also be inserted into the textarea for visibility. `.mp3` and `.mp4` render with browser audio/video controls. `.jpg` and `.png` render as image previews. Attachment binary data is never stored in SQLite.
+Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. Text files remain attachments and can be previewed in a read-only subwindow. `.mp3` renders with browser audio controls. `.mp4` opens in a movable video preview subwindow. `.jpg`, `.png`, and `.svg` render as image previews. Attachment binary data is never stored in SQLite.
+
+## Job Execution Tracking
+
+Response-level decision status and backend execution status are separate:
+
+- decision: `pending`, `applied`, `dropped`, `kept`
+- execution: `not_started`, `queued`, `running`, `succeeded`, `failed`, `partial`, `cancelled`
+
+When a response is marked `Apply`, the backend creates a row in `jobs` linked to the conversation, request message, response message, and draft job id when available. Because real Plane/n8n execution is not wired yet, the initial execution status is `not_started` with `backendConfigured: false`.
+
+Machine workflow callbacks can update jobs through:
+
+```http
+POST /api/jobs/:jobId/events
+Authorization: Bearer <JOB_CALLBACK_TOKEN>
+Content-Type: application/json
+```
+
+Example:
+
+```bash
+curl -X POST http://127.0.0.1:19100/api/jobs/JOB-.../events \
+  -H "Authorization: Bearer $JOB_CALLBACK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"running","eventType":"started","message":"workflow started"}'
+```
+
+The callback appends a `job_events` row, updates `jobs.status`, sets `started_at` / `finished_at` where applicable, and stores `error_message` for failed jobs. Browser session cookies are not required for this machine-to-machine endpoint.
 
 ## Install
 
@@ -503,6 +533,7 @@ For Docker, back up the mounted `/app/data` volume.
 | `PLANE_API_KEY` | Optional Plane API key. |
 | `N8N_BASE_URL` | Optional n8n base URL. |
 | `N8N_WEBHOOK_TOKEN` | Optional n8n webhook token. |
+| `JOB_CALLBACK_TOKEN` | Optional bearer token for `POST /api/jobs/:jobId/events`. Required before workflow callbacks are accepted. |
 
 ## Current Limitations
 

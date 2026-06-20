@@ -62,6 +62,40 @@ CREATE TABLE IF NOT EXISTS attachments (
   FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  request_message_id TEXT,
+  response_message_id TEXT,
+  draft_job_id TEXT,
+  status TEXT NOT NULL,
+  source TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  error_message TEXT,
+  metadata_json TEXT,
+  FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+  FOREIGN KEY(request_message_id) REFERENCES messages(id) ON DELETE SET NULL,
+  FOREIGN KEY(response_message_id) REFERENCES messages(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_conversation_updated
+ON jobs(conversation_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS job_events (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  payload_json TEXT,
+  FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_events_job_created
+ON job_events(job_id, created_at ASC);
+
 CREATE TABLE IF NOT EXISTS app_migrations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
@@ -105,4 +139,40 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 `);
   db.prepare("INSERT OR IGNORE INTO app_migrations (name, applied_at) VALUES (?, ?)").run("002_local_auth", new Date().toISOString());
+  db.exec(`
+CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  request_message_id TEXT,
+  response_message_id TEXT,
+  draft_job_id TEXT,
+  status TEXT NOT NULL,
+  source TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  error_message TEXT,
+  metadata_json TEXT,
+  FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+  FOREIGN KEY(request_message_id) REFERENCES messages(id) ON DELETE SET NULL,
+  FOREIGN KEY(response_message_id) REFERENCES messages(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_conversation_updated
+ON jobs(conversation_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS job_events (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  payload_json TEXT,
+  FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_events_job_created
+ON job_events(job_id, created_at ASC);
+`);
+  db.prepare("INSERT OR IGNORE INTO app_migrations (name, applied_at) VALUES (?, ?)").run("003_job_execution_tracking", new Date().toISOString());
 }
