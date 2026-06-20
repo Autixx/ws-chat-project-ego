@@ -41,12 +41,6 @@
             <button class="theme-swatch dark active" type="button" data-theme="theme-dark" aria-label="Dark theme"></button>
             <button class="theme-swatch contrast" type="button" data-theme="theme-contrast" aria-label="Black contrast theme"></button>
           </div>
-          <label>Display
-            <select id="displayMode">
-              <option value="text" selected>Text</option>
-              <option value="json">JSON</option>
-            </select>
-          </label>
           <button id="newConversationBtn" type="button">New</button>
         </div>
         <div class="status-block">
@@ -88,14 +82,14 @@
             <div class="prompt-shell">
               <textarea id="prompt" rows="4" placeholder="Enter request. Ctrl+Enter sends."></textarea>
               <div class="request-buttons">
-                <label class="icon-button" for="fileInput" aria-label="Attach files" title="Attach files">
+                <label class="icon-button attach-button" for="fileInput" aria-label="Attach files" title="Attach files">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M8.5 12.5 15 6a3.2 3.2 0 0 1 4.5 4.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.4-8.4" />
                     <path d="m10.3 14.3 7-7" />
                   </svg>
                 </label>
                 <input id="fileInput" class="visually-hidden" type="file" multiple accept=".txt,.md,.mp3,.mp4,text/plain,text/markdown,audio/mpeg,video/mp4" />
-                <button id="openEditorBtn" class="icon-button" type="button" aria-label="Open prompt editor" title="Open prompt editor">
+                <button id="openEditorBtn" class="icon-button editor-button" type="button" aria-label="Open prompt editor" title="Open prompt editor">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M8 3H3v5" />
                     <path d="M16 3h5v5" />
@@ -103,7 +97,7 @@
                     <path d="M3 16v5h5" />
                   </svg>
                 </button>
-                <button id="sendBtn" class="icon-button send-icon" type="button" aria-label="Send request" title="Send request">
+                <button id="sendBtn" class="icon-button send-icon send-button" type="button" aria-label="Send request" title="Send request">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M3 20 21 12 3 4l3.4 7.2L14 12l-7.6.8L3 20Z" />
                   </svg>
@@ -114,16 +108,18 @@
         </section>
 
         <div class="mode-actions">
-          <select id="modeSelect">
-            <option value="chat">Chat</option>
-            <option value="digest">Digest</option>
-            <option value="tasks">Tasks</option>
-            <option value="abstract_idea">Abstract idea</option>
-          </select>
+          <button class="mode-button active" type="button" data-mode="chat">Chat</button>
+          <button class="mode-button" type="button" data-mode="tasks">Tasks</button>
+          <button class="mode-button" type="button" data-mode="digest">Digest</button>
+          <button class="mode-button" type="button" data-mode="abstract_idea">Abstract idea</button>
           <span id="fileNotice"></span>
         </div>
 
         <div class="draft-actions">
+          <div class="display-actions">
+            <button class="display-button active" type="button" data-display="text">Text</button>
+            <button class="display-button" type="button" data-display="json">JSON</button>
+          </div>
           <button id="applySelectedBtn" type="button">Apply selected</button>
           <button id="applyAllBtn" type="button">Apply all</button>
           <button id="keepAllBtn" type="button">Keep all</button>

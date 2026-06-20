@@ -96,7 +96,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .workbench {
   height: 100vh;
   display: grid;
-  grid-template-rows: auto auto auto minmax(300px, .85fr) minmax(320px, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(320px, 1fr) auto;
   overflow: hidden;
 }
 
@@ -216,12 +216,12 @@ h2 {
 .work-grid {
   display: grid;
   grid-template-columns: 1fr 1.18fr;
-  grid-template-rows: minmax(180px, 1fr) 130px 108px 46px;
+  grid-template-rows: minmax(180px, 1fr) 130px 108px 40px;
   grid-template-areas:
     "request response"
-    "attachments actions"
-    "input ."
-    "mode .";
+    "attachments response"
+    "input response"
+    "mode actions";
   min-height: 0;
 }
 
@@ -299,6 +299,7 @@ h2 {
   display: flex;
   gap: 8px;
   padding-top: 8px;
+  height: calc(100% - 30px);
 }
 
 .attachment-card {
@@ -306,6 +307,18 @@ h2 {
   padding: 8px;
   min-width: 180px;
   color: var(--muted);
+}
+
+.attachment-empty {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 100%;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  opacity: .62;
+  text-align: center;
 }
 
 .draft {
@@ -329,7 +342,7 @@ h2 {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  padding: 8px 10px;
+  padding: 5px 10px;
   border-right: 1px solid var(--line);
 }
 
@@ -386,29 +399,57 @@ textarea {
 
 #prompt {
   padding-right: 50px;
+  padding-bottom: 50px;
   overflow: hidden;
 }
 
 .request-buttons {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  inset: 8px;
+  pointer-events: none;
+}
+
+.request-buttons .icon-button {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.attach-button {
+  top: 0;
+  right: 0;
+}
+
+.editor-button {
+  bottom: 0;
+  left: 0;
+}
+
+.send-button {
+  bottom: 0;
+  right: 0;
+}
+
+.mode-actions, .display-actions {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
   align-items: center;
+  gap: 6px;
 }
 
 .mode-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding: 6px 10px;
   border-right: 1px solid var(--line);
 }
 
-.mode-actions select {
-  min-height: 30px;
+.mode-button, .display-button {
+  min-height: 28px;
+  padding: 4px 10px;
+}
+
+.mode-button.active, .display-button.active {
+  border-color: var(--accent);
+  background: var(--panel-2);
+  color: var(--white);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .visually-hidden {

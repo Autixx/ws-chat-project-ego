@@ -14,7 +14,9 @@ const state = {
   currentDraft: null,
   currentDraftItems: [],
   attachments: [],
-  attachmentsByRequest: {}
+  attachmentsByRequest: {},
+  requestMode: "chat",
+  displayMode: "text"
 };
 
 const els = {
@@ -32,14 +34,14 @@ const els = {
   newConversationBtn: document.getElementById("newConversationBtn"),
   archiveConversationBtn: document.getElementById("archiveConversationBtn"),
   themeButtons: Array.from(document.querySelectorAll("[data-theme]")),
-  displayMode: document.getElementById("displayMode"),
+  displayButtons: Array.from(document.querySelectorAll("[data-display]")),
   requestSearch: document.getElementById("requestSearch"),
   responseSearch: document.getElementById("responseSearch"),
   requestList: document.getElementById("requestList"),
   responseList: document.getElementById("responseList"),
   attachmentsList: document.getElementById("attachmentsList"),
   prompt: document.getElementById("prompt"),
-  modeSelect: document.getElementById("modeSelect"),
+  modeButtons: Array.from(document.querySelectorAll("[data-mode]")),
   fileInput: document.getElementById("fileInput"),
   fileNotice: document.getElementById("fileNotice"),
   sendBtn: document.getElementById("sendBtn"),
@@ -275,6 +277,18 @@ function setStatusIndicator(square, text, status, label) {
 function setTheme(theme) {
   document.body.className = theme;
   for (const button of els.themeButtons) button.classList.toggle("active", button.dataset.theme === theme);
+}
+
+function setRequestMode(mode) {
+  state.requestMode = mode;
+  for (const button of els.modeButtons) button.classList.toggle("active", button.dataset.mode === mode);
+}
+
+function setDisplayMode(mode) {
+  state.displayMode = mode;
+  for (const button of els.displayButtons) button.classList.toggle("active", button.dataset.display === mode);
+  renderRequests();
+  renderResponses();
 }
 
 function syncEditorFromPrompt() {
@@ -520,7 +534,7 @@ function renderAttachments() {
   const attachments = state.attachmentsByRequest[state.selectedRequestId] || [];
   if (!attachments.length) {
     const empty = document.createElement("div");
-    empty.className = "attachment-card";
+    empty.className = "attachment-empty";
     empty.textContent = "No attachments for selected request.";
     els.attachmentsList.append(empty);
     return;
@@ -613,7 +627,7 @@ function cell(text, className = "") {
 }
 
 function contentForDisplay(message) {
-  if (els.displayMode.value === "json") return JSON.stringify(message, null, 2);
+  if (state.displayMode === "json") return JSON.stringify(message, null, 2);
   return message.content;
 }
 
@@ -699,7 +713,7 @@ async function sendCurrentRequest() {
   send({
     type: "message_send",
     conversationId: state.currentConversationId,
-    mode: els.modeSelect.value,
+    mode: state.requestMode,
     text,
     attachmentUploadIds
   });
@@ -725,10 +739,8 @@ async function uploadSelectedFiles() {
 }
 
 for (const button of els.themeButtons) button.addEventListener("click", () => setTheme(button.dataset.theme));
-els.displayMode.addEventListener("change", () => {
-  renderRequests();
-  renderResponses();
-});
+for (const button of els.modeButtons) button.addEventListener("click", () => setRequestMode(button.dataset.mode));
+for (const button of els.displayButtons) button.addEventListener("click", () => setDisplayMode(button.dataset.display));
 els.conversationSelect.addEventListener("change", () => openConversation(els.conversationSelect.value));
 els.newConversationBtn.addEventListener("click", () => send({ type: "conversation_create", title: "ProjectEGO Workbench" }));
 els.archiveConversationBtn.addEventListener("click", () => {
