@@ -66,6 +66,11 @@ const els = {
   imageViewerBody: document.getElementById("imageViewerBody"),
   imageViewerImg: document.getElementById("imageViewerImg"),
   closeImageViewerBtn: document.getElementById("closeImageViewerBtn"),
+  mediaViewer: document.getElementById("mediaViewer"),
+  mediaViewerHeader: document.getElementById("mediaViewerHeader"),
+  mediaViewerTitle: document.getElementById("mediaViewerTitle"),
+  mediaViewerVideo: document.getElementById("mediaViewerVideo"),
+  closeMediaViewerBtn: document.getElementById("closeMediaViewerBtn"),
   textPreview: document.getElementById("textPreview"),
   textPreviewHeader: document.getElementById("textPreviewHeader"),
   textPreviewTitle: document.getElementById("textPreviewTitle"),
@@ -406,7 +411,21 @@ function closeImageViewer() {
   els.imageViewer.hidden = true;
   els.imageViewerImg.removeAttribute("src");
   els.imageViewerBody.classList.remove("dragging");
+  document.body.classList.remove("no-text-select");
   state.imageDragging = null;
+}
+
+function openMediaViewer(url, fileName) {
+  els.mediaViewerVideo.src = url;
+  els.mediaViewerTitle.textContent = fileName;
+  els.mediaViewer.hidden = false;
+}
+
+function closeMediaViewer() {
+  els.mediaViewer.hidden = true;
+  els.mediaViewerVideo.pause();
+  els.mediaViewerVideo.removeAttribute("src");
+  els.mediaViewerVideo.load();
 }
 
 async function openTextPreview(url, fileName) {
@@ -631,11 +650,11 @@ function renderAttachments() {
       audio.src = url;
       card.append(audio);
     } else if (attachment.fileName.match(/\.mp4$/i)) {
-      const video = document.createElement("video");
-      video.controls = true;
-      video.src = url;
-      video.width = 240;
-      card.append(video);
+      const preview = document.createElement("button");
+      preview.type = "button";
+      preview.textContent = "Preview video";
+      preview.addEventListener("click", () => openMediaViewer(url, attachment.fileName));
+      card.append(preview);
     } else if (attachment.fileName.match(/\.(jpg|png|svg)$/i)) {
       const thumbButton = document.createElement("button");
       thumbButton.type = "button";
@@ -919,6 +938,7 @@ els.closeUploadInspectorBtn.addEventListener("click", () => {
 });
 els.clearUploadsBtn.addEventListener("click", clearSelectedFiles);
 els.closeImageViewerBtn.addEventListener("click", closeImageViewer);
+els.closeMediaViewerBtn.addEventListener("click", closeMediaViewer);
 els.imageViewerImg.draggable = false;
 els.imageViewerImg.addEventListener("dragstart", (event) => event.preventDefault());
 els.imageViewerBody.addEventListener("dragstart", (event) => event.preventDefault());
@@ -930,7 +950,9 @@ els.imageViewerBody.addEventListener("wheel", (event) => {
 });
 els.imageViewerBody.addEventListener("pointerdown", (event) => {
   if (els.imageViewer.hidden || event.button !== 0) return;
+  event.preventDefault();
   state.imageDragging = { x: event.clientX, y: event.clientY, panX: state.imagePanX, panY: state.imagePanY };
+  document.body.classList.add("no-text-select");
   els.imageViewerBody.classList.add("dragging");
   els.imageViewerBody.setPointerCapture(event.pointerId);
 });
@@ -942,10 +964,12 @@ els.imageViewerBody.addEventListener("pointermove", (event) => {
 });
 els.imageViewerBody.addEventListener("pointerup", () => {
   state.imageDragging = null;
+  document.body.classList.remove("no-text-select");
   els.imageViewerBody.classList.remove("dragging");
 });
 els.imageViewerBody.addEventListener("pointercancel", () => {
   state.imageDragging = null;
+  document.body.classList.remove("no-text-select");
   els.imageViewerBody.classList.remove("dragging");
 });
 els.closeTextPreviewBtn.addEventListener("click", closeTextPreview);
@@ -1002,6 +1026,7 @@ setConnected(false);
 wireDraggableWindow(els.promptEditor, els.promptEditorHeader, els.closeEditorBtn);
 wireDraggableWindow(els.uploadInspector, els.uploadInspectorHeader, els.closeUploadInspectorBtn);
 wireDraggableWindow(els.imageViewer, els.imageViewerHeader, els.closeImageViewerBtn);
+wireDraggableWindow(els.mediaViewer, els.mediaViewerHeader, els.closeMediaViewerBtn);
 wireDraggableWindow(els.textPreview, els.textPreviewHeader, els.closeTextPreviewBtn);
 authEls.toggleAuthMode.addEventListener("click", () => {
   const register = authEls.registerForm.hidden;
