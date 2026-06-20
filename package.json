@@ -1,6 +1,6 @@
 {
   "name": "projectego-ws-chat",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "ProjectEGO WebSocket Chat Gateway MVP",
   "type": "module",
   "scripts": {

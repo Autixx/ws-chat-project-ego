@@ -291,6 +291,10 @@ function setDisplayMode(mode) {
   renderResponses();
 }
 
+function toggleDisplayMode(mode) {
+  setDisplayMode(state.displayMode === mode ? "text" : mode);
+}
+
 function syncEditorFromPrompt() {
   if (els.promptEditorText.value !== els.prompt.value) els.promptEditorText.value = els.prompt.value;
 }
@@ -740,7 +744,7 @@ async function uploadSelectedFiles() {
 
 for (const button of els.themeButtons) button.addEventListener("click", () => setTheme(button.dataset.theme));
 for (const button of els.modeButtons) button.addEventListener("click", () => setRequestMode(button.dataset.mode));
-for (const button of els.displayButtons) button.addEventListener("click", () => setDisplayMode(button.dataset.display));
+for (const button of els.displayButtons) button.addEventListener("click", () => toggleDisplayMode(button.dataset.display));
 els.conversationSelect.addEventListener("change", () => openConversation(els.conversationSelect.value));
 els.newConversationBtn.addEventListener("click", () => send({ type: "conversation_create", title: "ProjectEGO Workbench" }));
 els.archiveConversationBtn.addEventListener("click", () => {
