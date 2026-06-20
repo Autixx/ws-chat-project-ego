@@ -10,6 +10,7 @@ export type ClientMessage =
   | { type: "conversation_rename"; conversationId: string; title: string }
   | { type: "conversation_archive"; conversationId: string }
   | { type: "conversation_unarchive"; conversationId: string }
+  | { type: "conversation_delete"; conversationId: string }
   | {
       type: "message_send";
       conversationId: string;
@@ -51,6 +52,7 @@ export type ServerMessage =
   | { type: "conversation_renamed"; conversation: Conversation }
   | { type: "conversation_archived"; conversationId: string }
   | { type: "conversation_unarchived"; conversation: Conversation }
+  | { type: "conversation_deleted"; conversationId: string }
   | { type: "message_created"; message: ChatMessage }
   | { type: "assistant_message_start"; conversationId: string; messageId: string }
   | { type: "assistant_message_done"; conversationId: string; messageId: string }
@@ -93,6 +95,11 @@ export function parseClientMessage(raw: unknown): ClientMessage {
   if (msg.type === "conversation_unarchive") {
     if (typeof msg.conversationId !== "string") throw new Error("conversation_unarchive requires conversationId.");
     return { type: "conversation_unarchive", conversationId: msg.conversationId };
+  }
+
+  if (msg.type === "conversation_delete") {
+    if (typeof msg.conversationId !== "string") throw new Error("conversation_delete requires conversationId.");
+    return { type: "conversation_delete", conversationId: msg.conversationId };
   }
 
   if (msg.type === "message_send") {

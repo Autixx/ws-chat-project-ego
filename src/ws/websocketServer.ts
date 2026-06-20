@@ -2,7 +2,7 @@ import type { Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { AuthenticatedUser } from "../auth/authelia.js";
 import { requireUserForRequest } from "../auth/requireUser.js";
-import { finalizeStagedUploads } from "../attachments/attachmentService.js";
+import { deleteStoredAttachments, finalizeStagedUploads } from "../attachments/attachmentService.js";
 import type { Conversation } from "../conversations/types.js";
 import type { AppConfig } from "../config.js";
 import { ConversationStore } from "../conversations/conversationStore.js";
@@ -166,6 +166,14 @@ export function attachWebSocketServer(server: Server, config: AppConfig, databas
     if (message.type === "conversation_unarchive") {
       const conversation = await conversations.unarchiveConversation(user, message.conversationId);
       send(ws, { type: "conversation_unarchived", conversation });
+      send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user, true), includeArchived: true });
+      return;
+    }
+
+    if (message.type === "conversation_delete") {
+      const attachments = await conversations.deleteConversation(user, message.conversationId);
+      await deleteStoredAttachments(config.dataDir, attachments);
+      send(ws, { type: "conversation_deleted", conversationId: message.conversationId });
       send(ws, { type: "conversation_list", conversations: await conversations.listConversations(user, true), includeArchived: true });
       return;
     }

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { PassThrough } from "node:stream";
-import { stageUploadedFile, finalizeStagedUploads, validateAttachmentFile, streamAttachment } from "../src/attachments/attachmentService.js";
+import { stageUploadedFile, finalizeStagedUploads, validateAttachmentFile, streamAttachment, deleteStoredAttachments } from "../src/attachments/attachmentService.js";
 import { ConversationStore } from "../src/conversations/conversationStore.js";
 import { MessageStore } from "../src/conversations/messageStore.js";
 import { openDatabase } from "../src/db/database.js";
@@ -197,6 +197,41 @@ test("streamAttachment streams owner file and rejects unsafe paths", async () =>
       }),
       /Invalid attachment path/
     );
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("deleteStoredAttachments removes stored files but ignores unsafe paths", async () => {
+  const s = stores();
+  try {
+    const safeRelative = "attachments/delete/file.txt";
+    const safeAbsolute = path.join(s.dir, safeRelative);
+    mkdirSync(path.dirname(safeAbsolute), { recursive: true });
+    writeFileSync(safeAbsolute, "delete me", "utf8");
+
+    await deleteStoredAttachments(s.dir, [
+      {
+        id: "ATT-safe",
+        conversationId: "C-delete",
+        fileName: "file.txt",
+        mimeType: "text/plain",
+        sizeBytes: 9,
+        storagePath: safeRelative,
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: "ATT-unsafe",
+        conversationId: "C-delete",
+        fileName: "bad.txt",
+        mimeType: "text/plain",
+        sizeBytes: 1,
+        storagePath: "../bad.txt",
+        createdAt: new Date().toISOString()
+      }
+    ]);
+
+    assert.equal(existsSync(safeAbsolute), false);
   } finally {
     s.cleanup();
   }

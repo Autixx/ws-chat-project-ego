@@ -202,6 +202,34 @@ test("ConversationStore stores and loads attachment metadata per request", async
   }
 });
 
+test("ConversationStore delete removes conversation scoped database rows", async () => {
+  const stores = testStores();
+  try {
+    const conversation = await stores.conversations.createConversation(user, "Delete me");
+    const request = await stores.messages.appendUserMessage(conversation.id, user, "request");
+    await stores.messages.appendAssistantMessage(conversation.id, user, "response", { responseToRequestId: request.id });
+    await stores.conversations.insertAttachment(user, {
+      conversationId: conversation.id,
+      messageId: request.id,
+      fileName: "delete.txt",
+      mimeType: "text/plain",
+      sizeBytes: 9,
+      storagePath: "attachments/delete/delete.txt"
+    });
+
+    const attachments = await stores.conversations.deleteConversation(user, conversation.id);
+    const messageRow = stores.database.db.prepare("SELECT 1 FROM messages WHERE conversation_id = ?").get(conversation.id);
+    const attachmentRow = stores.database.db.prepare("SELECT 1 FROM attachments WHERE conversation_id = ?").get(conversation.id);
+
+    assert.equal(attachments.length, 1);
+    assert.equal(messageRow, undefined);
+    assert.equal(attachmentRow, undefined);
+    await assert.rejects(stores.conversations.loadConversation(user, conversation.id), /Conversation not found/);
+  } finally {
+    stores.cleanup();
+  }
+});
+
 test("draft_open validates draft_refs ownership", async () => {
   const stores = testStores();
   try {

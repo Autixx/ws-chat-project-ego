@@ -95,6 +95,7 @@ button {
 
 button:hover { border-color: var(--accent); }
 button:disabled { opacity: .45; cursor: not-allowed; }
+.danger-button { border-color: var(--red); }
 
 .workbench {
   height: 100vh;
@@ -105,7 +106,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(520px, auto) minmax(220px, 1fr);
+  grid-template-columns: minmax(240px, 1fr) minmax(640px, auto) minmax(220px, 1fr);
   gap: 10px;
   align-items: center;
   padding: 6px 14px;
@@ -214,8 +215,27 @@ h2 {
 }
 
 #conversationSelect {
-  width: min(360px, 30vw);
+  width: min(340px, 28vw);
   min-width: 240px;
+}
+
+* {
+  scrollbar-color: var(--accent) var(--field);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--field);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 1px solid var(--accent);
 }
 
 .search-row {
@@ -632,6 +652,10 @@ textarea {
   font-size: 18px;
 }
 
+.window-close::before {
+  content: "\00d7";
+}
+
 #promptEditorText {
   border: 0;
   min-height: 0;
@@ -737,7 +761,7 @@ body.no-text-select, body.no-text-select * {
   background: rgba(0, 0, 0, .58);
 }
 
-.rename-dialog {
+.rename-dialog, .delete-dialog {
   width: min(64ch, calc(100vw - 48px));
   border: 1px solid var(--accent);
   background: var(--panel);
@@ -745,6 +769,15 @@ body.no-text-select, body.no-text-select * {
   display: grid;
   gap: 10px;
   box-shadow: 0 14px 40px rgba(0, 0, 0, .45);
+}
+
+.delete-dialog {
+  width: min(760px, calc(100vw - 48px));
+}
+
+.delete-dialog p {
+  color: var(--text);
+  font-weight: 700;
 }
 
 .rename-dialog label {
@@ -760,10 +793,80 @@ body.no-text-select, body.no-text-select * {
   background: var(--field);
 }
 
-.rename-actions {
+.rename-actions, .delete-actions {
   display: flex;
   justify-content: space-between;
   gap: 10px;
+}
+
+.delete-files-dialog {
+  max-height: min(680px, calc(100vh - 48px));
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+
+.delete-files-list {
+  min-height: 96px;
+  max-height: 48vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: var(--field);
+  padding: 8px;
+}
+
+.delete-file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.delete-file-row:last-child {
+  border-bottom: 0;
+}
+
+.delete-file-info {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+}
+
+.delete-file-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.delete-understand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.download-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.download-icon:hover {
+  border-color: var(--accent);
+}
+
+.download-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .debug {

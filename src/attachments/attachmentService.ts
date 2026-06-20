@@ -118,6 +118,18 @@ export async function streamAttachment(input: {
   createReadStream(absolutePath).pipe(input.res);
 }
 
+export async function deleteStoredAttachments(dataDir: string, attachments: AttachmentMetadata[]): Promise<void> {
+  const dataRoot = path.resolve(dataDir);
+  await Promise.all(
+    attachments.map(async (attachment) => {
+      const absolutePath = path.resolve(dataRoot, attachment.storagePath);
+      const relative = path.relative(dataRoot, absolutePath);
+      if (relative.startsWith("..") || path.isAbsolute(relative)) return;
+      await fs.rm(absolutePath, { force: true });
+    })
+  );
+}
+
 function mimeFromExtension(fileName: string): string {
   const ext = path.extname(fileName).toLowerCase();
   if (ext === ".txt") return "text/plain";

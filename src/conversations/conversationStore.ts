@@ -108,6 +108,13 @@ export class ConversationStore {
     return this.loadConversation(user, conversationId);
   }
 
+  async deleteConversation(user: AuthenticatedUser, conversationId: string): Promise<AttachmentMetadata[]> {
+    await this.loadConversation(user, conversationId);
+    const attachments = await this.listAttachments(user, conversationId);
+    this.database.db.prepare("DELETE FROM conversations WHERE id = ? AND user_id = ?").run(conversationId, safeUserId(user.username));
+    return attachments;
+  }
+
   async touchConversation(user: AuthenticatedUser, conversationId: string): Promise<void> {
     await this.loadConversation(user, conversationId);
     this.database.db

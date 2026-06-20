@@ -43,6 +43,7 @@ const els = {
   renameConversationBtn: document.getElementById("renameConversationBtn"),
   archiveConversationBtn: document.getElementById("archiveConversationBtn"),
   unarchiveConversationBtn: document.getElementById("unarchiveConversationBtn"),
+  deleteConversationBtn: document.getElementById("deleteConversationBtn"),
   themeButtons: Array.from(document.querySelectorAll("[data-theme]")),
   displayButtons: Array.from(document.querySelectorAll("[data-display]")),
   requestSearch: document.getElementById("requestSearch"),
@@ -86,6 +87,14 @@ const els = {
   renameInput: document.getElementById("renameInput"),
   cancelRenameBtn: document.getElementById("cancelRenameBtn"),
   applyRenameBtn: document.getElementById("applyRenameBtn"),
+  deleteStepOneOverlay: document.getElementById("deleteStepOneOverlay"),
+  deleteStepTwoOverlay: document.getElementById("deleteStepTwoOverlay"),
+  deleteUnderstoodBtn: document.getElementById("deleteUnderstoodBtn"),
+  deleteCancelOneBtn: document.getElementById("deleteCancelOneBtn"),
+  deleteFilesList: document.getElementById("deleteFilesList"),
+  deleteConsequencesCheck: document.getElementById("deleteConsequencesCheck"),
+  deleteConfirmBtn: document.getElementById("deleteConfirmBtn"),
+  deleteCancelTwoBtn: document.getElementById("deleteCancelTwoBtn"),
   draftJobId: document.getElementById("draftJobId"),
   draftPreview: document.getElementById("draftPreview"),
   itemsList: document.getElementById("itemsList"),
@@ -132,6 +141,7 @@ function setConnected(value) {
     els.renameConversationBtn,
     els.archiveConversationBtn,
     els.unarchiveConversationBtn,
+    els.deleteConversationBtn,
     els.sendBtn,
     els.applySelectedBtn,
     els.applyAllBtn,
@@ -257,6 +267,20 @@ function handleServerMessage(message) {
 
   if (message.type === "conversation_unarchived") {
     upsertConversation(message.conversation);
+    renderAll();
+    requestConversationList();
+  }
+
+  if (message.type === "conversation_deleted") {
+    state.conversations = state.conversations.filter((item) => item.id !== message.conversationId);
+    if (state.currentConversationId === message.conversationId) {
+      state.currentConversationId = null;
+      state.messages = [];
+      state.attachments = [];
+      state.attachmentsByRequest = {};
+      state.jobs = [];
+    }
+    closeDeleteDialogs();
     renderAll();
     requestConversationList();
   }
@@ -541,7 +565,6 @@ function createFloatingWindow(className, title) {
   close.className = "window-close";
   close.type = "button";
   close.setAttribute("aria-label", "Close");
-  close.textContent = "×";
   header.append(label, close);
   panel.append(header);
   document.body.append(panel);
@@ -632,6 +655,7 @@ function renderHeader() {
   els.archiveConversationBtn.disabled = !conversation || conversation.archived;
   els.unarchiveConversationBtn.disabled = !conversation || !conversation.archived;
   els.renameConversationBtn.disabled = !conversation;
+  els.deleteConversationBtn.disabled = !conversation;
   els.showArchivedBtn.classList.toggle("active", state.showArchived);
 }
 
@@ -670,6 +694,75 @@ function applyRename() {
   if (!state.currentConversationId || !title) return;
   send({ type: "conversation_rename", conversationId: state.currentConversationId, title });
   closeRenameDialog();
+}
+
+function openDeleteStepOne() {
+  if (!state.currentConversationId) return;
+  els.deleteStepOneOverlay.hidden = false;
+}
+
+function openDeleteStepTwo() {
+  els.deleteConsequencesCheck.checked = false;
+  els.deleteConfirmBtn.disabled = true;
+  renderDeleteFilesList();
+  els.deleteStepTwoOverlay.hidden = false;
+}
+
+function closeDeleteDialogs() {
+  els.deleteStepTwoOverlay.hidden = true;
+  els.deleteStepOneOverlay.hidden = true;
+}
+
+function renderDeleteFilesList() {
+  els.deleteFilesList.replaceChildren();
+  const attachments = state.attachments || [];
+  if (!attachments.length) {
+    const empty = document.createElement("div");
+    empty.className = "attachment-empty";
+    empty.textContent = "No files attached to this Workbench.";
+    els.deleteFilesList.append(empty);
+    return;
+  }
+  for (const attachment of attachments) {
+    const row = document.createElement("div");
+    row.className = "delete-file-row";
+    const info = document.createElement("div");
+    info.className = "delete-file-info";
+    info.textContent = `${attachment.fileName}\n${kb(attachment.sizeBytes)} / ${attachment.mimeType || "unknown"}`;
+    const actions = document.createElement("div");
+    actions.className = "delete-file-actions";
+    const url = `/api/attachments/${encodeURIComponent(attachment.id)}`;
+    if (attachment.fileName.match(/\.(jpg|png|svg)$/i)) {
+      actions.append(previewButton("Preview", () => openImageViewer(url, attachment.fileName)));
+    } else if (attachment.fileName.match(/\.mp4$/i)) {
+      actions.append(previewButton("Preview", () => openMediaViewer(url, attachment.fileName)));
+    } else if (attachment.fileName.match(/\.(txt|md)$/i)) {
+      actions.append(previewButton("Preview", () => openTextPreview(url, attachment.fileName)));
+    }
+    const download = document.createElement("a");
+    download.className = "download-icon";
+    download.href = url;
+    download.download = attachment.fileName;
+    download.setAttribute("aria-label", `Download ${attachment.fileName}`);
+    download.title = "Download";
+    download.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>';
+    actions.append(download);
+    row.append(info, actions);
+    els.deleteFilesList.append(row);
+  }
+}
+
+function previewButton(label, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function confirmDeleteWorkbench() {
+  if (!state.currentConversationId || !els.deleteConsequencesCheck.checked) return;
+  send({ type: "conversation_delete", conversationId: state.currentConversationId });
 }
 
 function requestHasResponse(requestId) {
@@ -1141,6 +1234,7 @@ els.archiveConversationBtn.addEventListener("click", () => {
 els.unarchiveConversationBtn.addEventListener("click", () => {
   if (state.currentConversationId) send({ type: "conversation_unarchive", conversationId: state.currentConversationId });
 });
+els.deleteConversationBtn.addEventListener("click", openDeleteStepOne);
 els.renameDialog.addEventListener("submit", (event) => {
   event.preventDefault();
   applyRename();
@@ -1149,6 +1243,13 @@ els.cancelRenameBtn.addEventListener("click", closeRenameDialog);
 els.renameOverlay.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeRenameDialog();
 });
+els.deleteUnderstoodBtn.addEventListener("click", openDeleteStepTwo);
+els.deleteCancelOneBtn.addEventListener("click", closeDeleteDialogs);
+els.deleteCancelTwoBtn.addEventListener("click", closeDeleteDialogs);
+els.deleteConsequencesCheck.addEventListener("change", () => {
+  els.deleteConfirmBtn.disabled = !els.deleteConsequencesCheck.checked;
+});
+els.deleteConfirmBtn.addEventListener("click", confirmDeleteWorkbench);
 els.requestSearch.addEventListener("input", renderRequests);
 els.responseSearch.addEventListener("input", renderResponses);
 els.sendBtn.addEventListener("click", sendCurrentRequest);

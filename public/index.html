@@ -35,20 +35,21 @@
           <div class="status-line user-status"><span id="userLine">USER</span> <button id="logoutBtn" type="button">Logout</button></div>
         </div>
         <div class="toolbar">
-          <button id="showArchivedBtn" class="toggle-button" type="button">Show archived</button>
           <select id="conversationSelect" aria-label="Workbenches"></select>
+          <button id="newConversationBtn" type="button">New</button>
+          <button id="showArchivedBtn" class="toggle-button" type="button">Show archived</button>
           <button id="renameConversationBtn" type="button">Rename</button>
           <button id="unarchiveConversationBtn" type="button">Unarchive</button>
           <button id="archiveConversationBtn" type="button">Archive</button>
+          <button id="deleteConversationBtn" class="danger-button" type="button">Delete</button>
+        </div>
+        <div class="status-block">
           <div class="theme-picker" aria-label="Theme">
             <span>Theme</span>
             <button class="theme-swatch light" type="button" data-theme="theme-light" aria-label="Light theme"></button>
             <button class="theme-swatch dark active" type="button" data-theme="theme-dark" aria-label="Dark theme"></button>
             <button class="theme-swatch contrast" type="button" data-theme="theme-contrast" aria-label="Black contrast theme"></button>
           </div>
-          <button id="newConversationBtn" type="button">New</button>
-        </div>
-        <div class="status-block">
           <div><span id="planeSquare" class="sq gray"></span>STATUS PLANE <span id="planeText">unknown</span></div>
           <div><span id="n8nSquare" class="sq gray"></span>STATUS n8n <span id="n8nText">unknown</span></div>
           <div><span id="dbSquare" class="sq gray"></span>STATUS DB <span id="dbText">unknown</span></div>
@@ -148,7 +149,7 @@
       <section id="imageViewer" class="image-viewer" hidden>
         <header id="imageViewerHeader" class="image-viewer-header">
           <span id="imageViewerTitle">IMAGE PREVIEW</span>
-          <button id="closeImageViewerBtn" class="window-close" type="button" aria-label="Close">×</button>
+          <button id="closeImageViewerBtn" class="window-close" type="button" aria-label="Close"></button>
         </header>
         <div id="imageViewerBody" class="image-viewer-body">
           <img id="imageViewerImg" alt="" draggable="false" />
@@ -158,7 +159,7 @@
       <section id="mediaViewer" class="media-viewer" hidden>
         <header id="mediaViewerHeader" class="media-viewer-header">
           <span id="mediaViewerTitle">VIDEO PREVIEW</span>
-          <button id="closeMediaViewerBtn" class="window-close" type="button" aria-label="Close">×</button>
+          <button id="closeMediaViewerBtn" class="window-close" type="button" aria-label="Close"></button>
         </header>
         <div class="media-viewer-body">
           <video id="mediaViewerVideo" controls playsinline></video>
@@ -176,6 +177,31 @@
             <button id="applyRenameBtn" type="submit">Apply</button>
           </div>
         </form>
+      </section>
+
+      <section id="deleteStepOneOverlay" class="modal-overlay" hidden>
+        <div class="delete-dialog">
+          <p>THIS ACTION WILL DELETE THIS WORKBENCH PERMANENTLY!</p>
+          <div class="delete-actions">
+            <button id="deleteUnderstoodBtn" type="button">Understood</button>
+            <button id="deleteCancelOneBtn" type="button">Cancel</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="deleteStepTwoOverlay" class="modal-overlay" hidden>
+        <div class="delete-dialog delete-files-dialog">
+          <p>THIS WORKBENCH CONTAINS THIS FILES - DOWNLOAD IT OR YOU WILL LOST THEM PERMANENTLY!</p>
+          <div id="deleteFilesList" class="delete-files-list"></div>
+          <label class="delete-understand">
+            <input id="deleteConsequencesCheck" type="checkbox" />
+            I understand all consequences
+          </label>
+          <div class="delete-actions">
+            <button id="deleteConfirmBtn" type="button" disabled>Confirm</button>
+            <button id="deleteCancelTwoBtn" type="button">Cancel</button>
+          </div>
+        </div>
       </section>
 
       <section id="textPreview" class="text-preview" hidden>
