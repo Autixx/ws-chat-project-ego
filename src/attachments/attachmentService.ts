@@ -7,12 +7,15 @@ import type { AttachmentMetadata } from "../conversations/types.js";
 import { createId, safeUserId } from "../utils/ids.js";
 
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-const allowedExtensions = new Set([".txt", ".md", ".mp3", ".mp4"]);
+const allowedExtensions = new Set([".txt", ".md", ".mp3", ".mp4", ".jpg", ".png", ".svg"]);
 const allowedMimePrefixes = new Map([
   [".txt", ["text/plain", "application/octet-stream"]],
   [".md", ["text/markdown", "text/plain", "application/octet-stream"]],
   [".mp3", ["audio/mpeg", "audio/mp3", "application/octet-stream"]],
-  [".mp4", ["video/mp4", "application/octet-stream"]]
+  [".mp4", ["video/mp4", "application/octet-stream"]],
+  [".jpg", ["image/jpeg", "application/octet-stream"]],
+  [".png", ["image/png", "application/octet-stream"]],
+  [".svg", ["image/svg+xml", "application/octet-stream"]]
 ]);
 
 export type StagedUpload = {
@@ -121,5 +124,8 @@ function mimeFromExtension(fileName: string): string {
   if (ext === ".md") return "text/markdown";
   if (ext === ".mp3") return "audio/mpeg";
   if (ext === ".mp4") return "video/mp4";
+  if (ext === ".jpg") return "image/jpeg";
+  if (ext === ".png") return "image/png";
+  if (ext === ".svg") return "image/svg+xml";
   return "application/octet-stream";
 }

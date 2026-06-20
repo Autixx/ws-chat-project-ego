@@ -499,25 +499,45 @@ textarea {
   font-size: 12px;
 }
 
-.prompt-editor {
+#fileNotice.has-files {
+  cursor: pointer;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+.prompt-editor, .upload-inspector {
   position: fixed;
+  z-index: 50;
+  border: 1px solid var(--accent);
+  background: var(--panel);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .45);
+  overflow: hidden;
+}
+
+.prompt-editor {
   left: 18vw;
   top: 16vh;
-  z-index: 50;
   width: min(760px, 72vw);
   height: min(540px, 70vh);
   min-width: 360px;
   min-height: 220px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  border: 1px solid var(--accent);
-  background: var(--panel);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, .45);
   resize: both;
-  overflow: hidden;
 }
 
-.prompt-editor-header {
+.upload-inspector {
+  right: 24px;
+  bottom: 76px;
+  width: min(460px, calc(100vw - 48px));
+  max-height: min(420px, calc(100vh - 120px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.prompt-editor-header, .upload-inspector-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -529,7 +549,7 @@ textarea {
   user-select: none;
 }
 
-.prompt-editor-header button {
+.prompt-editor-header button, .upload-inspector-header button {
   min-height: 24px;
   padding: 2px 8px;
 }
@@ -540,6 +560,41 @@ textarea {
   resize: none;
   padding: 10px;
   line-height: 1.4;
+}
+
+.upload-inspector-list {
+  overflow: auto;
+  padding: 8px;
+}
+
+.upload-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding: 7px 0;
+}
+
+.upload-row:last-child {
+  border-bottom: 0;
+}
+
+.upload-name {
+  color: var(--text);
+  word-break: break-word;
+}
+
+.upload-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.upload-inspector-footer {
+  padding: 8px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: flex-end;
 }
 
 .debug {

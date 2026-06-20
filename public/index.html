@@ -96,7 +96,7 @@
                     <path d="m10.3 14.3 7-7" />
                   </svg>
                 </label>
-                <input id="fileInput" class="visually-hidden" type="file" multiple accept=".txt,.md,.mp3,.mp4,text/plain,text/markdown,audio/mpeg,video/mp4" />
+                <input id="fileInput" class="visually-hidden" type="file" multiple accept=".txt,.md,.mp3,.mp4,.jpg,.png,.svg,text/plain,text/markdown,audio/mpeg,video/mp4,image/jpeg,image/png,image/svg+xml" />
                 <button id="sendBtn" class="icon-button send-icon send-button" type="button" aria-label="Send request" title="Send request">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M3 20 21 12 3 4l3.4 7.2L14 12l-7.6.8L3 20Z" />
@@ -132,6 +132,17 @@
           <button id="closeEditorBtn" type="button">Close</button>
         </header>
         <textarea id="promptEditorText" spellcheck="true"></textarea>
+      </section>
+
+      <section id="uploadInspector" class="upload-inspector" hidden>
+        <header id="uploadInspectorHeader" class="upload-inspector-header">
+          <span>SELECTED FILES</span>
+          <button id="closeUploadInspectorBtn" type="button">Close</button>
+        </header>
+        <div id="uploadInspectorList" class="upload-inspector-list"></div>
+        <footer class="upload-inspector-footer">
+          <button id="clearUploadsBtn" type="button">Clear selected files</button>
+        </footer>
       </section>
 
       <section class="draft panel">

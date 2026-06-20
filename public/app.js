@@ -50,6 +50,10 @@ const els = {
   promptEditorHeader: document.getElementById("promptEditorHeader"),
   promptEditorText: document.getElementById("promptEditorText"),
   closeEditorBtn: document.getElementById("closeEditorBtn"),
+  uploadInspector: document.getElementById("uploadInspector"),
+  uploadInspectorList: document.getElementById("uploadInspectorList"),
+  closeUploadInspectorBtn: document.getElementById("closeUploadInspectorBtn"),
+  clearUploadsBtn: document.getElementById("clearUploadsBtn"),
   draftJobId: document.getElementById("draftJobId"),
   draftPreview: document.getElementById("draftPreview"),
   itemsList: document.getElementById("itemsList"),
@@ -440,6 +444,11 @@ function kb(value) {
   return `${(value / 1024).toFixed(1)} KB`;
 }
 
+function fileExt(fileName) {
+  const index = fileName.lastIndexOf(".");
+  return index >= 0 ? fileName.slice(index).toLowerCase() : "";
+}
+
 function byteSize(text) {
   return new Blob([text || ""]).size;
 }
@@ -546,7 +555,7 @@ function renderAttachments() {
   for (const attachment of attachments) {
     const card = document.createElement("div");
     card.className = "attachment-card";
-    const icon = attachment.fileName.match(/\.mp3$/i) ? "[audio]" : attachment.fileName.match(/\.mp4$/i) ? "[video]" : "[text]";
+    const icon = attachment.fileName.match(/\.mp3$/i) ? "[audio]" : attachment.fileName.match(/\.mp4$/i) ? "[video]" : attachment.fileName.match(/\.(jpg|png|svg)$/i) ? "[image]" : "[text]";
     const label = document.createElement("div");
     label.textContent = `${icon}\n${attachment.fileName}\n${kb(attachment.sizeBytes)}\nrequest: ${attachment.messageId || "-"}`;
     card.append(label);
@@ -562,6 +571,12 @@ function renderAttachments() {
       video.src = url;
       video.width = 240;
       card.append(video);
+    } else if (attachment.fileName.match(/\.(jpg|png)$/i)) {
+      const image = document.createElement("img");
+      image.src = url;
+      image.alt = attachment.fileName;
+      image.width = 180;
+      card.append(image);
     } else {
       const link = document.createElement("a");
       link.href = url;
@@ -725,7 +740,7 @@ async function sendCurrentRequest() {
   els.promptEditorText.value = "";
   els.promptEditor.hidden = true;
   els.fileInput.value = "";
-  els.fileNotice.textContent = "";
+  updateSelectedFileNotice();
 }
 
 async function uploadSelectedFiles() {
@@ -742,6 +757,71 @@ async function uploadSelectedFiles() {
   return (body.uploads || []).map((upload) => upload.uploadId);
 }
 
+function selectedFiles() {
+  return Array.from(els.fileInput.files || []);
+}
+
+function setSelectedFiles(files) {
+  const transfer = new DataTransfer();
+  for (const file of files) transfer.items.add(file);
+  els.fileInput.files = transfer.files;
+  updateSelectedFileNotice();
+  renderUploadInspector();
+}
+
+function clearSelectedFiles() {
+  els.fileInput.value = "";
+  updateSelectedFileNotice();
+  renderUploadInspector();
+  els.uploadInspector.hidden = true;
+}
+
+function removeSelectedFile(indexToRemove) {
+  setSelectedFiles(selectedFiles().filter((_file, index) => index !== indexToRemove));
+}
+
+function updateSelectedFileNotice() {
+  const files = selectedFiles();
+  els.fileNotice.textContent = files.length ? `${files.length} file(s) ready to upload` : "";
+  els.fileNotice.classList.toggle("has-files", files.length > 0);
+}
+
+function renderUploadInspector() {
+  els.uploadInspectorList.replaceChildren();
+  const files = selectedFiles();
+  if (!files.length) {
+    const empty = document.createElement("div");
+    empty.className = "attachment-empty";
+    empty.textContent = "No files selected.";
+    els.uploadInspectorList.append(empty);
+    return;
+  }
+  for (const [index, file] of files.entries()) {
+    const row = document.createElement("div");
+    row.className = "upload-row";
+    const details = document.createElement("div");
+    const name = document.createElement("div");
+    name.className = "upload-name";
+    name.textContent = file.name;
+    const meta = document.createElement("div");
+    meta.className = "upload-meta";
+    meta.textContent = `${fileExt(file.name) || "no extension"} / ${kb(file.size)}`;
+    details.append(name, meta);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => removeSelectedFile(index));
+    row.append(details, remove);
+    els.uploadInspectorList.append(row);
+  }
+}
+
+function openUploadInspector() {
+  if (!selectedFiles().length) return;
+  renderUploadInspector();
+  els.uploadInspector.hidden = false;
+}
+
 for (const button of els.themeButtons) button.addEventListener("click", () => setTheme(button.dataset.theme));
 for (const button of els.modeButtons) button.addEventListener("click", () => setRequestMode(button.dataset.mode));
 for (const button of els.displayButtons) button.addEventListener("click", () => toggleDisplayMode(button.dataset.display));
@@ -755,6 +835,11 @@ els.responseSearch.addEventListener("input", renderResponses);
 els.sendBtn.addEventListener("click", sendCurrentRequest);
 els.openEditorBtn.addEventListener("click", () => openPromptEditor());
 els.closeEditorBtn.addEventListener("click", closePromptEditor);
+els.fileNotice.addEventListener("click", openUploadInspector);
+els.closeUploadInspectorBtn.addEventListener("click", () => {
+  els.uploadInspector.hidden = true;
+});
+els.clearUploadsBtn.addEventListener("click", clearSelectedFiles);
 els.prompt.addEventListener("input", () => {
   syncEditorFromPrompt();
   maybeOpenPromptEditor();
@@ -768,22 +853,27 @@ els.promptEditorText.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closePromptEditor();
 });
 els.fileInput.addEventListener("change", async () => {
-  const files = Array.from(els.fileInput.files || []);
-  els.fileNotice.textContent = "";
+  const files = selectedFiles();
+  updateSelectedFileNotice();
   if (!files.length) return;
   for (const file of files) {
-    if (!/\.(txt|md|mp3|mp4)$/i.test(file.name)) {
-      els.fileNotice.textContent = "Supported: .txt, .md, .mp3, .mp4";
+    if (!/\.(txt|md|mp3|mp4|jpg|png|svg)$/i.test(file.name)) {
+      els.fileNotice.textContent = "Supported: .txt, .md, .mp3, .mp4, .jpg, .png, .svg";
+      els.fileNotice.classList.remove("has-files");
       els.fileInput.value = "";
+      renderUploadInspector();
       return;
     }
     if (file.size > MAX_ATTACHMENT_BYTES) {
       els.fileNotice.textContent = "Attachment limit is 25 MB per file.";
+      els.fileNotice.classList.remove("has-files");
       els.fileInput.value = "";
+      renderUploadInspector();
       return;
     }
   }
-  els.fileNotice.textContent = `${files.length} file(s) ready to upload`;
+  updateSelectedFileNotice();
+  renderUploadInspector();
   const firstText = files.find((file) => /\.(txt|md)$/i.test(file.name));
   if (firstText) {
     els.prompt.value = await firstText.text();

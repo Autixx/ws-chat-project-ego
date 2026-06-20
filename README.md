@@ -21,7 +21,7 @@ Browser request/response workbench for ProjectEGO planning automation. The UI se
 - LLM provider abstraction with `MockProvider` and `CodexProvider` placeholder.
 - Optional Plane and n8n integration stubs.
 - Strict component health checks for SQLite, Plane configuration, and n8n configuration.
-- Multipart upload API for `.txt`, `.md`, `.mp3`, and `.mp4` attachments.
+- Multipart upload API for `.txt`, `.md`, `.mp3`, `.mp4`, `.jpg`, `.png`, and `.svg` attachments.
 - Local SQLite-backed registration, login, logout, and persistent sessions.
 
 ## UI Layout
@@ -150,10 +150,13 @@ Supported upload types:
 - `.md`
 - `.mp3`
 - `.mp4`
+- `.jpg`
+- `.png`
+- `.svg`
 
 Maximum size: 25 MB.
 
-Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. `.txt` and `.md` may also be inserted into the textarea for visibility. `.mp3` and `.mp4` render with browser audio/video controls. Attachment binary data is never stored in SQLite.
+Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. `.txt` and `.md` may also be inserted into the textarea for visibility. `.mp3` and `.mp4` render with browser audio/video controls. `.jpg` and `.png` render as image previews. Attachment binary data is never stored in SQLite.
 
 ## Install
 
@@ -432,6 +435,9 @@ Supported extensions:
 - `.md`
 - `.mp3`
 - `.mp4`
+- `.jpg`
+- `.png`
+- `.svg`
 
 Limit: 25 MB per file.
 
@@ -459,7 +465,7 @@ Attachment download/open:
 GET /api/attachments/:attachmentId
 ```
 
-This endpoint authenticates the user, verifies the attachment belongs to a conversation owned by that user, and streams the file with safe content headers. `.mp3` and `.mp4` are rendered with browser audio/video controls in the workbench.
+This endpoint authenticates the user, verifies the attachment belongs to a conversation owned by that user, and streams the file with safe content headers. `.mp3` and `.mp4` are rendered with browser audio/video controls in the workbench. `.jpg` and `.png` are rendered as image previews.
 
 ## Backup
 

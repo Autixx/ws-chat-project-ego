@@ -49,6 +49,9 @@ test("validateAttachmentFile accepts supported attachment types", () => {
   assert.doesNotThrow(() => validateAttachmentFile("note.md", "text/markdown", 10));
   assert.doesNotThrow(() => validateAttachmentFile("voice.mp3", "audio/mpeg", 10));
   assert.doesNotThrow(() => validateAttachmentFile("clip.mp4", "video/mp4", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("photo.jpg", "image/jpeg", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("image.png", "image/png", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("vector.svg", "image/svg+xml", 10));
 });
 
 test("validateAttachmentFile rejects files over 25 MB", () => {
