@@ -671,6 +671,8 @@ textarea {
   width: auto;
   height: auto;
   transform-origin: center center;
+  -webkit-user-drag: none;
+  user-drag: none;
   user-select: none;
   pointer-events: none;
 }

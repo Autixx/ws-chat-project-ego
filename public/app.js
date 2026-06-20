@@ -919,6 +919,9 @@ els.closeUploadInspectorBtn.addEventListener("click", () => {
 });
 els.clearUploadsBtn.addEventListener("click", clearSelectedFiles);
 els.closeImageViewerBtn.addEventListener("click", closeImageViewer);
+els.imageViewerImg.draggable = false;
+els.imageViewerImg.addEventListener("dragstart", (event) => event.preventDefault());
+els.imageViewerBody.addEventListener("dragstart", (event) => event.preventDefault());
 els.imageViewerBody.addEventListener("wheel", (event) => {
   if (els.imageViewer.hidden) return;
   event.preventDefault();
