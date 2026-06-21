@@ -538,11 +538,11 @@ h2 {
 
 .dock-panel {
   position: fixed;
-  top: 58px;
+  top: 0;
   right: 44px;
   bottom: 0;
   z-index: 110;
-  width: min(980px, calc(100vw - 76px));
+  width: calc(100vw - 44px);
   border-left: 1px solid var(--accent);
   border-right: 0;
   border-bottom: 0;

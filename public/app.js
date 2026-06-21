@@ -796,6 +796,31 @@ function selectedText() {
   return window.getSelection()?.toString().trim() || "";
 }
 
+function wireRowSingleClick(row, callback) {
+  let pointerStart = null;
+  row.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.target.closest?.("button, a, input, textarea, select, label")) {
+      pointerStart = null;
+      return;
+    }
+    pointerStart = { x: event.clientX, y: event.clientY, time: Date.now() };
+  });
+  row.addEventListener("pointerup", (event) => {
+    if (!pointerStart || event.button !== 0) return;
+    const dx = Math.abs(event.clientX - pointerStart.x);
+    const dy = Math.abs(event.clientY - pointerStart.y);
+    const elapsed = Date.now() - pointerStart.time;
+    pointerStart = null;
+    if (dx > 3 || dy > 3 || elapsed > 600) return;
+    window.setTimeout(() => {
+      if (!selectedText()) callback();
+    }, 0);
+  });
+  row.addEventListener("pointercancel", () => {
+    pointerStart = null;
+  });
+}
+
 function requests() {
   return state.messages.filter((message) => message.kind === "request");
 }
@@ -1035,10 +1060,7 @@ function renderResponses() {
     const linked = response.metadata?.responseToRequestId === state.selectedRequestId || response.id === state.selectedResponseId;
     const row = document.createElement("article");
     row.className = `rr-row ${expanded ? "expanded" : ""} ${linked ? "linked" : ""}`;
-    row.addEventListener("click", (event) => {
-      if (event.detail !== 1 || selectedText()) return;
-      selectResponse(response.id);
-    });
+    wireRowSingleClick(row, () => selectResponse(response.id));
     const status = document.createElement("span");
     status.className = "status-stack";
     const decision = document.createElement("span");
