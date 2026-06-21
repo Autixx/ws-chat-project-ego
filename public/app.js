@@ -13,6 +13,9 @@ const state = {
   selectedResponseId: null,
   expandedRequestId: null,
   expandedResponseId: null,
+  hideServiceResponses: false,
+  draftInspectorOpen: false,
+  floatingWindows: [],
   currentDraft: null,
   currentDraftItems: [],
   attachments: [],
@@ -55,6 +58,7 @@ const els = {
   displayButtons: Array.from(document.querySelectorAll("[data-display]")),
   requestSearch: document.getElementById("requestSearch"),
   responseSearch: document.getElementById("responseSearch"),
+  hideServiceResponsesBtn: document.getElementById("hideServiceResponsesBtn"),
   requestList: document.getElementById("requestList"),
   responseList: document.getElementById("responseList"),
   attachmentsList: document.getElementById("attachmentsList"),
@@ -102,6 +106,10 @@ const els = {
   deleteConsequencesCheck: document.getElementById("deleteConsequencesCheck"),
   deleteConfirmBtn: document.getElementById("deleteConfirmBtn"),
   deleteCancelTwoBtn: document.getElementById("deleteCancelTwoBtn"),
+  draftPanel: document.getElementById("draftPanel"),
+  draftDockBtn: document.getElementById("draftDockBtn"),
+  windowDockList: document.getElementById("windowDockList"),
+  closeDraftInspectorBtn: document.getElementById("closeDraftInspectorBtn"),
   draftJobId: document.getElementById("draftJobId"),
   draftPreview: document.getElementById("draftPreview"),
   itemsList: document.getElementById("itemsList"),
@@ -356,6 +364,7 @@ function handleServerMessage(message) {
     state.currentDraft = { ...(state.currentDraft || {}), jobId: message.jobId, result: message.result };
     state.currentDraftItems = message.result.items || [];
     renderDraft();
+    setDraftInspectorOpen(true);
   }
 
   if (message.type === "unclarified_index") {
@@ -539,7 +548,7 @@ function maybeOpenPromptEditor() {
 function wireDraggableWindow(panel, handle, ignoredButton) {
   let drag = null;
   handle.addEventListener("pointerdown", (event) => {
-    if (ignoredButton && event.target === ignoredButton) return;
+    if (event.target.closest?.("button")) return;
     const rect = panel.getBoundingClientRect();
     drag = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
     handle.setPointerCapture(event.pointerId);
@@ -561,6 +570,69 @@ function wireDraggableWindow(panel, handle, ignoredButton) {
   });
 }
 
+function setDraftInspectorOpen(open) {
+  state.draftInspectorOpen = open;
+  els.draftPanel.classList.toggle("open", open);
+  els.draftDockBtn.classList.toggle("active", open);
+  els.draftDockBtn.title = open ? "Hide Draft inspector" : "Show Draft inspector";
+}
+
+function toggleDraftInspector() {
+  setDraftInspectorOpen(!state.draftInspectorOpen);
+}
+
+function registerFloatingWindow(panel, title, kind, closeWindow) {
+  const id = `floating-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const windowState = { id, panel, title, kind, minimized: false, closeWindow, dockButton: null };
+  state.floatingWindows.push(windowState);
+  renderWindowDock();
+  return windowState;
+}
+
+function unregisterFloatingWindow(id) {
+  state.floatingWindows = state.floatingWindows.filter((item) => item.id !== id);
+  renderWindowDock();
+}
+
+function setFloatingWindowMinimized(windowState, minimized) {
+  windowState.minimized = minimized;
+  if (minimized) {
+    windowState.panel.classList.add("minimized");
+    window.setTimeout(() => {
+      if (windowState.minimized) windowState.panel.hidden = true;
+    }, 170);
+  } else {
+    windowState.panel.hidden = false;
+    requestAnimationFrame(() => windowState.panel.classList.remove("minimized"));
+  }
+  renderWindowDock();
+}
+
+function toggleFloatingWindow(windowState) {
+  setFloatingWindowMinimized(windowState, !windowState.minimized);
+}
+
+function renderWindowDock() {
+  els.windowDockList.replaceChildren();
+  for (const windowState of state.floatingWindows) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `dock-icon ${windowState.minimized ? "" : "active"}`;
+    button.textContent = windowIcon(windowState.kind);
+    button.title = windowState.title;
+    button.addEventListener("click", () => toggleFloatingWindow(windowState));
+    windowState.dockButton = button;
+    els.windowDockList.append(button);
+  }
+}
+
+function windowIcon(kind) {
+  if (kind === "video") return "V";
+  if (kind === "image") return "I";
+  if (kind === "text") return "T";
+  return "W";
+}
+
 function setImageZoom(zoom) {
   state.imageZoom = Math.max(0.2, Math.min(6, zoom));
   updateImageTransform();
@@ -571,7 +643,7 @@ function updateImageTransform() {
 }
 
 function openImageViewer(url, fileName) {
-  const viewer = createFloatingWindow("image-viewer", fileName);
+  const viewer = createFloatingWindow("image-viewer", fileName, "image");
   const body = document.createElement("div");
   body.className = "image-viewer-body";
   const image = document.createElement("img");
@@ -629,7 +701,7 @@ function closeImageViewer() {
 }
 
 function openMediaViewer(url, fileName) {
-  const viewer = createFloatingWindow("media-viewer", fileName);
+  const viewer = createFloatingWindow("media-viewer", fileName, "video");
   const body = document.createElement("div");
   body.className = "media-viewer-body";
   const video = document.createElement("video");
@@ -652,7 +724,7 @@ function closeMediaViewer() {
   els.mediaViewerVideo.load();
 }
 
-function createFloatingWindow(className, title) {
+function createFloatingWindow(className, title, kind = "window") {
   const panel = document.createElement("section");
   panel.className = `${className} floating-window`;
   const offset = document.querySelectorAll(".floating-window").length * 18;
@@ -662,32 +734,48 @@ function createFloatingWindow(className, title) {
   header.className = `${className}-header`;
   const label = document.createElement("span");
   label.textContent = title;
+  const minimize = document.createElement("button");
+  minimize.className = "window-minimize";
+  minimize.type = "button";
+  minimize.setAttribute("aria-label", "Minimize to sidebar");
   const close = document.createElement("button");
   close.className = "window-close";
   close.type = "button";
   close.setAttribute("aria-label", "Close");
-  header.append(label, close);
+  const controls = document.createElement("div");
+  controls.className = "window-controls";
+  controls.append(minimize, close);
+  header.append(label, controls);
   panel.append(header);
   document.body.append(panel);
   const floating = { panel, onClose: null };
-  close.addEventListener("click", () => {
+  const windowState = registerFloatingWindow(panel, title, kind, () => closeFloatingWindow());
+  function closeFloatingWindow() {
     if (floating.onClose) floating.onClose();
+    unregisterFloatingWindow(windowState.id);
     panel.remove();
+  }
+  minimize.addEventListener("click", () => setFloatingWindowMinimized(windowState, true));
+  close.addEventListener("click", () => {
+    closeFloatingWindow();
   });
   wireDraggableWindow(panel, header, close);
   return floating;
 }
 
 async function openTextPreview(url, fileName) {
-  els.textPreviewTitle.textContent = fileName;
-  els.textPreviewText.value = "Loading...";
-  els.textPreview.hidden = false;
+  const viewer = createFloatingWindow("text-preview", fileName, "text");
+  const text = document.createElement("textarea");
+  text.readOnly = true;
+  text.spellcheck = false;
+  text.value = "Loading...";
+  viewer.panel.append(text);
   try {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    els.textPreviewText.value = await response.text();
+    text.value = await response.text();
   } catch (error) {
-    els.textPreviewText.value = `Failed to load text preview: ${error instanceof Error ? error.message : String(error)}`;
+    text.value = `Failed to load text preview: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
@@ -698,6 +786,14 @@ function closeTextPreview() {
 
 function isResponse(message) {
   return ["response", "status", "token", "draft", "apply_result", "unclarified_index", "error"].includes(message.kind);
+}
+
+function isServiceResponse(message) {
+  return ["status", "token", "apply_result", "unclarified_index"].includes(message.kind);
+}
+
+function selectedText() {
+  return window.getSelection()?.toString().trim() || "";
 }
 
 function requests() {
@@ -934,12 +1030,15 @@ function renderRequests() {
 function renderResponses() {
   const query = els.responseSearch.value.toLowerCase().trim();
   els.responseList.replaceChildren();
-  for (const response of responses().filter((item) => responseMatches(item, query))) {
+  for (const response of responses().filter((item) => responseMatches(item, query)).filter((item) => !state.hideServiceResponses || !isServiceResponse(item))) {
     const expanded = response.id === state.expandedResponseId;
     const linked = response.metadata?.responseToRequestId === state.selectedRequestId || response.id === state.selectedResponseId;
     const row = document.createElement("article");
     row.className = `rr-row ${expanded ? "expanded" : ""} ${linked ? "linked" : ""}`;
-    row.addEventListener("click", () => selectResponse(response.id));
+    row.addEventListener("click", (event) => {
+      if (event.detail !== 1 || selectedText()) return;
+      selectResponse(response.id);
+    });
     const status = document.createElement("span");
     status.className = "status-stack";
     const decision = document.createElement("span");
@@ -981,6 +1080,7 @@ function renderResponses() {
         open.textContent = "Open in Draft Inspector";
         open.addEventListener("click", (event) => {
           event.stopPropagation();
+          setDraftInspectorOpen(true);
           send({ type: "draft_open", conversationId: state.currentConversationId, jobId: response.metadata.jobId });
         });
         actions.append(open);
@@ -1359,6 +1459,13 @@ els.deleteConsequencesCheck.addEventListener("change", () => {
 els.deleteConfirmBtn.addEventListener("click", confirmDeleteWorkbench);
 els.requestSearch.addEventListener("input", renderRequests);
 els.responseSearch.addEventListener("input", renderResponses);
+els.hideServiceResponsesBtn.addEventListener("click", () => {
+  state.hideServiceResponses = !state.hideServiceResponses;
+  els.hideServiceResponsesBtn.classList.toggle("active", state.hideServiceResponses);
+  renderResponses();
+});
+els.draftDockBtn.addEventListener("click", toggleDraftInspector);
+els.closeDraftInspectorBtn.addEventListener("click", () => setDraftInspectorOpen(false));
 els.sendBtn.addEventListener("click", sendCurrentRequest);
 els.openEditorBtn.addEventListener("click", () => openPromptEditor());
 els.closeEditorBtn.addEventListener("click", closePromptEditor);

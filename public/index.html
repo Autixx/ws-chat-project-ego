@@ -75,7 +75,10 @@
         </section>
 
         <section class="panel response-panel">
-          <h2>RESPONSE WINDOW</h2>
+          <h2 class="panel-title-row">
+            <span>RESPONSE WINDOW</span>
+            <button id="hideServiceResponsesBtn" class="toggle-button compact-toggle" type="button">Hide service responses</button>
+          </h2>
           <div id="responseList" class="row-list"></div>
         </section>
 
@@ -219,8 +222,16 @@
         <textarea id="textPreviewText" readonly spellcheck="false"></textarea>
       </section>
 
-      <section class="draft panel">
-        <h2>DRAFT INSPECTOR <span id="draftJobId">No draft</span></h2>
+      <aside class="side-dock" aria-label="Open windows">
+        <button id="draftDockBtn" class="dock-icon draft-dock-icon" type="button" aria-label="Draft inspector" title="Draft inspector">D</button>
+        <div id="windowDockList" class="window-dock-list"></div>
+      </aside>
+
+      <section id="draftPanel" class="draft panel dock-panel">
+        <h2 class="panel-title-row">
+          <span>DRAFT INSPECTOR <span id="draftJobId">No draft</span></span>
+          <button id="closeDraftInspectorBtn" class="window-close" type="button" aria-label="Close draft inspector"></button>
+        </h2>
         <pre id="draftPreview"></pre>
         <div id="itemsList" class="items-list"></div>
         <pre id="unclarifiedPanel" class="unclarified"></pre>
