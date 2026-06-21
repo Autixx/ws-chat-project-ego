@@ -19,8 +19,8 @@ services:
       REGISTRATION_INVITE_CODE: change-me
       COOKIE_SECURE: "false"
       LLM_PROVIDER: mock
-      CODEX_AGENT_URL: ""
-      CODEX_AGENT_HEALTH_URL: ""
+      CODEX_AGENT_URL: "http://192.168.1.237:19090/v1/projectego/process"
+      CODEX_AGENT_HEALTH_URL: "http://192.168.1.237:19090/healthz"
       CODEX_AGENT_TOKEN: ""
       CODEX_FALLBACK_TO_MOCK: "true"
       PLANE_BASE_URL: ""

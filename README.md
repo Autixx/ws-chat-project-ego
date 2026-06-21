@@ -534,9 +534,9 @@ For Docker, back up the mounted `/app/data` volume.
 | `DEV_AUTH_BYPASS` | Legacy env retained but not used for local auth access control. |
 | `TRUST_AUTHELIA_HEADERS` | Legacy env retained but not used for local auth access control. |
 | `LLM_PROVIDER` | `mock` or `codex`. |
-| `CODEX_AGENT_URL` | Optional HTTP endpoint for Codex provider. |
+| `CODEX_AGENT_URL` | Optional HTTP endpoint for Codex provider, for example `http://192.168.1.237:19090/v1/projectego/process`. |
 | `CODEX_AGENT_HEALTH_URL` | Optional health URL for LLM-agent reachability polling. |
-| `CODEX_AGENT_TOKEN` | Optional bearer token for Codex provider. |
+| `CODEX_AGENT_TOKEN` | Optional token sent as `X-Codex-Agent-Token` to non-health Codex agent routes. |
 | `CODEX_FALLBACK_TO_MOCK` | Fall back to mock if Codex is not configured. |
 | `PLANE_BASE_URL` | Optional Plane base URL for informational reachability. |
 | `PLANE_HEALTH_URL` | Optional Plane health URL for reachability polling. |
@@ -548,6 +548,13 @@ For Docker, back up the mounted `/app/data` volume.
 | `JOB_CALLBACK_TOKEN` | Optional bearer token for `POST /api/jobs/:jobId/events`. Required before workflow callbacks are accepted. |
 | `COMPONENT_STATUS_INTERVAL_MS` | Component reachability polling interval. Default `15000`. |
 | `COMPONENT_STATUS_TIMEOUT_MS` | Per-probe timeout. Default `2000`. |
+
+Codex agent example:
+
+```env
+CODEX_AGENT_URL=http://192.168.1.237:19090/v1/projectego/process
+CODEX_AGENT_HEALTH_URL=http://192.168.1.237:19090/healthz
+```
 
 ## Current Limitations
 
