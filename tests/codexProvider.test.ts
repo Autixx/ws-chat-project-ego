@@ -68,6 +68,12 @@ async function collect(provider: CodexProvider): Promise<LlmStreamEvent[]> {
   return events;
 }
 
+async function collectWithInput(provider: CodexProvider, taskInput: LlmTaskInput): Promise<LlmStreamEvent[]> {
+  const events: LlmStreamEvent[] = [];
+  for await (const event of provider.runProjectEgoTask(taskInput)) events.push(event);
+  return events;
+}
+
 test("CodexProvider uses X-Codex-Agent-Token and omits user from payload", async () => {
   let headers: Headers | undefined;
   let body: Record<string, unknown> | undefined;
@@ -82,6 +88,32 @@ test("CodexProvider uses X-Codex-Agent-Token and omits user from payload", async
     assert.equal(headers?.get("x-codex-agent-token"), "secret-token");
     assert.equal(headers?.get("authorization"), null);
     assert.deepEqual(body, { mode: "structured_breakdown", text: "Make a plan", source: "browser_text", fileName: "plan.md" });
+    assert.equal(events.at(-1)?.type, "done");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("CodexProvider sends dashboard-upload source and fileName as JSON metadata", async () => {
+  let body: Record<string, unknown> | undefined;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url, init) => {
+    body = JSON.parse(String(init?.body));
+    return Response.json({ status: "done", result: draftResult });
+  }) as typeof fetch;
+  try {
+    const events = await collectWithInput(new CodexProvider(config()), {
+      ...input,
+      source: "dashboard-upload",
+      text: "User text:\nHello\n\nAttached file: note.md\nExtracted file content:\nBody",
+      fileName: "note.md"
+    });
+    assert.deepEqual(body, {
+      mode: "structured_breakdown",
+      source: "dashboard-upload",
+      text: "User text:\nHello\n\nAttached file: note.md\nExtracted file content:\nBody",
+      fileName: "note.md"
+    });
     assert.equal(events.at(-1)?.type, "done");
   } finally {
     globalThis.fetch = originalFetch;

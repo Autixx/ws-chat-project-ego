@@ -151,7 +151,6 @@ Supported upload types:
 
 - `.txt`
 - `.md`
-- `.markdown`
 - `.json`
 - `.csv`
 - `.log`
@@ -168,7 +167,7 @@ Supported upload types:
 
 Maximum binary attachment size: 25 MB. Text extraction for LLM requests is controlled separately by `MAX_UPLOAD_BYTES` and `MAX_EXTRACTED_CHARS`.
 
-Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. Text-like files are saved as attachments, read as UTF-8, stripped of NUL bytes, capped by `MAX_EXTRACTED_CHARS`, and included in the LLM/Codex request text. `.mp3` renders with browser audio controls. `.mp4` opens in a movable video preview subwindow. `.jpg`, `.png`, and `.svg` render as image previews. Attachment binary data is never stored in SQLite.
+Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. Text-like files are saved locally, read as UTF-8, stripped of NUL bytes, capped by `MAX_EXTRACTED_CHARS`, and embedded into the existing Codex agent JSON `text` field with `source: "dashboard-upload"` and `fileName` as metadata only. The original file is not uploaded separately to codex-agent. `.mp3` renders with browser audio controls. `.mp4` opens in a movable video preview subwindow. `.jpg`, `.png`, and `.svg` render as image previews. Attachment binary data is never stored in SQLite.
 
 ## Job Execution Tracking
 

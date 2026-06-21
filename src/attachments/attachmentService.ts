@@ -9,12 +9,11 @@ import { createId, safeUserId } from "../utils/ids.js";
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 export const DEFAULT_MAX_UPLOAD_BYTES = 1_048_576;
 export const DEFAULT_MAX_EXTRACTED_CHARS = 50_000;
-const textLikeExtensions = new Set([".txt", ".md", ".markdown", ".json", ".csv", ".log", ".yml", ".yaml", ".xml", ".ini", ".conf"]);
+const textLikeExtensions = new Set([".txt", ".md", ".json", ".csv", ".log", ".yml", ".yaml", ".xml", ".ini", ".conf"]);
 const allowedExtensions = new Set([...textLikeExtensions, ".mp3", ".mp4", ".jpg", ".png", ".svg"]);
 const allowedMimePrefixes = new Map([
   [".txt", ["text/plain", "application/octet-stream"]],
   [".md", ["text/markdown", "text/plain", "application/octet-stream"]],
-  [".markdown", ["text/markdown", "text/plain", "application/octet-stream"]],
   [".json", ["application/json", "text/json", "text/plain", "application/octet-stream"]],
   [".csv", ["text/csv", "text/plain", "application/octet-stream"]],
   [".log", ["text/plain", "application/octet-stream"]],
@@ -218,7 +217,6 @@ function mimeFromExtension(fileName: string): string {
   const ext = path.extname(fileName).toLowerCase();
   if (ext === ".txt") return "text/plain";
   if (ext === ".md") return "text/markdown";
-  if (ext === ".markdown") return "text/markdown";
   if (ext === ".json") return "application/json";
   if (ext === ".csv") return "text/csv";
   if ([".log", ".ini", ".conf"].includes(ext)) return "text/plain";

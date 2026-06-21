@@ -57,7 +57,6 @@ test("validateAttachmentFile rejects unsupported extensions", () => {
 test("validateAttachmentFile accepts supported attachment types", () => {
   assert.doesNotThrow(() => validateAttachmentFile("note.txt", "text/plain", 10));
   assert.doesNotThrow(() => validateAttachmentFile("note.md", "text/markdown", 10));
-  assert.doesNotThrow(() => validateAttachmentFile("note.markdown", "text/markdown", 10));
   assert.doesNotThrow(() => validateAttachmentFile("payload.json", "application/json", 10));
   assert.doesNotThrow(() => validateAttachmentFile("data.csv", "text/csv", 10));
   assert.doesNotThrow(() => validateAttachmentFile("trace.log", "text/plain", 10));
@@ -135,6 +134,7 @@ test("extractAttachmentText caps extracted content and marks truncation", async 
 
 test("validateExtractableAttachmentFile rejects unsupported and oversized files", () => {
   assert.throws(() => validateExtractableAttachmentFile("image.png", 10), /Unsupported text attachment extension/);
+  assert.throws(() => validateExtractableAttachmentFile("note.markdown", 10), /Unsupported text attachment extension/);
   assert.throws(() => validateExtractableAttachmentFile("large.md", 11, 10), /text extraction limit/);
 });
 

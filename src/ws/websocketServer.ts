@@ -424,7 +424,7 @@ export function attachWebSocketServer(
     if (llmText.length > MAX_TEXT_LENGTH) throw new Error("Combined message text is too large.");
 
     const taskMode = taskModeFromUiMode(input.mode);
-    const source = llmFileName ? "uploaded_file" : "browser_text";
+    const source = llmFileName ? "dashboard-upload" : "browser_text";
     let assistantContent = "";
 
     for await (const event of provider.runProjectEgoTask({ mode: taskMode, text: llmText, source, fileName: llmFileName, user })) {
