@@ -4,7 +4,17 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { PassThrough } from "node:stream";
-import { stageUploadedFile, finalizeStagedUploads, validateAttachmentFile, streamAttachment, deleteStoredAttachments } from "../src/attachments/attachmentService.js";
+import {
+  buildLlmPromptWithAttachments,
+  extractAttachmentText,
+  finalizeStagedUploads,
+  firstExtractedFileName,
+  stageUploadedFile,
+  validateAttachmentFile,
+  validateExtractableAttachmentFile,
+  streamAttachment,
+  deleteStoredAttachments
+} from "../src/attachments/attachmentService.js";
 import { ConversationStore } from "../src/conversations/conversationStore.js";
 import { MessageStore } from "../src/conversations/messageStore.js";
 import { openDatabase } from "../src/db/database.js";
@@ -47,11 +57,158 @@ test("validateAttachmentFile rejects unsupported extensions", () => {
 test("validateAttachmentFile accepts supported attachment types", () => {
   assert.doesNotThrow(() => validateAttachmentFile("note.txt", "text/plain", 10));
   assert.doesNotThrow(() => validateAttachmentFile("note.md", "text/markdown", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("note.markdown", "text/markdown", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("payload.json", "application/json", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("data.csv", "text/csv", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("trace.log", "text/plain", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("config.yml", "text/yaml", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("config.yaml", "text/yaml", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("doc.xml", "application/xml", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("app.ini", "text/plain", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("app.conf", "text/plain", 10));
   assert.doesNotThrow(() => validateAttachmentFile("voice.mp3", "audio/mpeg", 10));
   assert.doesNotThrow(() => validateAttachmentFile("clip.mp4", "video/mp4", 10));
   assert.doesNotThrow(() => validateAttachmentFile("photo.jpg", "image/jpeg", 10));
   assert.doesNotThrow(() => validateAttachmentFile("image.png", "image/png", 10));
   assert.doesNotThrow(() => validateAttachmentFile("vector.svg", "image/svg+xml", 10));
+});
+
+test("extractAttachmentText accepts markdown and strips NUL bytes", async () => {
+  const s = stores();
+  try {
+    const relative = "attachments/request/notes.md";
+    const absolute = path.join(s.dir, relative);
+    mkdirSync(path.dirname(absolute), { recursive: true });
+    writeFileSync(absolute, "# Title\0\nbody", "utf8");
+
+    const extracted = await extractAttachmentText({
+      dataDir: s.dir,
+      attachment: {
+        id: "ATT-md",
+        conversationId: "C-md",
+        fileName: "notes.md",
+        mimeType: "text/markdown",
+        sizeBytes: 13,
+        storagePath: relative,
+        createdAt: new Date().toISOString()
+      }
+    });
+
+    assert.equal(extracted.fileName, "notes.md");
+    assert.equal(extracted.text, "# Title\nbody");
+    assert.equal(extracted.truncated, false);
+    assert.equal(extracted.extension, ".md");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("extractAttachmentText caps extracted content and marks truncation", async () => {
+  const s = stores();
+  try {
+    const relative = "attachments/request/large.log";
+    const absolute = path.join(s.dir, relative);
+    mkdirSync(path.dirname(absolute), { recursive: true });
+    writeFileSync(absolute, "abcdef", "utf8");
+
+    const extracted = await extractAttachmentText({
+      dataDir: s.dir,
+      maxExtractedChars: 3,
+      attachment: {
+        id: "ATT-log",
+        conversationId: "C-log",
+        fileName: "large.log",
+        mimeType: "text/plain",
+        sizeBytes: 6,
+        storagePath: relative,
+        createdAt: new Date().toISOString()
+      }
+    });
+
+    assert.equal(extracted.text, "abc");
+    assert.equal(extracted.extractedChars, 3);
+    assert.equal(extracted.truncated, true);
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("validateExtractableAttachmentFile rejects unsupported and oversized files", () => {
+  assert.throws(() => validateExtractableAttachmentFile("image.png", 10), /Unsupported text attachment extension/);
+  assert.throws(() => validateExtractableAttachmentFile("large.md", 11, 10), /text extraction limit/);
+});
+
+test("buildLlmPromptWithAttachments combines text and file content", () => {
+  const prompt = buildLlmPromptWithAttachments("Please summarize", [
+    {
+      attachment: {
+        id: "ATT-combine",
+        conversationId: "C-combine",
+        fileName: "plan.md",
+        mimeType: "text/markdown",
+        sizeBytes: 4,
+        storagePath: "attachments/request/plan.md",
+        createdAt: new Date().toISOString()
+      },
+      fileName: "plan.md",
+      text: "file body",
+      extractedChars: 9,
+      truncated: false,
+      extension: ".md"
+    }
+  ]);
+  assert.equal(prompt, "User text:\nPlease summarize\n\nAttached file: plan.md\nExtracted file content:\nfile body");
+});
+
+test("firstExtractedFileName returns filename passed to LLM provider", () => {
+  assert.equal(
+    firstExtractedFileName([
+      {
+        attachment: {
+          id: "ATT-name",
+          conversationId: "C-name",
+          fileName: "source.json",
+          mimeType: "application/json",
+          sizeBytes: 2,
+          storagePath: "attachments/request/source.json",
+          createdAt: new Date().toISOString()
+        },
+        fileName: "source.json",
+        text: "{}",
+        extractedChars: 2,
+        truncated: false,
+        extension: ".json"
+      }
+    ]),
+    "source.json"
+  );
+});
+
+test("extractAttachmentText rejects paths outside attachments directory", async () => {
+  const s = stores();
+  try {
+    await assert.rejects(
+      extractAttachmentText({
+        dataDir: s.dir,
+        attachment: {
+          id: "ATT-escape",
+          conversationId: "C-escape",
+          fileName: "escape.md",
+          mimeType: "text/markdown",
+          sizeBytes: 4,
+          storagePath: "../escape.md",
+          createdAt: new Date().toISOString()
+        }
+      }),
+      /Invalid attachment path/
+    );
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("buildLlmPromptWithAttachments keeps old text-only request unchanged", () => {
+  assert.equal(buildLlmPromptWithAttachments("plain request", []), "plain request");
 });
 
 test("validateAttachmentFile rejects files over 25 MB", () => {
@@ -95,6 +252,28 @@ test("stage and finalize upload stores file and SQLite metadata", async () => {
     assert.match(attachments[0].storagePath, new RegExp(`attachments/${conversation.id}/${request.id}/ATT-`));
     assert.equal(statSync(path.join(s.dir, attachments[0].storagePath)).size, 5);
     assert.equal((await s.conversations.listAttachments(user, conversation.id, request.id)).length, 1);
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("stageUploadedFile sanitizes names so saved path stays under attachments", async () => {
+  const s = stores();
+  try {
+    const tempPath = path.join(s.dir, "unsafe.md");
+    writeFileSync(tempPath, "safe", "utf8");
+    const upload = await stageUploadedFile({
+      dataDir: s.dir,
+      user,
+      tempPath,
+      originalName: "../escape.md",
+      mimeType: "text/markdown",
+      sizeBytes: 4
+    });
+    const absolute = path.resolve(s.dir, upload.storagePath);
+    const attachmentsRoot = path.resolve(s.dir, "attachments");
+    assert.equal(path.relative(attachmentsRoot, absolute).startsWith(".."), false);
+    assert.equal(upload.fileName, "escape.md");
   } finally {
     s.cleanup();
   }

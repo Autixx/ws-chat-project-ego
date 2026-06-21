@@ -14,7 +14,10 @@ services:
       HOST: 0.0.0.0
       PORT: 19100
       DATA_DIR: /app/data
+      ATTACHMENTS_DIR: /app/data/attachments
       SQLITE_PATH: /app/data/projectego-chat.sqlite
+      MAX_UPLOAD_BYTES: "1048576"
+      MAX_EXTRACTED_CHARS: "50000"
       DEV_AUTH_BYPASS: "false"
       TRUST_AUTHELIA_HEADERS: "true"
       AUTH_MODE: local

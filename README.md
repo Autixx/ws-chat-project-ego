@@ -22,7 +22,7 @@ Browser dashboard for ProjectEGO planning automation. The UI separates user requ
 - Background component reachability polling for SQLite, LLM-agent/codex-agent, n8n, and Plane.
 - n8n is the controlled workflow executor and future writer to Plane.
 - Plane is informational reachability only from the Dashboard; Dashboard does not create Plane work-items directly.
-- Multipart upload API for `.txt`, `.md`, `.mp3`, `.mp4`, `.jpg`, `.png`, and `.svg` attachments.
+- Multipart upload API for text-like files, media attachments, and image previews.
 - Local SQLite-backed registration, login, logout, and persistent sessions.
 
 ## UI Layout
@@ -151,15 +151,24 @@ Supported upload types:
 
 - `.txt`
 - `.md`
+- `.markdown`
+- `.json`
+- `.csv`
+- `.log`
+- `.yml`
+- `.yaml`
+- `.xml`
+- `.ini`
+- `.conf`
 - `.mp3`
 - `.mp4`
 - `.jpg`
 - `.png`
 - `.svg`
 
-Maximum size: 25 MB.
+Maximum binary attachment size: 25 MB. Text extraction for LLM requests is controlled separately by `MAX_UPLOAD_BYTES` and `MAX_EXTRACTED_CHARS`.
 
-Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. Text files remain attachments and can be previewed in a read-only subwindow. `.mp3` renders with browser audio controls. `.mp4` opens in a movable video preview subwindow. `.jpg`, `.png`, and `.svg` render as image previews. Attachment binary data is never stored in SQLite.
+Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. Text-like files are saved as attachments, read as UTF-8, stripped of NUL bytes, capped by `MAX_EXTRACTED_CHARS`, and included in the LLM/Codex request text. `.mp3` renders with browser audio controls. `.mp4` opens in a movable video preview subwindow. `.jpg`, `.png`, and `.svg` render as image previews. Attachment binary data is never stored in SQLite.
 
 ## Job Execution Tracking
 
@@ -525,7 +534,10 @@ For Docker, back up the mounted `/app/data` volume.
 | `HOST` | Bind host. Use `127.0.0.1` behind Caddy, `0.0.0.0` in Docker. |
 | `PORT` | Single HTTP/WebSocket port. |
 | `DATA_DIR` | Draft artifacts, attachments, and unclarified files. |
+| `ATTACHMENTS_DIR` | Optional attachment root. Defaults to `DATA_DIR/attachments`. |
 | `SQLITE_PATH` | SQLite database file for chat history. |
+| `MAX_UPLOAD_BYTES` | Maximum text-like attachment size for extraction into LLM requests. Defaults to `1048576`. |
+| `MAX_EXTRACTED_CHARS` | Maximum extracted characters included in LLM requests. Defaults to `50000`. |
 | `AUTH_MODE` | `local`. |
 | `SESSION_SECRET` | Required in production for session hashing. |
 | `REGISTRATION_ENABLED` | Enables or disables new local registrations. |

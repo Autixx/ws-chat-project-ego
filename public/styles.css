@@ -434,7 +434,7 @@ h2 {
 
 .draft {
   display: grid;
-  grid-template-columns: 340px 1fr 1fr;
+  grid-template-columns: 320px minmax(0, 1fr) 280px;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   background: var(--panel);
@@ -471,13 +471,16 @@ h2 {
   overflow: auto;
   display: flex;
   gap: 8px;
+  scroll-behavior: smooth;
 }
 
 .item {
-  min-width: 280px;
+  flex: 0 0 calc((100% - 32px) / 5);
+  min-width: 0;
   border: 1px solid var(--line);
   padding: 8px;
   background: var(--panel-2);
+  overflow: auto;
 }
 
 .item-title { color: var(--text); font-weight: 700; }

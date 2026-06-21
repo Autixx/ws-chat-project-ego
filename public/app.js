@@ -798,12 +798,18 @@ function selectedText() {
 
 function wireRowSingleClick(row, callback) {
   let pointerStart = null;
+  let pointerMoved = false;
   row.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || event.target.closest?.("button, a, input, textarea, select, label")) {
       pointerStart = null;
       return;
     }
     pointerStart = { x: event.clientX, y: event.clientY, time: Date.now() };
+    pointerMoved = false;
+  });
+  row.addEventListener("pointermove", (event) => {
+    if (!pointerStart) return;
+    if (Math.abs(event.clientX - pointerStart.x) > 1 || Math.abs(event.clientY - pointerStart.y) > 1) pointerMoved = true;
   });
   row.addEventListener("pointerup", (event) => {
     if (!pointerStart || event.button !== 0) return;
@@ -811,13 +817,14 @@ function wireRowSingleClick(row, callback) {
     const dy = Math.abs(event.clientY - pointerStart.y);
     const elapsed = Date.now() - pointerStart.time;
     pointerStart = null;
-    if (dx > 3 || dy > 3 || elapsed > 600) return;
+    if (pointerMoved || dx > 1 || dy > 1 || elapsed > 600) return;
     window.setTimeout(() => {
       if (!selectedText()) callback();
-    }, 0);
+    }, 80);
   });
   row.addEventListener("pointercancel", () => {
     pointerStart = null;
+    pointerMoved = false;
   });
 }
 
@@ -958,7 +965,7 @@ function renderDeleteFilesList() {
       actions.append(previewButton("Preview", () => openImageViewer(url, attachment.fileName)));
     } else if (attachment.fileName.match(/\.mp4$/i)) {
       actions.append(previewButton("Preview", () => openMediaViewer(url, attachment.fileName)));
-    } else if (attachment.fileName.match(/\.(txt|md)$/i)) {
+    } else if (attachment.fileName.match(/\.(txt|md|markdown|json|csv|log|yml|yaml|xml|ini|conf)$/i)) {
       actions.append(previewButton("Preview", () => openTextPreview(url, attachment.fileName)));
     }
     const download = document.createElement("a");
@@ -1029,7 +1036,7 @@ function renderRequests() {
     const expanded = request.id === state.expandedRequestId;
     const row = document.createElement("article");
     row.className = `rr-row ${expanded ? "expanded" : ""} ${request.id === state.selectedRequestId ? "selected" : ""}`;
-    row.addEventListener("click", () => selectRequest(request.id));
+    wireRowSingleClick(row, () => selectRequest(request.id));
     const status = document.createElement("span");
     status.className = `sq ${requestHasResponse(request.id) ? "green" : "red"}`;
     row.append(status);
@@ -1481,6 +1488,11 @@ els.deleteConsequencesCheck.addEventListener("change", () => {
 els.deleteConfirmBtn.addEventListener("click", confirmDeleteWorkbench);
 els.requestSearch.addEventListener("input", renderRequests);
 els.responseSearch.addEventListener("input", renderResponses);
+els.itemsList.addEventListener("wheel", (event) => {
+  if (els.itemsList.children.length <= 5) return;
+  event.preventDefault();
+  els.itemsList.scrollLeft += event.deltaY;
+});
 els.hideServiceResponsesBtn.addEventListener("click", () => {
   state.hideServiceResponses = !state.hideServiceResponses;
   els.hideServiceResponsesBtn.classList.toggle("active", state.hideServiceResponses);

@@ -4,7 +4,10 @@ export type AppConfig = {
   host: string;
   port: number;
   dataDir: string;
+  attachmentsDir?: string;
   sqlitePath: string;
+  maxUploadBytes?: number;
+  maxExtractedChars?: number;
   devAuthBypass: boolean;
   trustAutheliaHeaders: boolean;
   authMode: "local";
@@ -43,7 +46,10 @@ export const config: AppConfig = {
   host: process.env.HOST ?? "127.0.0.1",
   port: numberFromEnv(process.env.PORT, 19100),
   dataDir: process.env.DATA_DIR ?? "./data",
+  attachmentsDir: process.env.ATTACHMENTS_DIR ?? path.join(process.env.DATA_DIR ?? "./data", "attachments"),
   sqlitePath: process.env.SQLITE_PATH ?? path.join(process.env.DATA_DIR ?? "./data", "projectego-chat.sqlite"),
+  maxUploadBytes: numberFromEnv(process.env.MAX_UPLOAD_BYTES, 1048576),
+  maxExtractedChars: numberFromEnv(process.env.MAX_EXTRACTED_CHARS, 50000),
   devAuthBypass: boolFromEnv(process.env.DEV_AUTH_BYPASS, process.env.NODE_ENV !== "production"),
   trustAutheliaHeaders: boolFromEnv(process.env.TRUST_AUTHELIA_HEADERS, false),
   authMode: "local",

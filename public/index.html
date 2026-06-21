@@ -107,7 +107,7 @@
                     <path d="m10.3 14.3 7-7" />
                   </svg>
                 </label>
-                <input id="fileInput" class="visually-hidden" type="file" multiple accept=".txt,.md,.mp3,.mp4,.jpg,.png,.svg,text/plain,text/markdown,audio/mpeg,video/mp4,image/jpeg,image/png,image/svg+xml" />
+                <input id="fileInput" class="visually-hidden" type="file" multiple accept=".txt,.md,.markdown,.json,.csv,.log,.yml,.yaml,.xml,.ini,.conf,.mp3,.mp4,.jpg,.png,.svg,text/plain,text/markdown,application/json,text/csv,application/xml,text/xml,audio/mpeg,video/mp4,image/jpeg,image/png,image/svg+xml" />
                 <button id="sendBtn" class="icon-button send-icon send-button" type="button" aria-label="Send request" title="Send request">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M3 20 21 12 3 4l3.4 7.2L14 12l-7.6.8L3 20Z" />
@@ -123,7 +123,7 @@
           <button class="mode-button" type="button" data-mode="tasks">Tasks</button>
           <button class="mode-button" type="button" data-mode="digest">Digest</button>
           <button class="mode-button" type="button" data-mode="abstract_idea">Abstract idea</button>
-          <span id="fileNotice"></span>
+          <span id="fileNotice" title="Text extraction supports .txt, .md, .markdown, .json, .csv, .log, .yml, .yaml, .xml, .ini, .conf. Media files are stored as attachments."></span>
         </div>
 
         <div class="draft-actions">

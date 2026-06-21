@@ -2,7 +2,7 @@ import type { Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { AuthenticatedUser } from "../auth/authelia.js";
 import { requireUserForRequest } from "../auth/requireUser.js";
-import { deleteStoredAttachments, finalizeStagedUploads } from "../attachments/attachmentService.js";
+import { buildLlmPromptWithAttachments, deleteStoredAttachments, extractTextAttachments, finalizeStagedUploads, firstExtractedFileName } from "../attachments/attachmentService.js";
 import type { Conversation } from "../conversations/types.js";
 import type { AppConfig } from "../config.js";
 import { ConversationStore } from "../conversations/conversationStore.js";
@@ -332,14 +332,16 @@ export function attachWebSocketServer(
   ): Promise<void> {
     if (input.text.length > MAX_TEXT_LENGTH) throw new Error("Message text is too large.");
     const conversation = await ensureConversation(ws, user, input.conversationId, input.text);
-    const userMessage = await messages.appendUserMessage(conversation.id, user, input.text, {
+    let userMessage = await messages.appendUserMessage(conversation.id, user, input.text, {
       mode: input.mode,
       fileName: input.fileName,
       fileSize: input.fileSize,
       mimeType: input.mimeType
     });
+    let finalizedAttachments: Awaited<ReturnType<typeof finalizeStagedUploads>> = [];
+    let extraction: Awaited<ReturnType<typeof extractTextAttachments>> = { extracted: [], warnings: [] };
     if (input.attachmentUploadIds?.length) {
-      const attachments = await finalizeStagedUploads({
+      finalizedAttachments = await finalizeStagedUploads({
         dataDir: config.dataDir,
         conversations,
         user,
@@ -347,7 +349,30 @@ export function attachWebSocketServer(
         requestMessageId: userMessage.id,
         uploadIds: input.attachmentUploadIds
       });
-      send(ws, { type: "attachments_for_request", conversationId: conversation.id, requestId: userMessage.id, attachments });
+      send(ws, { type: "attachments_for_request", conversationId: conversation.id, requestId: userMessage.id, attachments: finalizedAttachments });
+      userMessage = await messages.updateMessageMetadata(user, conversation.id, userMessage.id, {
+        fileName: finalizedAttachments[0]?.fileName,
+        uploadedFileNames: finalizedAttachments.map((attachment) => attachment.fileName),
+        uploadedFileCount: finalizedAttachments.length
+      });
+      extraction = await extractTextAttachments({
+        dataDir: config.dataDir,
+        attachments: finalizedAttachments,
+        maxUploadBytes: config.maxUploadBytes,
+        maxExtractedChars: config.maxExtractedChars
+      });
+      if (extraction.extracted.length) {
+        userMessage = await messages.updateMessageMetadata(user, conversation.id, userMessage.id, {
+          extractedAttachments: extraction.extracted.map((item) => ({
+            originalFileName: item.fileName,
+            savedPath: item.attachment.storagePath,
+            sizeBytes: item.attachment.sizeBytes,
+            extension: item.extension,
+            extractedChars: item.extractedChars,
+            truncated: item.truncated
+          }))
+        });
+      }
     }
     send(ws, { type: "message_created", message: userMessage });
 
@@ -362,7 +387,13 @@ export function attachWebSocketServer(
       role: "assistant",
       kind: "response",
       content: "",
-      metadata: { mode: input.mode, responseToRequestId: userMessage.id, decisionStatus: "pending" }
+      metadata: {
+        mode: input.mode,
+        responseToRequestId: userMessage.id,
+        decisionStatus: "pending",
+        fileName: userMessage.metadata?.fileName,
+        uploadedFileNames: userMessage.metadata?.uploadedFileNames
+      }
     });
     await messages.appendMessage(assistantMessage);
     send(ws, { type: "assistant_message_start", conversationId: conversation.id, messageId: assistantMessage.id });
@@ -378,11 +409,25 @@ export function attachWebSocketServer(
       return;
     }
 
+    for (const warning of extraction.warnings) {
+      const statusMessage = await messages.appendToolMessage(conversation.id, user, warning, {
+        kind: "status",
+        mode: input.mode,
+        responseToRequestId: userMessage.id
+      });
+      await emitMessage(ws, statusMessage);
+      send(ws, { type: "status", conversationId: conversation.id, messageId: assistantMessage.id, jobId: "pending", message: warning });
+    }
+    const llmText = buildLlmPromptWithAttachments(input.text, extraction.extracted);
+    const llmFileName = input.fileName ?? firstExtractedFileName(extraction.extracted);
+    if (!llmText.trim()) throw new Error("At least one text prompt or supported text-like attachment is required.");
+    if (llmText.length > MAX_TEXT_LENGTH) throw new Error("Combined message text is too large.");
+
     const taskMode = taskModeFromUiMode(input.mode);
-    const source = input.fileName ? "uploaded_file" : "browser_text";
+    const source = llmFileName ? "uploaded_file" : "browser_text";
     let assistantContent = "";
 
-    for await (const event of provider.runProjectEgoTask({ mode: taskMode, text: input.text, source, fileName: input.fileName, user })) {
+    for await (const event of provider.runProjectEgoTask({ mode: taskMode, text: llmText, source, fileName: llmFileName, user })) {
       if (event.type === "status") {
         const statusMessage = await messages.appendToolMessage(conversation.id, user, event.message, {
           kind: "status",
@@ -409,7 +454,7 @@ export function attachWebSocketServer(
       }
 
       if (event.type === "result") {
-        const saved = await drafts.saveDraft({ mode: taskMode, source, fileName: input.fileName, user, result: event.result });
+        const saved = await drafts.saveDraft({ mode: taskMode, source, fileName: llmFileName, user, result: event.result });
         assistantContent += `\n\nI created draft ${saved.draft.jobId} with ${saved.draft.result.items.length} item(s).`;
         const draftMessage = await messages.appendToolMessage(conversation.id, user, `Draft ${saved.draft.jobId}: ${saved.draft.result.items.length} item(s).`, {
           kind: "draft",
@@ -425,7 +470,7 @@ export function attachWebSocketServer(
           messageId: draftMessage.id,
           mode: input.mode,
           source,
-          fileName: input.fileName,
+          fileName: llmFileName,
           itemsCount: saved.draft.result.items.length
         });
         await emitMessage(ws, draftMessage);

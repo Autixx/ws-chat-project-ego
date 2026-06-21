@@ -191,3 +191,26 @@ test("Apply decision creates job but does not mark execution succeeded", async (
 test("protocol parses job_list client message", () => {
   assert.deepEqual(parseClientMessage({ type: "job_list", conversationId: "C-1" }), { type: "job_list", conversationId: "C-1" });
 });
+
+test("protocol keeps text-only request flow and allows file-only request flow", () => {
+  assert.deepEqual(parseClientMessage({ type: "message_send", conversationId: "C-1", mode: "tasks", text: "plain request" }), {
+    type: "message_send",
+    conversationId: "C-1",
+    mode: "tasks",
+    text: "plain request",
+    fileName: undefined,
+    fileSize: undefined,
+    mimeType: undefined,
+    attachmentUploadIds: undefined
+  });
+  assert.deepEqual(parseClientMessage({ type: "message_send", conversationId: "C-1", mode: "tasks", text: "", attachmentUploadIds: ["UP-1"] }), {
+    type: "message_send",
+    conversationId: "C-1",
+    mode: "tasks",
+    text: "",
+    fileName: undefined,
+    fileSize: undefined,
+    mimeType: undefined,
+    attachmentUploadIds: ["UP-1"]
+  });
+});

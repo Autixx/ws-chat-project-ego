@@ -104,8 +104,9 @@ export function parseClientMessage(raw: unknown): ClientMessage {
   }
 
   if (msg.type === "message_send") {
-    if (typeof msg.conversationId !== "string" || typeof msg.text !== "string" || msg.text.trim().length === 0) {
-      throw new Error("message_send requires conversationId and text.");
+    const attachmentUploadIds = Array.isArray(msg.attachmentUploadIds) ? msg.attachmentUploadIds.filter((id): id is string => typeof id === "string") : undefined;
+    if (typeof msg.conversationId !== "string" || typeof msg.text !== "string" || (!msg.text.trim() && !attachmentUploadIds?.length)) {
+      throw new Error("message_send requires conversationId and text or attachmentUploadIds.");
     }
     if (!["chat", "digest", "tasks", "abstract_idea"].includes(String(msg.mode))) {
       throw new Error("Unsupported message_send mode.");
@@ -118,7 +119,7 @@ export function parseClientMessage(raw: unknown): ClientMessage {
       fileName: typeof msg.fileName === "string" ? msg.fileName : undefined,
       fileSize: typeof msg.fileSize === "number" ? msg.fileSize : undefined,
       mimeType: typeof msg.mimeType === "string" ? msg.mimeType : undefined,
-      attachmentUploadIds: Array.isArray(msg.attachmentUploadIds) ? msg.attachmentUploadIds.filter((id): id is string => typeof id === "string") : undefined
+      attachmentUploadIds
     };
   }
 

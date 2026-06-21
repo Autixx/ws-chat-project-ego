@@ -23,7 +23,7 @@ const database = openDatabase(config);
 const conversations = new ConversationStore(database);
 const jobs = new JobStore(database);
 const componentStatus = new ComponentStatusMonitor(config);
-const uploadTempDir = path.join(config.dataDir, "attachments", "tmp");
+const uploadTempDir = path.join(config.attachmentsDir ?? path.join(config.dataDir, "attachments"), "tmp");
 await fs.mkdir(uploadTempDir, { recursive: true });
 const upload = multer({
   dest: uploadTempDir,
