@@ -12,6 +12,29 @@ const draftResult: DraftResult = {
   items: []
 };
 
+const homelabAgentResult = {
+  mode: "structured_breakdown",
+  source_summary: "Dashboard cleanup plan",
+  items: [
+    {
+      title: "Improve media preview",
+      type: "idea",
+      project: "UI / UX",
+      module: "ProjectEGO Dashboard",
+      summary: "Make previews easier to use.",
+      details: "Open media in movable preview windows.",
+      source_text: "Preview uploaded files.",
+      priority: "medium",
+      labels: ["codex-generated", "manual-review"],
+      dependencies: [],
+      acceptance_criteria: [],
+      needs_clarification: []
+    }
+  ],
+  needs_clarification: [],
+  eventlog_summary: "No warnings."
+};
+
 const input: LlmTaskInput = {
   mode: "structured_breakdown",
   text: "Make a plan",
@@ -78,6 +101,60 @@ test("CodexProvider unwraps result and emits warnings before result", async () =
   }
 });
 
+test("CodexProvider normalizes current homelab-codex-agent result shape", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({ job_id: "20260621-064612-9149beaf", status: "done", result: homelabAgentResult, eventlog: [] })) as typeof fetch;
+  try {
+    const events = await collect(new CodexProvider(config()));
+    assert.deepEqual(events.map((event) => event.type), ["result", "done"]);
+    const result = events[0].type === "result" ? events[0].result : undefined;
+    assert.equal(result?.status, "done");
+    assert.equal(result?.source_summary, "Dashboard cleanup plan");
+    assert.equal(result?.items[0]?.title, "Improve media preview");
+    assert.equal(result?.items[0]?.routing_confidence, "medium");
+    assert.deepEqual(result?.items[0]?.labels, ["codex-generated", "manual-review"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("CodexProvider safely defaults invalid draft item enum fields", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    Response.json({
+      job_id: "job-defaults",
+      status: "done",
+      result: {
+        ...homelabAgentResult,
+        items: [
+          {
+            ...homelabAgentResult.items[0],
+            type: "not-a-dashboard-type",
+            priority: "critical",
+            routing_confidence: "certain",
+            labels: ["ok", 123, false],
+            dependencies: undefined,
+            acceptance_criteria: ["done"],
+            needs_clarification: null
+          }
+        ]
+      }
+    })) as typeof fetch;
+  try {
+    const events = await collect(new CodexProvider(config()));
+    const result = events[0].type === "result" ? events[0].result : undefined;
+    assert.equal(result?.items[0]?.type, "idea");
+    assert.equal(result?.items[0]?.priority, "medium");
+    assert.equal(result?.items[0]?.routing_confidence, "medium");
+    assert.deepEqual(result?.items[0]?.labels, ["ok", "123", "false"]);
+    assert.deepEqual(result?.items[0]?.dependencies, []);
+    assert.deepEqual(result?.items[0]?.acceptance_criteria, ["done"]);
+    assert.deepEqual(result?.items[0]?.needs_clarification, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("CodexProvider returns error on non-2xx response", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => new Response("bad request", { status: 400 })) as typeof fetch;
@@ -99,6 +176,28 @@ test("CodexProvider returns error when result is missing", async () => {
     assert.equal(events.length, 1);
     assert.equal(events[0].type, "error");
     assert.match(events[0].type === "error" ? events[0].message : "", /valid result/);
+    assert.match(events[0].type === "error" ? events[0].message : "", /job_id=job-1/);
+    assert.match(events[0].type === "error" ? events[0].message : "", /result_exists=false/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("CodexProvider returns detailed error for invalid result shape", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({ job_id: "job-invalid", status: "done", result: { items: "bad" } })) as typeof fetch;
+  try {
+    const events = await collect(new CodexProvider(config()));
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, "error");
+    const message = events[0].type === "error" ? events[0].message : "";
+    assert.match(message, /job_id=job-invalid/);
+    assert.match(message, /envelope_status=done/);
+    assert.match(message, /result_exists=true/);
+    assert.match(message, /result_keys=items/);
+    assert.match(message, /result\.source_summary must be a string/);
+    assert.match(message, /result\.items must be an array/);
+    assert.match(message, /result\.needs_clarification must be an array/);
   } finally {
     globalThis.fetch = originalFetch;
   }
