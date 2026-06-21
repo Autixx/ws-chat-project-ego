@@ -120,6 +120,44 @@ test("CodexProvider sends dashboard-upload source and fileName as JSON metadata"
   }
 });
 
+test("CodexProvider sends multimodal attachments in JSON body", async () => {
+  let body: Record<string, unknown> | undefined;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url, init) => {
+    body = JSON.parse(String(init?.body));
+    return Response.json({ status: "done", result: draftResult });
+  }) as typeof fetch;
+  try {
+    await collectWithInput(new CodexProvider(config()), {
+      ...input,
+      source: "dashboard-upload",
+      fileName: "screen.png",
+      attachments: [
+        {
+          id: "ATT-image",
+          kind: "image",
+          fileName: "screen.png",
+          mimeType: "image/png",
+          sizeBytes: 12345,
+          downloadUrl: "http://127.0.0.1:19100/api/internal/attachments/ATT-image"
+        }
+      ]
+    });
+    assert.deepEqual(body?.attachments, [
+      {
+        id: "ATT-image",
+        kind: "image",
+        fileName: "screen.png",
+        mimeType: "image/png",
+        sizeBytes: 12345,
+        downloadUrl: "http://127.0.0.1:19100/api/internal/attachments/ATT-image"
+      }
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("CodexProvider unwraps result and emits warnings before result", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => Response.json({ job_id: "job-1", status: "done", result: draftResult, warnings: ["check routing"] })) as typeof fetch;

@@ -3,11 +3,21 @@ import type { DraftResult } from "../drafts/types.js";
 
 export type LlmTaskMode = "structured_breakdown" | "create_tasks" | "abstract_idea";
 
+export type LlmAttachmentInput = {
+  id: string;
+  kind: "image" | "file";
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  downloadUrl: string;
+};
+
 export type LlmTaskInput = {
   mode: LlmTaskMode;
   text: string;
   source: string;
   fileName?: string;
+  attachments?: LlmAttachmentInput[];
   user: AuthenticatedUser;
 };
 

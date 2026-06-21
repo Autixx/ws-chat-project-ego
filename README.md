@@ -162,12 +162,28 @@ Supported upload types:
 - `.mp3`
 - `.mp4`
 - `.jpg`
+- `.jpeg`
 - `.png`
 - `.svg`
+- `.webp`
 
 Maximum binary attachment size: 25 MB. Text extraction for LLM requests is controlled separately by `MAX_UPLOAD_BYTES` and `MAX_EXTRACTED_CHARS`.
 
-Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. Text-like files are saved locally, read as UTF-8, stripped of NUL bytes, capped by `MAX_EXTRACTED_CHARS`, and embedded into the existing Codex agent JSON `text` field with `source: "dashboard-upload"` and `fileName` as metadata only. The original file is not uploaded separately to codex-agent. `.mp3` renders with browser audio controls. `.mp4` opens in a movable video preview subwindow. `.jpg`, `.png`, and `.svg` render as image previews. Attachment binary data is never stored in SQLite.
+Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. Text-like files are saved locally, read as UTF-8, stripped of NUL bytes, capped by `MAX_EXTRACTED_CHARS`, and embedded into the existing Codex agent JSON `text` field with `source: "dashboard-upload"` and `fileName` as metadata only. Image attachments can be forwarded to codex-agent as JSON `attachments[]` entries containing secure internal download URLs; image bytes are not inlined as base64. The original file is not uploaded separately to codex-agent. `.mp3` renders with browser audio controls. `.mp4` opens in a movable video preview subwindow. `.jpg`, `.jpeg`, `.png`, `.svg`, and `.webp` render as image previews. Attachment binary data is never stored in SQLite.
+
+For image forwarding, set:
+
+```env
+AGENT_ATTACHMENT_TOKEN=change-me
+DASHBOARD_INTERNAL_BASE_URL=http://127.0.0.1:19100
+MAX_LLM_ATTACHMENT_BYTES=10485760
+```
+
+`GET /api/internal/attachments/:attachmentId` is service-to-service only and requires `Authorization: Bearer <AGENT_ATTACHMENT_TOKEN>`. In the reverse-ssh deployment where codex-agent needs to download Dashboard attachments through the VPS, add a reverse forward such as:
+
+```bash
+ssh -R 127.0.0.1:19100:192.168.1.237:19100 user@vps
+```
 
 ## Job Execution Tracking
 
@@ -537,6 +553,9 @@ For Docker, back up the mounted `/app/data` volume.
 | `SQLITE_PATH` | SQLite database file for chat history. |
 | `MAX_UPLOAD_BYTES` | Maximum text-like attachment size for extraction into LLM requests. Defaults to `1048576`. |
 | `MAX_EXTRACTED_CHARS` | Maximum extracted characters included in LLM requests. Defaults to `50000`. |
+| `MAX_LLM_ATTACHMENT_BYTES` | Maximum image attachment size forwarded to LLM as a download URL. Defaults to `10485760`. |
+| `AGENT_ATTACHMENT_TOKEN` | Bearer token required by `/api/internal/attachments/:attachmentId`. |
+| `DASHBOARD_INTERNAL_BASE_URL` | Base URL codex-agent can use to download internal attachments, for example `http://127.0.0.1:19100`. |
 | `AUTH_MODE` | `local`. |
 | `SESSION_SECRET` | Required in production for session hashing. |
 | `REGISTRATION_ENABLED` | Enables or disables new local registrations. |

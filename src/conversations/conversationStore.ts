@@ -215,6 +215,18 @@ export class ConversationStore {
     if (!row) throw new Error("Attachment not found.");
     return rowToAttachment(row);
   }
+
+  async loadAttachmentById(attachmentId: string): Promise<AttachmentMetadata> {
+    const row = this.database.db
+      .prepare(
+        `SELECT id, conversation_id, message_id, file_name, mime_type, size_bytes, storage_path, created_at
+         FROM attachments
+         WHERE id = ?`
+      )
+      .get(attachmentId) as AttachmentRow | undefined;
+    if (!row) throw new Error("Attachment not found.");
+    return rowToAttachment(row);
+  }
 }
 
 function rowToConversation(row: ConversationRow): Conversation {

@@ -1021,6 +1021,13 @@ function fileExt(fileName) {
   return index >= 0 ? fileName.slice(index).toLowerCase() : "";
 }
 
+function uploadContextLabel(file) {
+  const ext = fileExt(file.name);
+  if ([".txt", ".md", ".json", ".csv", ".log", ".yml", ".yaml", ".xml", ".ini", ".conf"].includes(ext)) return "text-extractable";
+  if ([".jpg", ".jpeg", ".png", ".svg", ".webp"].includes(ext) || ["image/jpeg", "image/png", "image/svg+xml", "image/webp"].includes(file.type)) return "image/vision-capable";
+  return "stored-only";
+}
+
 function byteSize(text) {
   return new Blob([text || ""]).size;
 }
@@ -1136,7 +1143,7 @@ function renderAttachments() {
   for (const attachment of attachments) {
     const card = document.createElement("div");
     card.className = "attachment-card";
-    const icon = attachment.fileName.match(/\.mp3$/i) ? "[audio]" : attachment.fileName.match(/\.mp4$/i) ? "[video]" : attachment.fileName.match(/\.(jpg|png|svg)$/i) ? "[image]" : "[text]";
+    const icon = attachment.fileName.match(/\.mp3$/i) ? "[audio]" : attachment.fileName.match(/\.mp4$/i) ? "[video]" : attachment.fileName.match(/\.(jpg|jpeg|png|svg|webp)$/i) ? "[image]" : "[text]";
     const label = document.createElement("div");
     label.className = "attachment-info";
     label.textContent = `${icon}\n${attachment.fileName}\n${kb(attachment.sizeBytes)}\nrequest: ${attachment.messageId || "-"}`;
@@ -1153,7 +1160,7 @@ function renderAttachments() {
       preview.textContent = "Preview video";
       preview.addEventListener("click", () => openMediaViewer(url, attachment.fileName));
       card.append(preview);
-    } else if (attachment.fileName.match(/\.(jpg|png|svg)$/i)) {
+    } else if (attachment.fileName.match(/\.(jpg|jpeg|png|svg|webp)$/i)) {
       const thumbButton = document.createElement("button");
       thumbButton.type = "button";
       thumbButton.className = "attachment-thumb-button";
@@ -1430,7 +1437,7 @@ function renderUploadInspector() {
     name.textContent = file.name;
     const meta = document.createElement("div");
     meta.className = "upload-meta";
-    meta.textContent = `${fileExt(file.name) || "no extension"} / ${kb(file.size)}`;
+    meta.textContent = `${fileExt(file.name) || "no extension"} / ${kb(file.size)} / ${uploadContextLabel(file)}`;
     details.append(name, meta);
     const remove = document.createElement("button");
     remove.type = "button";

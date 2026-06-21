@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stageUploadedFile, streamAttachment, validateAttachmentFile, MAX_ATTACHMENT_BYTES } from "./attachments/attachmentService.js";
+import { isValidAgentAttachmentAuthorization } from "./attachments/internalAttachmentAuth.js";
 import { createAuthRouter } from "./auth/authRoutes.js";
 import { requireUserMiddleware } from "./auth/requireUser.js";
 import { config } from "./config.js";
@@ -103,6 +104,19 @@ app.get("/api/attachments/:attachmentId", requireUserMiddleware(config, database
       return;
     }
     const attachment = await conversations.loadAttachmentForUser(user, req.params.attachmentId);
+    await streamAttachment({ dataDir: config.dataDir, attachment, res });
+  } catch (error) {
+    if (!res.headersSent) res.status(404).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.get("/api/internal/attachments/:attachmentId", async (req, res) => {
+  try {
+    if (!isValidAgentAttachmentAuthorization(config, req.headers.authorization)) {
+      res.status(401).json({ error: "Invalid attachment token." });
+      return;
+    }
+    const attachment = await conversations.loadAttachmentById(req.params.attachmentId);
     await streamAttachment({ dataDir: config.dataDir, attachment, res });
   } catch (error) {
     if (!res.headersSent) res.status(404).json({ error: error instanceof Error ? error.message : String(error) });

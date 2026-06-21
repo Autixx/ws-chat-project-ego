@@ -4,13 +4,16 @@ import type { Response } from "express";
 import type { AuthenticatedUser } from "../auth/authelia.js";
 import type { ConversationStore } from "../conversations/conversationStore.js";
 import type { AttachmentMetadata } from "../conversations/types.js";
+import type { LlmAttachmentInput } from "../llm/provider.js";
 import { createId, safeUserId } from "../utils/ids.js";
 
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 export const DEFAULT_MAX_UPLOAD_BYTES = 1_048_576;
 export const DEFAULT_MAX_EXTRACTED_CHARS = 50_000;
+export const DEFAULT_MAX_LLM_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const textLikeExtensions = new Set([".txt", ".md", ".json", ".csv", ".log", ".yml", ".yaml", ".xml", ".ini", ".conf"]);
-const allowedExtensions = new Set([...textLikeExtensions, ".mp3", ".mp4", ".jpg", ".png", ".svg"]);
+const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".svg", ".webp"]);
+const allowedExtensions = new Set([...textLikeExtensions, ".mp3", ".mp4", ...imageExtensions]);
 const allowedMimePrefixes = new Map([
   [".txt", ["text/plain", "application/octet-stream"]],
   [".md", ["text/markdown", "text/plain", "application/octet-stream"]],
@@ -25,8 +28,10 @@ const allowedMimePrefixes = new Map([
   [".mp3", ["audio/mpeg", "audio/mp3", "application/octet-stream"]],
   [".mp4", ["video/mp4", "application/octet-stream"]],
   [".jpg", ["image/jpeg", "application/octet-stream"]],
+  [".jpeg", ["image/jpeg", "application/octet-stream"]],
   [".png", ["image/png", "application/octet-stream"]],
-  [".svg", ["image/svg+xml", "application/octet-stream"]]
+  [".svg", ["image/svg+xml", "application/octet-stream"]],
+  [".webp", ["image/webp", "application/octet-stream"]]
 ]);
 
 export type StagedUpload = {
@@ -58,6 +63,20 @@ export function validateExtractableAttachmentFile(fileName: string, sizeBytes: n
   const ext = path.extname(fileName).toLowerCase();
   if (!textLikeExtensions.has(ext)) throw new Error(`Unsupported text attachment extension: ${ext || "(none)"}.`);
   if (sizeBytes > maxUploadBytes) throw new Error(`Attachment exceeds ${maxUploadBytes} byte text extraction limit.`);
+}
+
+export function isTextLikeAttachment(fileName: string): boolean {
+  return textLikeExtensions.has(path.extname(fileName).toLowerCase());
+}
+
+export function isImageAttachment(fileName: string, mimeType?: string): boolean {
+  const ext = path.extname(fileName).toLowerCase();
+  if (mimeType && ["image/png", "image/jpeg", "image/svg+xml", "image/webp"].includes(mimeType)) return true;
+  return imageExtensions.has(ext);
+}
+
+export function isLlmForwardableAttachment(attachment: AttachmentMetadata, maxBytes = DEFAULT_MAX_LLM_ATTACHMENT_BYTES): boolean {
+  return isImageAttachment(attachment.fileName, attachment.mimeType) && attachment.sizeBytes <= maxBytes;
 }
 
 export function sanitizeFileName(fileName: string): string {
@@ -190,6 +209,41 @@ export function firstExtractedFileName(extracted: ExtractedAttachmentText[]): st
   return extracted[0]?.fileName;
 }
 
+export function buildLlmAttachmentInputs(input: {
+  attachments: AttachmentMetadata[];
+  dashboardInternalBaseUrl?: string;
+  maxLlmAttachmentBytes?: number;
+}): { attachments: LlmAttachmentInput[]; warnings: string[] } {
+  const llmAttachments: LlmAttachmentInput[] = [];
+  const warnings: string[] = [];
+  const baseUrl = input.dashboardInternalBaseUrl?.replace(/\/+$/, "");
+  const maxBytes = input.maxLlmAttachmentBytes ?? DEFAULT_MAX_LLM_ATTACHMENT_BYTES;
+  for (const attachment of input.attachments) {
+    if (isTextLikeAttachment(attachment.fileName)) continue;
+    if (!isImageAttachment(attachment.fileName, attachment.mimeType)) {
+      warnings.push(`Attachment ${attachment.fileName} is stored but not included in LLM context.`);
+      continue;
+    }
+    if (attachment.sizeBytes > maxBytes) {
+      warnings.push(`Image attachment ${attachment.fileName} exceeds ${maxBytes} byte LLM attachment limit and was not included.`);
+      continue;
+    }
+    if (!baseUrl) {
+      warnings.push("Image attachment forwarding requires DASHBOARD_INTERNAL_BASE_URL.");
+      continue;
+    }
+    llmAttachments.push({
+      id: attachment.id,
+      kind: "image",
+      fileName: attachment.fileName,
+      mimeType: attachment.mimeType ?? "application/octet-stream",
+      sizeBytes: attachment.sizeBytes,
+      downloadUrl: `${baseUrl}/api/internal/attachments/${encodeURIComponent(attachment.id)}`
+    });
+  }
+  return { attachments: llmAttachments, warnings };
+}
+
 export async function streamAttachment(input: {
   dataDir: string;
   attachment: AttachmentMetadata;
@@ -225,8 +279,10 @@ function mimeFromExtension(fileName: string): string {
   if (ext === ".mp3") return "audio/mpeg";
   if (ext === ".mp4") return "video/mp4";
   if (ext === ".jpg") return "image/jpeg";
+  if (ext === ".jpeg") return "image/jpeg";
   if (ext === ".png") return "image/png";
   if (ext === ".svg") return "image/svg+xml";
+  if (ext === ".webp") return "image/webp";
   return "application/octet-stream";
 }
 

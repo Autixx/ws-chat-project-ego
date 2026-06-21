@@ -2,7 +2,14 @@ import type { Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { AuthenticatedUser } from "../auth/authelia.js";
 import { requireUserForRequest } from "../auth/requireUser.js";
-import { buildLlmPromptWithAttachments, deleteStoredAttachments, extractTextAttachments, finalizeStagedUploads, firstExtractedFileName } from "../attachments/attachmentService.js";
+import {
+  buildLlmPromptWithAttachments,
+  buildLlmAttachmentInputs,
+  deleteStoredAttachments,
+  extractTextAttachments,
+  finalizeStagedUploads,
+  firstExtractedFileName
+} from "../attachments/attachmentService.js";
 import type { Conversation } from "../conversations/types.js";
 import type { AppConfig } from "../config.js";
 import { ConversationStore } from "../conversations/conversationStore.js";
@@ -16,7 +23,7 @@ import { JobStore, type Job, type JobEvent } from "../jobs/jobStore.js";
 import { updateResponseDecision } from "../jobs/responseDecision.js";
 import { CodexProvider } from "../llm/codexProvider.js";
 import { MockProvider } from "../llm/mockProvider.js";
-import type { LlmProvider, LlmTaskMode } from "../llm/provider.js";
+import type { LlmAttachmentInput, LlmProvider, LlmTaskMode } from "../llm/provider.js";
 import { ComponentStatusMonitor } from "../status/componentStatus.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import { openReferencedDraft } from "./draftOpen.js";
@@ -340,6 +347,8 @@ export function attachWebSocketServer(
     });
     let finalizedAttachments: Awaited<ReturnType<typeof finalizeStagedUploads>> = [];
     let extraction: Awaited<ReturnType<typeof extractTextAttachments>> = { extracted: [], warnings: [] };
+    let llmAttachments: LlmAttachmentInput[] = [];
+    let attachmentWarnings: string[] = [];
     if (input.attachmentUploadIds?.length) {
       finalizedAttachments = await finalizeStagedUploads({
         dataDir: config.dataDir,
@@ -373,6 +382,13 @@ export function attachWebSocketServer(
           }))
         });
       }
+      const forwardable = buildLlmAttachmentInputs({
+        attachments: finalizedAttachments,
+        dashboardInternalBaseUrl: config.dashboardInternalBaseUrl,
+        maxLlmAttachmentBytes: config.maxLlmAttachmentBytes
+      });
+      llmAttachments = forwardable.attachments;
+      attachmentWarnings = forwardable.warnings;
     }
     send(ws, { type: "message_created", message: userMessage });
 
@@ -409,7 +425,7 @@ export function attachWebSocketServer(
       return;
     }
 
-    for (const warning of extraction.warnings) {
+    for (const warning of [...extraction.warnings, ...attachmentWarnings]) {
       const statusMessage = await messages.appendToolMessage(conversation.id, user, warning, {
         kind: "status",
         mode: input.mode,
@@ -420,14 +436,14 @@ export function attachWebSocketServer(
     }
     const llmText = buildLlmPromptWithAttachments(input.text, extraction.extracted);
     const llmFileName = input.fileName ?? firstExtractedFileName(extraction.extracted);
-    if (!llmText.trim()) throw new Error("At least one text prompt or supported text-like attachment is required.");
+    if (!llmText.trim() && !llmAttachments.length) throw new Error("At least one text prompt, supported text-like attachment, or image attachment is required.");
     if (llmText.length > MAX_TEXT_LENGTH) throw new Error("Combined message text is too large.");
 
     const taskMode = taskModeFromUiMode(input.mode);
     const source = llmFileName ? "dashboard-upload" : "browser_text";
     let assistantContent = "";
 
-    for await (const event of provider.runProjectEgoTask({ mode: taskMode, text: llmText, source, fileName: llmFileName, user })) {
+    for await (const event of provider.runProjectEgoTask({ mode: taskMode, text: llmText, source, fileName: llmFileName, attachments: llmAttachments, user })) {
       if (event.type === "status") {
         const statusMessage = await messages.appendToolMessage(conversation.id, user, event.message, {
           kind: "status",
@@ -482,6 +498,5 @@ export function attachWebSocketServer(
     send(ws, { type: "message_created", message: updatedAssistant });
     send(ws, { type: "assistant_message_done", conversationId: conversation.id, messageId: assistantMessage.id });
   }
-
   return { notifyJobUpdated };
 }

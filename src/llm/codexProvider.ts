@@ -45,7 +45,8 @@ export class CodexProvider implements LlmProvider {
         mode: input.mode,
         text: input.text,
         source: input.source,
-        ...(input.fileName ? { fileName: input.fileName } : {})
+        ...(input.fileName ? { fileName: input.fileName } : {}),
+        ...(input.attachments?.length ? { attachments: input.attachments } : {})
       })
     });
 

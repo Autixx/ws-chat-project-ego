@@ -8,6 +8,9 @@ export type AppConfig = {
   sqlitePath: string;
   maxUploadBytes?: number;
   maxExtractedChars?: number;
+  maxLlmAttachmentBytes?: number;
+  agentAttachmentToken?: string;
+  dashboardInternalBaseUrl?: string;
   devAuthBypass: boolean;
   trustAutheliaHeaders: boolean;
   authMode: "local";
@@ -50,6 +53,9 @@ export const config: AppConfig = {
   sqlitePath: process.env.SQLITE_PATH ?? path.join(process.env.DATA_DIR ?? "./data", "projectego-chat.sqlite"),
   maxUploadBytes: numberFromEnv(process.env.MAX_UPLOAD_BYTES, 1048576),
   maxExtractedChars: numberFromEnv(process.env.MAX_EXTRACTED_CHARS, 50000),
+  maxLlmAttachmentBytes: numberFromEnv(process.env.MAX_LLM_ATTACHMENT_BYTES, 10 * 1024 * 1024),
+  agentAttachmentToken: process.env.AGENT_ATTACHMENT_TOKEN,
+  dashboardInternalBaseUrl: process.env.DASHBOARD_INTERNAL_BASE_URL,
   devAuthBypass: boolFromEnv(process.env.DEV_AUTH_BYPASS, process.env.NODE_ENV !== "production"),
   trustAutheliaHeaders: boolFromEnv(process.env.TRUST_AUTHELIA_HEADERS, false),
   authMode: "local",
