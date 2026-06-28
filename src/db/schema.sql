@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS attachments (
   conversation_id TEXT NOT NULL,
   message_id TEXT,
   file_name TEXT NOT NULL,
+  original_file_name TEXT,
+  stored_file_name TEXT,
   mime_type TEXT,
   size_bytes INTEGER NOT NULL DEFAULT 0,
   storage_path TEXT NOT NULL,

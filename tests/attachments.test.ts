@@ -225,6 +225,8 @@ test("buildLlmAttachmentInputs forwards image attachments with internal download
         id: "ATT-image",
         conversationId: "C-image",
         fileName: "screen.png",
+        originalFileName: "screen.png",
+        storedFileName: "ATT-image.png",
         mimeType: "image/png",
         sizeBytes: 123,
         storagePath: "attachments/C/R/ATT-image_screen.png",
@@ -237,7 +239,7 @@ test("buildLlmAttachmentInputs forwards image attachments with internal download
     {
       id: "ATT-image",
       kind: "image",
-      fileName: "screen.png",
+      fileName: "ATT-image.png",
       mimeType: "image/png",
       sizeBytes: 123,
       downloadUrl: "http://127.0.0.1:19100/api/internal/attachments/ATT-image"
@@ -384,13 +386,13 @@ test("stage and finalize upload stores file and SQLite metadata", async () => {
 test("image upload is stored and associated with request message", async () => {
   const s = stores();
   try {
-    const tempPath = path.join(s.dir, "image.png");
+    const tempPath = path.join(s.dir, "example image.png");
     writeFileSync(tempPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
     const upload = await stageUploadedFile({
       dataDir: s.dir,
       user,
       tempPath,
-      originalName: "image.png",
+      originalName: "example image.png",
       mimeType: "image/png",
       sizeBytes: 4
     });
@@ -405,9 +407,12 @@ test("image upload is stored and associated with request message", async () => {
       uploadIds: [upload.uploadId]
     });
     assert.equal(attachments.length, 1);
-    assert.equal(attachments[0].fileName, "image.png");
+    assert.equal(attachments[0].fileName, "example_image.png");
+    assert.equal(attachments[0].originalFileName, "example_image.png");
+    assert.match(attachments[0].storedFileName ?? "", /^ATT-.+\.png$/);
     assert.equal(attachments[0].mimeType, "image/png");
     assert.equal(attachments[0].messageId, request.id);
+    assert.match(attachments[0].storagePath, new RegExp(`attachments/${conversation.id}/${request.id}/ATT-.+\\.png$`));
     assert.equal((await s.conversations.listAttachments(user, conversation.id, request.id))[0].id, attachments[0].id);
   } finally {
     s.cleanup();
@@ -461,6 +466,26 @@ test("listAttachments returns only attachments for requested message", async () 
 
     const firstAttachments = await s.conversations.listAttachments(user, conversation.id, first.id);
     assert.deepEqual(firstAttachments.map((attachment) => attachment.fileName), ["first.txt"]);
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("old attachment rows without split names remain compatible", async () => {
+  const s = stores();
+  try {
+    const conversation = await s.conversations.createConversation(user, "Legacy names");
+    const request = await s.messages.appendUserMessage(conversation.id, user, "request");
+    s.database.db
+      .prepare(
+        `INSERT INTO attachments (id, conversation_id, message_id, file_name, original_file_name, stored_file_name, mime_type, size_bytes, storage_path, created_at)
+         VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`
+      )
+      .run("ATT-legacy", conversation.id, request.id, "old-name.png", "image/png", 7, "attachments/C/R/ATT-legacy_old-name.png", new Date().toISOString());
+    const [attachment] = await s.conversations.listAttachments(user, conversation.id, request.id);
+    assert.equal(attachment.fileName, "old-name.png");
+    assert.equal(attachment.originalFileName, "old-name.png");
+    assert.equal(attachment.storedFileName, "ATT-legacy_old-name.png");
   } finally {
     s.cleanup();
   }

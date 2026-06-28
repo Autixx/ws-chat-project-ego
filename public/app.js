@@ -953,26 +953,28 @@ function renderDeleteFilesList() {
     return;
   }
   for (const attachment of attachments) {
+    const displayName = attachmentDisplayName(attachment);
+    const storedName = attachmentStoredName(attachment);
     const row = document.createElement("div");
     row.className = "delete-file-row";
     const info = document.createElement("div");
     info.className = "delete-file-info";
-    info.textContent = `${attachment.fileName}\n${kb(attachment.sizeBytes)} / ${attachment.mimeType || "unknown"}`;
+    info.textContent = `${displayName}\n${kb(attachment.sizeBytes)} / ${attachment.mimeType || "unknown"}`;
     const actions = document.createElement("div");
     actions.className = "delete-file-actions";
     const url = `/api/attachments/${encodeURIComponent(attachment.id)}`;
-    if (attachment.fileName.match(/\.(jpg|png|svg)$/i)) {
-      actions.append(previewButton("Preview", () => openImageViewer(url, attachment.fileName)));
-    } else if (attachment.fileName.match(/\.mp4$/i)) {
-      actions.append(previewButton("Preview", () => openMediaViewer(url, attachment.fileName)));
-    } else if (attachment.fileName.match(/\.(txt|md|markdown|json|csv|log|yml|yaml|xml|ini|conf)$/i)) {
-      actions.append(previewButton("Preview", () => openTextPreview(url, attachment.fileName)));
+    if (displayName.match(/\.(jpg|jpeg|png|svg|webp)$/i)) {
+      actions.append(previewButton("Preview", () => openImageViewer(url, displayName)));
+    } else if (displayName.match(/\.mp4$/i)) {
+      actions.append(previewButton("Preview", () => openMediaViewer(url, displayName)));
+    } else if (displayName.match(/\.(txt|md|json|csv|log|yml|yaml|xml|ini|conf)$/i)) {
+      actions.append(previewButton("Preview", () => openTextPreview(url, displayName)));
     }
     const download = document.createElement("a");
     download.className = "download-icon";
     download.href = url;
-    download.download = attachment.fileName;
-    download.setAttribute("aria-label", `Download ${attachment.fileName}`);
+    download.download = storedName;
+    download.setAttribute("aria-label", `Download ${displayName}`);
     download.title = "Download";
     download.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>';
     actions.append(download);
@@ -1021,6 +1023,14 @@ function fileExt(fileName) {
   return index >= 0 ? fileName.slice(index).toLowerCase() : "";
 }
 
+function attachmentDisplayName(attachment) {
+  return attachment.originalFileName || attachment.fileName || attachment.storedFileName || "attachment";
+}
+
+function attachmentStoredName(attachment) {
+  return attachment.storedFileName || attachment.fileName || attachment.originalFileName || "attachment";
+}
+
 function uploadContextLabel(file) {
   const ext = fileExt(file.name);
   if ([".txt", ".md", ".json", ".csv", ".log", ".yml", ".yaml", ".xml", ".ini", ".conf"].includes(ext)) return "text-extractable";
@@ -1053,7 +1063,7 @@ function renderRequests() {
       main.className = "row-main";
       appendLine(main, `${shortDate(request.createdAt)} / ${labelMode(request)} / ${kb(byteSize(request.content))}`);
       appendLine(main, `status: ${requestHasResponse(request.id) ? "has_response" : "no_response"}`);
-      appendLine(main, requestAttachments(request).length ? `attachments: ${requestAttachments(request).map((a) => a.fileName).join(", ")}` : "attachments: none");
+      appendLine(main, requestAttachments(request).length ? `attachments: ${requestAttachments(request).map(attachmentDisplayName).join(", ")}` : "attachments: none");
       const body = document.createElement("div");
       body.className = "expanded-body";
       body.textContent = contentForDisplay(request);
@@ -1141,41 +1151,42 @@ function renderAttachments() {
     return;
   }
   for (const attachment of attachments) {
+    const displayName = attachmentDisplayName(attachment);
     const card = document.createElement("div");
     card.className = "attachment-card";
-    const icon = attachment.fileName.match(/\.mp3$/i) ? "[audio]" : attachment.fileName.match(/\.mp4$/i) ? "[video]" : attachment.fileName.match(/\.(jpg|jpeg|png|svg|webp)$/i) ? "[image]" : "[text]";
+    const icon = displayName.match(/\.mp3$/i) ? "[audio]" : displayName.match(/\.mp4$/i) ? "[video]" : displayName.match(/\.(jpg|jpeg|png|svg|webp)$/i) ? "[image]" : "[text]";
     const label = document.createElement("div");
     label.className = "attachment-info";
-    label.textContent = `${icon}\n${attachment.fileName}\n${kb(attachment.sizeBytes)}\nrequest: ${attachment.messageId || "-"}`;
+    label.textContent = `${icon}\n${displayName}\n${kb(attachment.sizeBytes)}\nrequest: ${attachment.messageId || "-"}`;
     card.append(label);
     const url = `/api/attachments/${encodeURIComponent(attachment.id)}`;
-    if (attachment.fileName.match(/\.mp3$/i)) {
+    if (displayName.match(/\.mp3$/i)) {
       const audio = document.createElement("audio");
       audio.controls = true;
       audio.src = url;
       card.append(audio);
-    } else if (attachment.fileName.match(/\.mp4$/i)) {
+    } else if (displayName.match(/\.mp4$/i)) {
       const preview = document.createElement("button");
       preview.type = "button";
       preview.textContent = "Preview video";
-      preview.addEventListener("click", () => openMediaViewer(url, attachment.fileName));
+      preview.addEventListener("click", () => openMediaViewer(url, displayName));
       card.append(preview);
-    } else if (attachment.fileName.match(/\.(jpg|jpeg|png|svg|webp)$/i)) {
+    } else if (displayName.match(/\.(jpg|jpeg|png|svg|webp)$/i)) {
       const thumbButton = document.createElement("button");
       thumbButton.type = "button";
       thumbButton.className = "attachment-thumb-button";
       const image = document.createElement("img");
       image.className = "attachment-thumb";
       image.src = url;
-      image.alt = attachment.fileName;
+      image.alt = displayName;
       thumbButton.append(image);
-      thumbButton.addEventListener("click", () => openImageViewer(url, attachment.fileName));
+      thumbButton.addEventListener("click", () => openImageViewer(url, displayName));
       card.append(thumbButton);
-    } else if (attachment.fileName.match(/\.(txt|md)$/i)) {
+    } else if (displayName.match(/\.(txt|md|json|csv|log|yml|yaml|xml|ini|conf)$/i)) {
       const preview = document.createElement("button");
       preview.type = "button";
       preview.textContent = "Preview";
-      preview.addEventListener("click", () => openTextPreview(url, attachment.fileName));
+      preview.addEventListener("click", () => openTextPreview(url, displayName));
       card.append(preview);
     } else {
       const link = document.createElement("a");

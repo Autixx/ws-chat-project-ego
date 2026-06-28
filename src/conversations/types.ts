@@ -41,6 +41,8 @@ export type AttachmentMetadata = {
   conversationId: string;
   messageId?: string;
   fileName: string;
+  originalFileName?: string;
+  storedFileName?: string;
   mimeType?: string;
   sizeBytes: number;
   storagePath: string;

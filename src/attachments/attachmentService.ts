@@ -125,7 +125,8 @@ export async function finalizeStagedUploads(input: {
     if (files.length !== 1) throw new Error(`Invalid staged upload: ${uploadId}`);
     const fileName = sanitizeFileName(files[0]);
     const attachmentId = createId("ATT");
-    const finalFileName = `${attachmentId}_${fileName}`;
+    const storedFileName = `${attachmentId}${path.extname(fileName).toLowerCase()}`;
+    const finalFileName = storedFileName;
     const relativePath = path.join("attachments", input.conversationId, input.requestMessageId, finalFileName);
     const finalPath = path.join(input.dataDir, relativePath);
     const sourcePath = path.join(stagedDir, files[0]);
@@ -140,6 +141,8 @@ export async function finalizeStagedUploads(input: {
       conversationId: input.conversationId,
       messageId: input.requestMessageId,
       fileName,
+      originalFileName: fileName,
+      storedFileName,
       mimeType,
       sizeBytes: stat.size,
       storagePath: relativePath.replace(/\\/g, "/")
@@ -165,7 +168,7 @@ export async function extractAttachmentText(input: {
   const text = truncated ? cleaned.slice(0, maxExtractedChars) : cleaned;
   return {
     attachment: input.attachment,
-    fileName: input.attachment.fileName,
+    fileName: input.attachment.originalFileName ?? input.attachment.fileName,
     text,
     extractedChars: text.length,
     truncated,
@@ -206,7 +209,7 @@ export function buildLlmPromptWithAttachments(userText: string, extracted: Extra
 }
 
 export function firstExtractedFileName(extracted: ExtractedAttachmentText[]): string | undefined {
-  return extracted[0]?.fileName;
+  return extracted[0] ? extracted[0].attachment.storedFileName ?? path.basename(extracted[0].attachment.storagePath) : undefined;
 }
 
 export function buildLlmAttachmentInputs(input: {
@@ -219,13 +222,14 @@ export function buildLlmAttachmentInputs(input: {
   const baseUrl = input.dashboardInternalBaseUrl?.replace(/\/+$/, "");
   const maxBytes = input.maxLlmAttachmentBytes ?? DEFAULT_MAX_LLM_ATTACHMENT_BYTES;
   for (const attachment of input.attachments) {
+    const internalName = attachment.storedFileName ?? path.basename(attachment.storagePath);
     if (isTextLikeAttachment(attachment.fileName)) continue;
     if (!isImageAttachment(attachment.fileName, attachment.mimeType)) {
-      warnings.push(`Attachment ${attachment.fileName} is stored but not included in LLM context.`);
+      warnings.push(`Attachment ${internalName} is stored but not included in LLM context.`);
       continue;
     }
     if (attachment.sizeBytes > maxBytes) {
-      warnings.push(`Image attachment ${attachment.fileName} exceeds ${maxBytes} byte LLM attachment limit and was not included.`);
+      warnings.push(`Image attachment ${internalName} exceeds ${maxBytes} byte LLM attachment limit and was not included.`);
       continue;
     }
     if (!baseUrl) {
@@ -235,7 +239,7 @@ export function buildLlmAttachmentInputs(input: {
     llmAttachments.push({
       id: attachment.id,
       kind: "image",
-      fileName: attachment.fileName,
+      fileName: internalName,
       mimeType: attachment.mimeType ?? "application/octet-stream",
       sizeBytes: attachment.sizeBytes,
       downloadUrl: `${baseUrl}/api/internal/attachments/${encodeURIComponent(attachment.id)}`
@@ -251,7 +255,8 @@ export async function streamAttachment(input: {
 }): Promise<void> {
   const absolutePath = safeAttachmentPath(input.dataDir, input.attachment.storagePath);
   input.res.setHeader("Content-Type", input.attachment.mimeType ?? "application/octet-stream");
-  input.res.setHeader("Content-Disposition", `inline; filename="${input.attachment.fileName.replace(/"/g, "")}"`);
+  const downloadFileName = input.attachment.storedFileName ?? path.basename(input.attachment.storagePath) ?? input.attachment.fileName;
+  input.res.setHeader("Content-Disposition", `inline; filename="${downloadFileName.replace(/"/g, "")}"`);
   createReadStream(absolutePath).pipe(input.res);
 }
 

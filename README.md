@@ -94,8 +94,10 @@ DATA_DIR/
     │           └── sanitized-file-name.ext
     └── CONVERSATION_ID/
         └── REQUEST_MESSAGE_ID/
-            └── ATTACHMENT_ID_original-name.ext
+            └── ATTACHMENT_ID.ext
 ```
+
+Finalized attachment files use internal stored names such as `ATT-mqx4dgx9-5d0fea86.png`. SQLite keeps the user-facing sanitized upload name separately as `originalFileName` and the internal disk/agent name as `storedFileName`. Existing legacy rows without these split fields are still readable.
 
 SQLite stores lightweight chat data only. Draft response metadata stores references such as:
 

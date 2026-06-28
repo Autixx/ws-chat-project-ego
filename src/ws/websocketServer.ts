@@ -360,8 +360,9 @@ export function attachWebSocketServer(
       });
       send(ws, { type: "attachments_for_request", conversationId: conversation.id, requestId: userMessage.id, attachments: finalizedAttachments });
       userMessage = await messages.updateMessageMetadata(user, conversation.id, userMessage.id, {
-        fileName: finalizedAttachments[0]?.fileName,
-        uploadedFileNames: finalizedAttachments.map((attachment) => attachment.fileName),
+        fileName: finalizedAttachments[0]?.originalFileName ?? finalizedAttachments[0]?.fileName,
+        uploadedFileNames: finalizedAttachments.map((attachment) => attachment.originalFileName ?? attachment.fileName),
+        storedFileNames: finalizedAttachments.map((attachment) => attachment.storedFileName ?? attachment.fileName),
         uploadedFileCount: finalizedAttachments.length
       });
       extraction = await extractTextAttachments({
@@ -373,7 +374,8 @@ export function attachWebSocketServer(
       if (extraction.extracted.length) {
         userMessage = await messages.updateMessageMetadata(user, conversation.id, userMessage.id, {
           extractedAttachments: extraction.extracted.map((item) => ({
-            originalFileName: item.fileName,
+            originalFileName: item.attachment.originalFileName ?? item.fileName,
+            storedFileName: item.attachment.storedFileName,
             savedPath: item.attachment.storagePath,
             sizeBytes: item.attachment.sizeBytes,
             extension: item.extension,

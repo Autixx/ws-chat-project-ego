@@ -2,6 +2,7 @@ import type { AuthenticatedUser } from "../auth/authelia.js";
 import type { AppDatabase } from "../db/database.js";
 import { createId, safeUserId } from "../utils/ids.js";
 import type { AttachmentMetadata, Conversation } from "./types.js";
+import path from "node:path";
 
 type ConversationRow = {
   id: string;
@@ -19,6 +20,8 @@ type AttachmentRow = {
   conversation_id: string;
   message_id: string | null;
   file_name: string;
+  original_file_name: string | null;
+  stored_file_name: string | null;
   mime_type: string | null;
   size_bytes: number;
   storage_path: string;
@@ -155,21 +158,33 @@ export class ConversationStore {
 
   async insertAttachment(
     user: AuthenticatedUser,
-    input: { id?: string; conversationId: string; messageId?: string; fileName: string; mimeType?: string; sizeBytes?: number; storagePath: string }
+    input: {
+      id?: string;
+      conversationId: string;
+      messageId?: string;
+      fileName: string;
+      originalFileName?: string;
+      storedFileName?: string;
+      mimeType?: string;
+      sizeBytes?: number;
+      storagePath: string;
+    }
   ): Promise<AttachmentMetadata> {
     await this.loadConversation(user, input.conversationId);
     const id = input.id ?? createId("ATT");
     const createdAt = new Date().toISOString();
     this.database.db
       .prepare(
-        `INSERT INTO attachments (id, conversation_id, message_id, file_name, mime_type, size_bytes, storage_path, created_at)
-         VALUES (@id, @conversationId, @messageId, @fileName, @mimeType, @sizeBytes, @storagePath, @createdAt)`
+        `INSERT INTO attachments (id, conversation_id, message_id, file_name, original_file_name, stored_file_name, mime_type, size_bytes, storage_path, created_at)
+         VALUES (@id, @conversationId, @messageId, @fileName, @originalFileName, @storedFileName, @mimeType, @sizeBytes, @storagePath, @createdAt)`
       )
       .run({
         id,
         conversationId: input.conversationId,
         messageId: input.messageId ?? null,
         fileName: input.fileName,
+        originalFileName: input.originalFileName ?? input.fileName,
+        storedFileName: input.storedFileName ?? path.basename(input.storagePath),
         mimeType: input.mimeType ?? null,
         sizeBytes: input.sizeBytes ?? 0,
         storagePath: input.storagePath,
@@ -180,6 +195,8 @@ export class ConversationStore {
       conversationId: input.conversationId,
       messageId: input.messageId,
       fileName: input.fileName,
+      originalFileName: input.originalFileName ?? input.fileName,
+      storedFileName: input.storedFileName ?? path.basename(input.storagePath),
       mimeType: input.mimeType,
       sizeBytes: input.sizeBytes ?? 0,
       storagePath: input.storagePath,
@@ -194,7 +211,7 @@ export class ConversationStore {
     if (requestId) params.push(requestId);
     const rows = this.database.db
       .prepare(
-        `SELECT id, conversation_id, message_id, file_name, mime_type, size_bytes, storage_path, created_at
+        `SELECT id, conversation_id, message_id, file_name, original_file_name, stored_file_name, mime_type, size_bytes, storage_path, created_at
          FROM attachments
          WHERE conversation_id = ? ${requestClause}
          ORDER BY created_at ASC`
@@ -206,7 +223,7 @@ export class ConversationStore {
   async loadAttachmentForUser(user: AuthenticatedUser, attachmentId: string): Promise<AttachmentMetadata> {
     const row = this.database.db
       .prepare(
-        `SELECT a.id, a.conversation_id, a.message_id, a.file_name, a.mime_type, a.size_bytes, a.storage_path, a.created_at
+        `SELECT a.id, a.conversation_id, a.message_id, a.file_name, a.original_file_name, a.stored_file_name, a.mime_type, a.size_bytes, a.storage_path, a.created_at
          FROM attachments a
          JOIN conversations c ON c.id = a.conversation_id
          WHERE a.id = ? AND c.user_id = ?`
@@ -219,7 +236,7 @@ export class ConversationStore {
   async loadAttachmentById(attachmentId: string): Promise<AttachmentMetadata> {
     const row = this.database.db
       .prepare(
-        `SELECT id, conversation_id, message_id, file_name, mime_type, size_bytes, storage_path, created_at
+        `SELECT id, conversation_id, message_id, file_name, original_file_name, stored_file_name, mime_type, size_bytes, storage_path, created_at
          FROM attachments
          WHERE id = ?`
       )
@@ -245,11 +262,15 @@ function rowToConversation(row: ConversationRow): Conversation {
 }
 
 function rowToAttachment(row: AttachmentRow): AttachmentMetadata {
+  const storedFileName = row.stored_file_name ?? path.basename(row.storage_path);
+  const originalFileName = row.original_file_name ?? row.file_name;
   return {
     id: row.id,
     conversationId: row.conversation_id,
     messageId: row.message_id ?? undefined,
     fileName: row.file_name,
+    originalFileName,
+    storedFileName,
     mimeType: row.mime_type ?? undefined,
     sizeBytes: row.size_bytes,
     storagePath: row.storage_path,

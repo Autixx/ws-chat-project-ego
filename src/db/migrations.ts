@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import path from "node:path";
 
 const initialSchema = `
 CREATE TABLE IF NOT EXISTS conversations (
@@ -54,6 +55,8 @@ CREATE TABLE IF NOT EXISTS attachments (
   conversation_id TEXT NOT NULL,
   message_id TEXT,
   file_name TEXT NOT NULL,
+  original_file_name TEXT,
+  stored_file_name TEXT,
   mime_type TEXT,
   size_bytes INTEGER NOT NULL DEFAULT 0,
   storage_path TEXT NOT NULL,
@@ -175,4 +178,19 @@ CREATE INDEX IF NOT EXISTS idx_job_events_job_created
 ON job_events(job_id, created_at ASC);
 `);
   db.prepare("INSERT OR IGNORE INTO app_migrations (name, applied_at) VALUES (?, ?)").run("003_job_execution_tracking", new Date().toISOString());
+  addColumnIfMissing(db, "attachments", "original_file_name", "TEXT");
+  addColumnIfMissing(db, "attachments", "stored_file_name", "TEXT");
+  const attachmentRows = db
+    .prepare("SELECT id, file_name, storage_path, original_file_name, stored_file_name FROM attachments WHERE original_file_name IS NULL OR stored_file_name IS NULL")
+    .all() as Array<{ id: string; file_name: string; storage_path: string; original_file_name: string | null; stored_file_name: string | null }>;
+  const updateAttachmentNames = db.prepare("UPDATE attachments SET original_file_name = ?, stored_file_name = ? WHERE id = ?");
+  for (const row of attachmentRows) {
+    updateAttachmentNames.run(row.original_file_name ?? row.file_name, row.stored_file_name ?? path.basename(row.storage_path), row.id);
+  }
+  db.prepare("INSERT OR IGNORE INTO app_migrations (name, applied_at) VALUES (?, ?)").run("004_attachment_original_stored_names", new Date().toISOString());
+}
+
+function addColumnIfMissing(db: Database.Database, table: string, column: string, definition: string): void {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!rows.some((row) => row.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
