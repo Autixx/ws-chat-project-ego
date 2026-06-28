@@ -1212,7 +1212,12 @@ function renderDraft() {
     card.className = "item";
     const title = document.createElement("div");
     title.className = "item-title";
-    title.textContent = `#${String(number).padStart(3, "0")} ${item.title}`;
+    const displayNumber = document.createElement("div");
+    displayNumber.textContent = `#${String(number).padStart(3, "0")} ${item.title}`;
+    const technicalId = document.createElement("div");
+    technicalId.className = "item-draft-id";
+    technicalId.textContent = draftItemIdForDisplay(item, index);
+    title.append(displayNumber, technicalId);
     const meta = document.createElement("div");
     meta.className = "item-meta";
     meta.textContent = `${item.project} / ${item.module} / ${item.type} / ${item.priority} / ${item.routing_confidence}`;
@@ -1331,10 +1336,17 @@ function appendStatusLine(parent, label, status, className) {
 }
 
 function jobForDraftItem(itemNumber) {
-  const responseMessageId = state.currentDraft?.messageId || state.currentDraft?.jobId;
-  if (!responseMessageId) return null;
-  const itemId = `${responseMessageId}:${itemNumber - 1}`;
+  const item = state.currentDraftItems[itemNumber - 1];
+  const itemId = draftItemIdForDisplay(item, itemNumber - 1);
+  if (!itemId) return null;
   return state.jobs.find((job) => Array.isArray(job.metadata?.selectedDraftItemIds) && job.metadata.selectedDraftItemIds.includes(itemId)) || null;
+}
+
+function draftItemIdForDisplay(item, itemIndex) {
+  if (item?.draftItemId) return item.draftItemId;
+  if (item?.id) return item.id;
+  const responseMessageId = state.currentDraft?.messageId || state.currentDraft?.jobId;
+  return responseMessageId ? `${responseMessageId}:${itemIndex}` : "";
 }
 
 function externalRefsForJob(job) {
