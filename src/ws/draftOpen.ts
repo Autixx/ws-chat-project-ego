@@ -7,6 +7,7 @@ export type DraftOpenPayloads = {
   saved: {
     type: "draft_saved";
     conversationId: string;
+    messageId?: string;
     jobId: string;
     itemsCount: number;
     preview: string;
@@ -14,6 +15,7 @@ export type DraftOpenPayloads = {
   result: {
     type: "draft_result";
     conversationId: string;
+    messageId?: string;
     jobId: string;
     result: DraftResult;
   };
@@ -30,11 +32,13 @@ export async function openReferencedDraft(input: {
   if (!(await input.conversations.hasDraftRef(input.user, input.conversationId, input.jobId))) {
     throw new Error("Draft is not referenced by this conversation.");
   }
+  const draftRef = await input.conversations.loadDraftRef(input.user, input.conversationId, input.jobId);
   const loaded = await input.drafts.loadDraftWithPreview(input.jobId, input.user);
   return {
     saved: {
       type: "draft_saved",
       conversationId: input.conversationId,
+      messageId: draftRef.messageId,
       jobId: loaded.draft.jobId,
       itemsCount: loaded.draft.result.items.length,
       preview: loaded.preview
@@ -42,6 +46,7 @@ export async function openReferencedDraft(input: {
     result: {
       type: "draft_result",
       conversationId: input.conversationId,
+      messageId: draftRef.messageId,
       jobId: loaded.draft.jobId,
       result: loaded.draft.result
     }

@@ -357,12 +357,12 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "draft_saved" && message.conversationId === state.currentConversationId) {
-    state.currentDraft = { jobId: message.jobId, preview: message.preview, result: null };
+    state.currentDraft = { jobId: message.jobId, messageId: message.messageId, preview: message.preview, result: null };
     renderDraft();
   }
 
   if (message.type === "draft_result" && message.conversationId === state.currentConversationId) {
-    state.currentDraft = { ...(state.currentDraft || {}), jobId: message.jobId, result: message.result };
+    state.currentDraft = { ...(state.currentDraft || {}), jobId: message.jobId, messageId: message.messageId, result: message.result };
     state.currentDraftItems = message.result.items || [];
     renderDraft();
     setDraftInspectorOpen(true);
@@ -1331,9 +1331,9 @@ function appendStatusLine(parent, label, status, className) {
 }
 
 function jobForDraftItem(itemNumber) {
-  const draftJobId = state.currentDraft?.jobId;
-  if (!draftJobId) return null;
-  const itemId = `${draftJobId}#${String(itemNumber).padStart(3, "0")}`;
+  const responseMessageId = state.currentDraft?.messageId || state.currentDraft?.jobId;
+  if (!responseMessageId) return null;
+  const itemId = `${responseMessageId}:${itemNumber - 1}`;
   return state.jobs.find((job) => Array.isArray(job.metadata?.selectedDraftItemIds) && job.metadata.selectedDraftItemIds.includes(itemId)) || null;
 }
 

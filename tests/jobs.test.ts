@@ -62,7 +62,7 @@ function n8nPayload(jobId: string, itemCount = 1): N8nApplyPayload {
     requestMessageId: "M-request",
     responseMessageId: "M-response",
     source: { provider: "codex", codexAgentJobId: "20260621-064612-9149beaf", mode: "create_tasks" },
-    items: Array.from({ length: itemCount }, (_, index) => mapDraftItemForN8n("20260621-064612-9149beaf", index + 1, draftItem({ title: `Item ${index + 1}` })))
+    items: Array.from({ length: itemCount }, (_, index) => mapDraftItemForN8n("M-response", index, draftItem({ title: `Item ${index + 1}` })))
   };
 }
 
@@ -209,7 +209,8 @@ test("n8n apply sends one selected item payload with bearer authorization", asyn
     assert.equal((calls[0].init.headers as Record<string, string>).authorization, "Bearer n8n-secret");
     const body = JSON.parse(String(calls[0].init.body)) as N8nApplyPayload;
     assert.equal(body.items.length, 1);
-    assert.equal(body.items[0].draftItemId, "20260621-064612-9149beaf#001");
+    assert.equal(body.items[0].draftItemId, "M-response:0");
+    assert.equal(body.items[0].index, 0);
     assert.equal(body.items[0].routingConfidence, "medium");
     assert.equal(body.items[0].acceptanceCriteria[0], "n8n receives selected items");
   } finally {
@@ -232,9 +233,9 @@ test("n8n apply sends multiple selected draft items as an array", async () => {
 
     assert.equal(payload?.items.length, 3);
     assert.deepEqual(payload?.items.map((item) => item.draftItemId), [
-      "20260621-064612-9149beaf#001",
-      "20260621-064612-9149beaf#002",
-      "20260621-064612-9149beaf#003"
+      "M-response:0",
+      "M-response:1",
+      "M-response:2"
     ]);
   } finally {
     globalThis.fetch = originalFetch;

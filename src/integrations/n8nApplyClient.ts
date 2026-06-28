@@ -3,6 +3,7 @@ import type { DraftItem } from "../drafts/types.js";
 
 export type N8nApplyItem = {
   draftItemId: string;
+  index: number;
   title: string;
   type: string;
   project: string;
@@ -35,13 +36,14 @@ export type N8nApplyResult =
   | { accepted: true; statusCode: number }
   | { accepted: false; statusCode?: number; error: string };
 
-export function draftItemId(draftJobId: string, itemNumber: number): string {
-  return `${draftJobId}#${String(itemNumber).padStart(3, "0")}`;
+export function draftItemId(responseMessageId: string, itemIndex: number, persistedDraftItemId?: string): string {
+  return persistedDraftItemId || `${responseMessageId}:${itemIndex}`;
 }
 
-export function mapDraftItemForN8n(draftJobId: string, itemNumber: number, item: DraftItem): N8nApplyItem {
+export function mapDraftItemForN8n(responseMessageId: string, itemIndex: number, item: DraftItem & { id?: string; draftItemId?: string }): N8nApplyItem {
   return {
-    draftItemId: draftItemId(draftJobId, itemNumber),
+    draftItemId: draftItemId(responseMessageId, itemIndex, item.draftItemId ?? item.id),
+    index: itemIndex,
     title: item.title,
     type: item.type,
     project: item.project,

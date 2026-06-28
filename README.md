@@ -219,7 +219,8 @@ Payload shape:
   },
   "items": [
     {
-      "draftItemId": "20260621-064612-9149beaf#001",
+      "draftItemId": "M-response:0",
+      "index": 0,
       "title": "...",
       "type": "idea",
       "project": "ProjectEGO",
