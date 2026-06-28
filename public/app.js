@@ -343,6 +343,7 @@ function handleServerMessage(message) {
   if (message.type === "job_created" || message.type === "job_updated") {
     upsertJob(message.job);
     renderResponses();
+    renderDraft();
   }
 
   if (message.type === "job_list" && message.conversationId === state.currentConversationId) {
@@ -1102,6 +1103,7 @@ function renderResponses() {
       appendLine(main, `${shortDate(response.createdAt)} / ${response.kind} / ${projectHint(response)} / ${kb(byteSize(response.content))}`);
       appendLine(main, `Decision: ${formatStatus(decisionStatus(response))}`);
       appendStatusLine(main, "Execution", executionStatus(response), executionClass(response));
+      appendExternalRefs(main, jobForResponse(response));
       const body = document.createElement("div");
       body.className = "expanded-body";
       body.textContent = contentForDisplay(response);
@@ -1214,6 +1216,22 @@ function renderDraft() {
     const meta = document.createElement("div");
     meta.className = "item-meta";
     meta.textContent = `${item.project} / ${item.module} / ${item.type} / ${item.priority} / ${item.routing_confidence}`;
+    const executionJob = jobForDraftItem(number);
+    const execution = document.createElement("div");
+    execution.className = "item-meta item-execution";
+    if (executionJob) {
+      execution.append("Execution: ");
+      const square = document.createElement("span");
+      square.className = `sq inline-sq ${executionClassForStatus(executionJob.status)}`;
+      execution.append(square, ` ${formatStatus(executionJob.status)}`);
+      const refs = externalRefsForJob(executionJob);
+      if (refs.length) {
+        execution.append(" / ");
+        appendExternalRefLinks(execution, refs);
+      }
+    } else {
+      execution.textContent = "Execution: not started";
+    }
     const summary = document.createElement("p");
     summary.textContent = item.summary;
     const details = document.createElement("details");
@@ -1238,7 +1256,7 @@ function renderDraft() {
       label.append(radio, action);
       choices.append(label);
     }
-    card.append(title, meta, summary, details, clarify, choices);
+    card.append(title, meta, execution, summary, details, clarify, choices);
     els.itemsList.append(card);
   }
 }
@@ -1287,10 +1305,14 @@ function executionStatus(response) {
 }
 
 function executionClass(response) {
-  const status = executionStatus(response);
+  return executionClassForStatus(executionStatus(response));
+}
+
+function executionClassForStatus(status) {
   if (status === "succeeded") return "green";
   if (status === "failed") return "red";
   if (status === "running") return "blue";
+  if (status === "queued") return "yellow";
   if (status === "partial") return "yellow";
   if (status === "cancelled" || status === "not_started") return "gray";
   return "white";
@@ -1306,6 +1328,43 @@ function appendStatusLine(parent, label, status, className) {
   square.className = `sq inline-sq ${className}`;
   line.append(`${label}: `, square, ` ${formatStatus(status)}`);
   parent.append(line);
+}
+
+function jobForDraftItem(itemNumber) {
+  const draftJobId = state.currentDraft?.jobId;
+  if (!draftJobId) return null;
+  const itemId = `${draftJobId}#${String(itemNumber).padStart(3, "0")}`;
+  return state.jobs.find((job) => Array.isArray(job.metadata?.selectedDraftItemIds) && job.metadata.selectedDraftItemIds.includes(itemId)) || null;
+}
+
+function externalRefsForJob(job) {
+  return Array.isArray(job?.metadata?.externalRefs) ? job.metadata.externalRefs : [];
+}
+
+function appendExternalRefs(parent, job) {
+  const refs = externalRefsForJob(job);
+  if (!refs.length) return;
+  const line = document.createElement("div");
+  line.append("External refs: ");
+  appendExternalRefLinks(line, refs);
+  parent.append(line);
+}
+
+function appendExternalRefLinks(parent, refs) {
+  refs.forEach((ref, index) => {
+    if (index > 0) parent.append(", ");
+    const label = `${ref.system || "external"}:${ref.id || ref.type || index + 1}`;
+    if (ref.url) {
+      const link = document.createElement("a");
+      link.href = ref.url;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = label;
+      parent.append(link);
+    } else {
+      parent.append(label);
+    }
+  });
 }
 
 function projectHint(response) {

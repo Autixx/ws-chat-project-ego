@@ -52,7 +52,7 @@ Response decision status:
 
 Expanded pending responses expose response-level `Apply`, `Drop`, and `Keep` buttons. These persist decision status in SQLite metadata. Item-level draft Apply/Keep/Drop remains in the Draft Inspector.
 
-Execution status is tracked separately from decision status. Clicking response-level `Apply` records the user decision and creates a backend execution job, but the job remains `not_started` until a workflow callback updates it. A green decision square therefore means "user chose Apply", not "n8n/Plane work succeeded".
+Execution status is tracked separately from decision status. Clicking response-level `Apply` records the user decision and creates a backend execution job. Applying selected Draft Inspector items creates an `n8n_apply` job and sends the selected draft payload to `N8N_APPLY_WEBHOOK_URL`; n8n remains responsible for any Plane work-item creation. A green decision square therefore means "user chose Apply", not "n8n/Plane work succeeded".
 
 ## Storage
 
@@ -194,7 +194,49 @@ Response-level decision status and backend execution status are separate:
 - decision: `pending`, `applied`, `dropped`, `kept`
 - execution: `not_started`, `queued`, `running`, `succeeded`, `failed`, `partial`, `cancelled`
 
-When a response is marked `Apply`, the backend creates a row in `jobs` linked to the conversation, request message, response message, and draft job id when available. Because real Plane/n8n execution is not wired yet, the initial execution status is `not_started` with `backendConfigured: false`.
+When a response is marked `Apply`, the backend creates a row in `jobs` linked to the conversation, request message, response message, and draft job id when available. Response-level Apply records the decision only. Draft Inspector Apply sends selected draft items to n8n when `N8N_APPLY_WEBHOOK_URL` and `N8N_WEBHOOK_TOKEN` are configured.
+
+Draft Inspector Apply webhook request:
+
+```http
+POST <N8N_APPLY_WEBHOOK_URL>
+Content-Type: application/json
+Authorization: Bearer <N8N_WEBHOOK_TOKEN>
+```
+
+Payload shape:
+
+```json
+{
+  "jobId": "JOB-...",
+  "conversationId": "C-...",
+  "requestMessageId": "M-...",
+  "responseMessageId": "M-...",
+  "source": {
+    "provider": "codex",
+    "codexAgentJobId": "20260621-064612-9149beaf",
+    "mode": "create_tasks"
+  },
+  "items": [
+    {
+      "draftItemId": "20260621-064612-9149beaf#001",
+      "title": "...",
+      "type": "idea",
+      "project": "ProjectEGO",
+      "module": "Dashboard",
+      "summary": "...",
+      "details": "...",
+      "priority": "medium",
+      "routingConfidence": "medium",
+      "labels": [],
+      "dependencies": [],
+      "acceptanceCriteria": [],
+      "needsClarification": [],
+      "sourceText": "..."
+    }
+  ]
+}
+```
 
 Machine workflow callbacks can update jobs through:
 
@@ -398,7 +440,7 @@ Expected response:
 
 The SQLite healthcheck verifies `SELECT 1`, `PRAGMA quick_check`, and write access to the database directory. Production responses avoid exposing full host paths. Dashboard global health returns `error` only when DB health fails; LLM-agent, n8n, and Plane failures are exposed as component statuses.
 
-Component status polling runs in the background. `LLM_PROVIDER=codex` requires `CODEX_AGENT_URL` for generation; `CODEX_AGENT_HEALTH_URL` can override the probe URL. n8n must have `N8N_BASE_URL` and `N8N_WEBHOOK_TOKEN` to be considered configured. Plane reachability is informational only.
+Component status polling runs in the background. `LLM_PROVIDER=codex` requires `CODEX_AGENT_URL` for generation; `CODEX_AGENT_HEALTH_URL` can override the probe URL. n8n reachability polling uses `N8N_BASE_URL`/`N8N_HEALTH_URL`, while Draft Inspector Apply uses `N8N_APPLY_WEBHOOK_URL` plus `N8N_WEBHOOK_TOKEN`. Plane reachability is informational only.
 
 ## Caddy + Authelia
 
@@ -576,7 +618,8 @@ For Docker, back up the mounted `/app/data` volume.
 | `PLANE_API_KEY` | Optional Plane API key retained for future integration; Dashboard is not a Plane writer. |
 | `N8N_BASE_URL` | Optional n8n base URL. |
 | `N8N_HEALTH_URL` | Optional n8n health URL for reachability polling. |
-| `N8N_WEBHOOK_TOKEN` | Optional n8n webhook token. |
+| `N8N_APPLY_WEBHOOK_URL` | Optional n8n webhook URL used by Draft Inspector Apply. |
+| `N8N_WEBHOOK_TOKEN` | Optional n8n webhook token sent as `Authorization: Bearer ...` for Draft Inspector Apply. |
 | `JOB_CALLBACK_TOKEN` | Optional bearer token for `POST /api/jobs/:jobId/events`. Required before workflow callbacks are accepted. |
 | `COMPONENT_STATUS_INTERVAL_MS` | Component reachability polling interval. Default `15000`. |
 | `COMPONENT_STATUS_TIMEOUT_MS` | Per-probe timeout. Default `2000`. |

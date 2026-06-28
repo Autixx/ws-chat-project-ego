@@ -19,6 +19,8 @@ import { openDatabase } from "../db/database.js";
 import { parseApplyExpression } from "../drafts/applyParser.js";
 import { DraftStore } from "../drafts/draftStore.js";
 import { UnclarifiedStore } from "../drafts/unclarifiedStore.js";
+import { draftItemId, mapDraftItemForN8n, type N8nApplyPayload } from "../integrations/n8nApplyClient.js";
+import { dispatchApplyJobToN8n } from "../jobs/n8nApply.js";
 import { JobStore, type Job, type JobEvent } from "../jobs/jobStore.js";
 import { updateResponseDecision } from "../jobs/responseDecision.js";
 import { CodexProvider } from "../llm/codexProvider.js";
@@ -229,17 +231,92 @@ export function attachWebSocketServer(
     if (message.type === "apply") {
       await conversations.loadConversation(user, message.conversationId);
       const draft = await drafts.loadDraft(message.jobId, user);
+      const draftRef = await conversations.loadDraftRef(user, message.conversationId, draft.jobId);
+      const draftMessage = draftRef.messageId ? await messages.loadMessage(user, message.conversationId, draftRef.messageId) : undefined;
+      const requestMessageId = typeof draftMessage?.metadata?.responseToRequestId === "string" ? draftMessage.metadata.responseToRequestId : undefined;
       const selection = parseApplyExpression(message.expression, draft.result.items.length);
-      const applyItems = drafts.selectItems(draft, selection.apply);
+      const applyEntries = selection.apply
+        .map((itemNumber) => ({ itemNumber, item: draft.result.items[itemNumber - 1] }))
+        .filter((entry): entry is { itemNumber: number; item: (typeof draft.result.items)[number] } => Boolean(entry.item));
       const keepItems = drafts.selectItems(draft, selection.keep);
       await unclarified.storeUnclarifiedItems(keepItems, user);
-      const content = `Apply result for ${draft.jobId}: queued=${applyItems.length}, kept=${keepItems.length}, dropped=${selection.drop.length}. Dashboard does not write Plane directly; n8n workflow execution is tracked separately.`;
+
+      if (applyEntries.length === 0) {
+        const content = `Apply result for ${draft.jobId}: queued=0, kept=${keepItems.length}, dropped=${selection.drop.length}. No selected draft items were sent to n8n.`;
+        const toolMessage = await messages.appendToolMessage(message.conversationId, user, content, {
+          kind: "apply_result",
+          jobId: draft.jobId,
+          decisionStatus: "kept",
+          selection,
+          requestedApplyCount: 0
+        });
+        await conversations.touchConversation(user, message.conversationId);
+        await emitMessage(ws, toolMessage);
+        send(ws, {
+          type: "apply_result",
+          conversationId: message.conversationId,
+          jobId: draft.jobId,
+          appliedCount: 0,
+          keptCount: keepItems.length,
+          droppedCount: selection.drop.length,
+          message: "No selected draft items were sent to n8n."
+        });
+        return;
+      }
+
+      const selectedDraftItemIds = applyEntries.map((entry) => draftItemId(draft.jobId, entry.itemNumber));
+      const job = await jobs.createJob({
+        conversationId: message.conversationId,
+        requestMessageId,
+        responseMessageId: draftRef.messageId,
+        draftJobId: draft.jobId,
+        status: "queued",
+        source: "n8n_apply",
+        metadata: {
+          backend: "n8n",
+          selectedDraftItemIds,
+          selection,
+          source: {
+            provider: "codex",
+            codexAgentJobId: draft.jobId,
+            mode: draft.mode
+          },
+          backendConfigured: Boolean(config.n8nApplyWebhookUrl && config.n8nWebhookToken)
+        }
+      });
+      const createdEvent = await jobs.appendJobEvent(job.id, "created", {
+        message: "n8n apply job created.",
+        selectedDraftItemIds
+      });
+      send(ws, { type: "job_created", job });
+      send(ws, { type: "job_event", jobId: job.id, event: createdEvent });
+
+      const payload: N8nApplyPayload = {
+        jobId: job.id,
+        conversationId: message.conversationId,
+        requestMessageId,
+        responseMessageId: draftRef.messageId,
+        source: {
+          provider: "codex",
+          codexAgentJobId: draft.jobId,
+          mode: draft.mode
+        },
+        items: applyEntries.map((entry) => mapDraftItemForN8n(draft.jobId, entry.itemNumber, entry.item))
+      };
+      const dispatch = await dispatchApplyJobToN8n({ config, jobs, jobId: job.id, payload });
+      send(ws, { type: "job_updated", job: dispatch.job });
+      send(ws, { type: "job_event", jobId: dispatch.job.id, event: dispatch.event });
+
+      const queuedText = dispatch.result.accepted ? `queued=${applyEntries.length}` : `failed=${applyEntries.length}`;
+      const content = `Apply result for ${draft.jobId}: ${queuedText}, kept=${keepItems.length}, dropped=${selection.drop.length}, job=${job.id}. Dashboard does not write Plane directly; n8n workflow execution is tracked separately.`;
       const toolMessage = await messages.appendToolMessage(message.conversationId, user, content, {
         kind: "apply_result",
         jobId: draft.jobId,
         decisionStatus: "applied",
         selection,
-        requestedApplyCount: applyItems.length
+        requestedApplyCount: applyEntries.length,
+        executionJobId: job.id,
+        executionStatus: dispatch.job.status
       });
       await conversations.touchConversation(user, message.conversationId);
       await emitMessage(ws, toolMessage);
@@ -247,10 +324,12 @@ export function attachWebSocketServer(
         type: "apply_result",
         conversationId: message.conversationId,
         jobId: draft.jobId,
-        appliedCount: 0,
+        appliedCount: dispatch.result.accepted ? applyEntries.length : 0,
         keptCount: keepItems.length,
         droppedCount: selection.drop.length,
-        message: "Dashboard does not create Plane work-items directly. n8n is the workflow executor."
+        message: dispatch.result.accepted
+          ? `n8n apply job ${job.id} accepted.`
+          : `n8n apply job ${job.id} failed: ${dispatch.result.error}`
       });
       return;
     }

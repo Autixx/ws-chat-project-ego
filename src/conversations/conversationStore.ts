@@ -28,6 +28,26 @@ type AttachmentRow = {
   created_at: string;
 };
 
+export type DraftRef = {
+  conversationId: string;
+  messageId?: string;
+  jobId: string;
+  mode: string;
+  source: string;
+  fileName?: string;
+  itemsCount: number;
+};
+
+type DraftRefRow = {
+  conversation_id: string;
+  message_id: string | null;
+  job_id: string;
+  mode: string;
+  source: string;
+  file_name: string | null;
+  items_count: number;
+};
+
 export class ConversationStore {
   constructor(private readonly database: AppDatabase) {}
 
@@ -154,6 +174,28 @@ export class ConversationStore {
       .prepare("SELECT 1 FROM draft_refs WHERE conversation_id = ? AND job_id = ? LIMIT 1")
       .get(conversationId, jobId) as { 1: number } | undefined;
     return Boolean(row);
+  }
+
+  async loadDraftRef(user: AuthenticatedUser, conversationId: string, jobId: string): Promise<DraftRef> {
+    await this.loadConversation(user, conversationId);
+    const row = this.database.db
+      .prepare(
+        `SELECT conversation_id, message_id, job_id, mode, source, file_name, items_count
+         FROM draft_refs
+         WHERE conversation_id = ? AND job_id = ?
+         LIMIT 1`
+      )
+      .get(conversationId, jobId) as DraftRefRow | undefined;
+    if (!row) throw new Error("Draft reference not found.");
+    return {
+      conversationId: row.conversation_id,
+      messageId: row.message_id ?? undefined,
+      jobId: row.job_id,
+      mode: row.mode,
+      source: row.source,
+      fileName: row.file_name ?? undefined,
+      itemsCount: row.items_count
+    };
   }
 
   async insertAttachment(

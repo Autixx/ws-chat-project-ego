@@ -29,6 +29,7 @@ export type AppConfig = {
   planeApiKey?: string;
   n8nBaseUrl?: string;
   n8nHealthUrl?: string;
+  n8nApplyWebhookUrl?: string;
   n8nWebhookToken?: string;
   jobCallbackToken?: string;
   componentStatusIntervalMs?: number;
@@ -74,6 +75,7 @@ export const config: AppConfig = {
   planeApiKey: process.env.PLANE_API_KEY,
   n8nBaseUrl: process.env.N8N_BASE_URL,
   n8nHealthUrl: process.env.N8N_HEALTH_URL,
+  n8nApplyWebhookUrl: process.env.N8N_APPLY_WEBHOOK_URL,
   n8nWebhookToken: process.env.N8N_WEBHOOK_TOKEN,
   jobCallbackToken: process.env.JOB_CALLBACK_TOKEN,
   componentStatusIntervalMs: numberFromEnv(process.env.COMPONENT_STATUS_INTERVAL_MS, 15000),

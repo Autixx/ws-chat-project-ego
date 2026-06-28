@@ -9,8 +9,11 @@ import { MessageStore } from "../src/conversations/messageStore.js";
 import { openDatabase } from "../src/db/database.js";
 import { handleJobCallback } from "../src/jobs/jobCallback.js";
 import { JobStore } from "../src/jobs/jobStore.js";
+import { dispatchApplyJobToN8n } from "../src/jobs/n8nApply.js";
 import { updateResponseDecision } from "../src/jobs/responseDecision.js";
+import { mapDraftItemForN8n, sendApplyToN8n, type N8nApplyPayload } from "../src/integrations/n8nApplyClient.js";
 import { parseClientMessage } from "../src/ws/protocol.js";
+import type { DraftItem } from "../src/drafts/types.js";
 
 const user = { username: "worker", email: "worker@example.test", groups: [] };
 const otherUser = { username: "other-worker", email: "other-worker@example.test", groups: [] };
@@ -30,6 +33,36 @@ function baseConfig(dir: string, jobCallbackToken?: string): AppConfig {
     codexFallbackToMock: true,
     planeWorkspace: "projectego",
     jobCallbackToken
+  };
+}
+
+function draftItem(overrides: Partial<DraftItem> = {}): DraftItem {
+  return {
+    title: "Create workbench apply pipeline",
+    summary: "Wire selected draft items to n8n.",
+    details: "Create a job, call n8n, and wait for callbacks.",
+    project: "ProjectEGO",
+    module: "Dashboard",
+    type: "idea",
+    priority: "medium",
+    routing_confidence: "medium",
+    labels: ["codex-generated"],
+    dependencies: [],
+    acceptance_criteria: ["n8n receives selected items"],
+    needs_clarification: [],
+    source_text: "User asked to apply selected draft items.",
+    ...overrides
+  };
+}
+
+function n8nPayload(jobId: string, itemCount = 1): N8nApplyPayload {
+  return {
+    jobId,
+    conversationId: "C-apply",
+    requestMessageId: "M-request",
+    responseMessageId: "M-response",
+    source: { provider: "codex", codexAgentJobId: "20260621-064612-9149beaf", mode: "create_tasks" },
+    items: Array.from({ length: itemCount }, (_, index) => mapDraftItemForN8n("20260621-064612-9149beaf", index + 1, draftItem({ title: `Item ${index + 1}` })))
   };
 }
 
@@ -153,6 +186,108 @@ test("job callback updates job to running succeeded and failed", async () => {
     });
     assert.equal(failed.job.status, "failed");
     assert.equal(failed.job.errorMessage, "Plane rejected payload");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("n8n apply sends one selected item payload with bearer authorization", async () => {
+  const s = stores();
+  const originalFetch = globalThis.fetch;
+  try {
+    const calls: { url: string; init: RequestInit }[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      return new Response("accepted", { status: 202 });
+    }) as typeof fetch;
+    const config = { ...s.config, n8nApplyWebhookUrl: "https://n8n.example.test/webhook/apply", n8nWebhookToken: "n8n-secret" };
+    const result = await sendApplyToN8n(config, n8nPayload("JOB-1", 1));
+
+    assert.equal(result.accepted, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "https://n8n.example.test/webhook/apply");
+    assert.equal((calls[0].init.headers as Record<string, string>).authorization, "Bearer n8n-secret");
+    const body = JSON.parse(String(calls[0].init.body)) as N8nApplyPayload;
+    assert.equal(body.items.length, 1);
+    assert.equal(body.items[0].draftItemId, "20260621-064612-9149beaf#001");
+    assert.equal(body.items[0].routingConfidence, "medium");
+    assert.equal(body.items[0].acceptanceCriteria[0], "n8n receives selected items");
+  } finally {
+    globalThis.fetch = originalFetch;
+    s.cleanup();
+  }
+});
+
+test("n8n apply sends multiple selected draft items as an array", async () => {
+  const s = stores();
+  const originalFetch = globalThis.fetch;
+  try {
+    let payload: N8nApplyPayload | undefined;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      payload = JSON.parse(String(init?.body)) as N8nApplyPayload;
+      return new Response("accepted", { status: 200 });
+    }) as typeof fetch;
+    const config = { ...s.config, n8nApplyWebhookUrl: "https://n8n.example.test/webhook/apply", n8nWebhookToken: "n8n-secret" };
+    await sendApplyToN8n(config, n8nPayload("JOB-1", 3));
+
+    assert.equal(payload?.items.length, 3);
+    assert.deepEqual(payload?.items.map((item) => item.draftItemId), [
+      "20260621-064612-9149beaf#001",
+      "20260621-064612-9149beaf#002",
+      "20260621-064612-9149beaf#003"
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    s.cleanup();
+  }
+});
+
+test("failed n8n apply request marks execution job failed", async () => {
+  const s = stores();
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () => new Response("workflow disabled", { status: 503 })) as typeof fetch;
+    const conversation = await s.conversations.createConversation(user, "n8n failed");
+    const job = await s.jobs.createJob({
+      conversationId: conversation.id,
+      status: "queued",
+      source: "n8n_apply",
+      metadata: { backend: "n8n" }
+    });
+    const config = { ...s.config, n8nApplyWebhookUrl: "https://n8n.example.test/webhook/apply", n8nWebhookToken: "n8n-secret" };
+    const result = await dispatchApplyJobToN8n({ config, jobs: s.jobs, jobId: job.id, payload: n8nPayload(job.id) });
+
+    assert.equal(result.result.accepted, false);
+    assert.equal(result.job.status, "failed");
+    assert.match(result.job.errorMessage ?? "", /HTTP 503/);
+    assert.equal(result.event.eventType, "error");
+  } finally {
+    globalThis.fetch = originalFetch;
+    s.cleanup();
+  }
+});
+
+test("n8n callback marks apply job succeeded and stores external refs", async () => {
+  const s = stores("callback-secret");
+  try {
+    const conversation = await s.conversations.createConversation(user, "n8n callback");
+    const job = await s.jobs.createJob({ conversationId: conversation.id, status: "running", source: "n8n_apply" });
+    const callback = await handleJobCallback({
+      config: s.config,
+      jobs: s.jobs,
+      jobId: job.id,
+      authorization: "Bearer callback-secret",
+      body: {
+        status: "succeeded",
+        eventType: "finished",
+        externalRefs: [{ system: "plane", type: "work_item", id: "PEGO-42", url: "https://plane.example.test/PEGO-42" }]
+      }
+    });
+
+    assert.equal(callback.job.status, "succeeded");
+    assert.deepEqual(callback.job.metadata?.externalRefs, [
+      { system: "plane", type: "work_item", id: "PEGO-42", url: "https://plane.example.test/PEGO-42" }
+    ]);
   } finally {
     s.cleanup();
   }
