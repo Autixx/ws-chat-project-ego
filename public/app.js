@@ -1103,6 +1103,8 @@ function renderResponses() {
       appendLine(main, `${shortDate(response.createdAt)} / ${response.kind} / ${projectHint(response)} / ${kb(byteSize(response.content))}`);
       appendLine(main, `Decision: ${formatStatus(decisionStatus(response))}`);
       appendStatusLine(main, "Execution", executionStatus(response), executionClass(response));
+      const explicitExecutionJobId = executionJobIdForResponse(response);
+      if (explicitExecutionJobId) appendLine(main, `Execution Job ID: ${explicitExecutionJobId}`);
       appendExternalRefs(main, jobForResponse(response));
       const body = document.createElement("div");
       body.className = "expanded-body";
@@ -1229,6 +1231,7 @@ function renderDraft() {
       const square = document.createElement("span");
       square.className = `sq inline-sq ${executionClassForStatus(executionJob.status)}`;
       execution.append(square, ` ${formatStatus(executionJob.status)}`);
+      execution.append(` / Execution Job ID: ${executionJob.id}`);
       const refs = externalRefsForJob(executionJob);
       if (refs.length) {
         execution.append(" / ");
@@ -1306,7 +1309,11 @@ function jobForResponse(response) {
 }
 
 function executionStatus(response) {
-  return jobForResponse(response)?.status || "not_started";
+  return response.metadata?.executionStatus || jobForResponse(response)?.status || "not_started";
+}
+
+function executionJobIdForResponse(response) {
+  return response.metadata?.executionJobId || jobForResponse(response)?.id;
 }
 
 function executionClass(response) {

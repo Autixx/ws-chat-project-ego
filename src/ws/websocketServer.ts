@@ -19,7 +19,7 @@ import { openDatabase } from "../db/database.js";
 import { parseApplyExpression } from "../drafts/applyParser.js";
 import { DraftStore } from "../drafts/draftStore.js";
 import { UnclarifiedStore } from "../drafts/unclarifiedStore.js";
-import { draftItemId, mapDraftItemForN8n, type N8nApplyPayload } from "../integrations/n8nApplyClient.js";
+import { createDraftApplyJob } from "../jobs/draftApply.js";
 import { dispatchApplyJobToN8n } from "../jobs/n8nApply.js";
 import { JobStore, type Job, type JobEvent } from "../jobs/jobStore.js";
 import { updateResponseDecision } from "../jobs/responseDecision.js";
@@ -231,9 +231,6 @@ export function attachWebSocketServer(
     if (message.type === "apply") {
       await conversations.loadConversation(user, message.conversationId);
       const draft = await drafts.loadDraft(message.jobId, user);
-      const draftRef = await conversations.loadDraftRef(user, message.conversationId, draft.jobId);
-      const draftMessage = draftRef.messageId ? await messages.loadMessage(user, message.conversationId, draftRef.messageId) : undefined;
-      const requestMessageId = typeof draftMessage?.metadata?.responseToRequestId === "string" ? draftMessage.metadata.responseToRequestId : undefined;
       const selection = parseApplyExpression(message.expression, draft.result.items.length);
       const applyEntries = selection.apply
         .map((itemNumber) => ({ itemNumber, itemIndex: itemNumber - 1, item: draft.result.items[itemNumber - 1] }))
@@ -264,46 +261,24 @@ export function attachWebSocketServer(
         return;
       }
 
-      const responseMessageId = draftRef.messageId ?? draft.jobId;
-      const selectedDraftItemIds = applyEntries.map((entry) => draftItemId(responseMessageId, entry.itemIndex, persistedDraftItemId(entry.item)));
-      const job = await jobs.createJob({
+      const applyJob = await createDraftApplyJob({
+        conversations,
+        messages,
+        jobs,
+        user,
         conversationId: message.conversationId,
-        requestMessageId,
-        responseMessageId: draftRef.messageId,
-        draftJobId: draft.jobId,
-        status: "queued",
-        source: "n8n_apply",
-        metadata: {
-          backend: "n8n",
-          selectedDraftItemIds,
-          selection,
-          source: {
-            provider: "codex",
-            codexAgentJobId: draft.jobId,
-            mode: draft.mode
-          },
-          backendConfigured: Boolean(config.n8nApplyWebhookUrl && config.n8nWebhookToken)
-        }
+        draft,
+        applyEntries,
+        selection,
+        backendConfigured: Boolean(config.n8nApplyWebhookUrl && config.n8nWebhookToken)
       });
-      const createdEvent = await jobs.appendJobEvent(job.id, "created", {
-        message: "n8n apply job created.",
-        selectedDraftItemIds
-      });
+      const job = applyJob.job;
+      const createdEvent = applyJob.event;
       send(ws, { type: "job_created", job });
       send(ws, { type: "job_event", jobId: job.id, event: createdEvent });
 
-      const payload: N8nApplyPayload = {
-        jobId: job.id,
-        conversationId: message.conversationId,
-        requestMessageId,
-        responseMessageId: draftRef.messageId,
-        source: {
-          provider: "codex",
-          codexAgentJobId: draft.jobId,
-          mode: draft.mode
-        },
-        items: applyEntries.map((entry) => mapDraftItemForN8n(responseMessageId, entry.itemIndex, entry.item))
-      };
+      const payload = applyJob.payload;
+      console.debug("ProjectEGO n8n apply payload", payload);
       const dispatch = await dispatchApplyJobToN8n({ config, jobs, jobId: job.id, payload });
       send(ws, { type: "job_updated", job: dispatch.job });
       send(ws, { type: "job_event", jobId: dispatch.job.id, event: dispatch.event });
@@ -315,6 +290,7 @@ export function attachWebSocketServer(
         jobId: draft.jobId,
         decisionStatus: "applied",
         selection,
+        selectedDraftItemIds: applyJob.selectedDraftItemIds,
         requestedApplyCount: applyEntries.length,
         executionJobId: job.id,
         executionStatus: dispatch.job.status
@@ -580,14 +556,5 @@ export function attachWebSocketServer(
     send(ws, { type: "message_created", message: updatedAssistant });
     send(ws, { type: "assistant_message_done", conversationId: conversation.id, messageId: assistantMessage.id });
   }
-
-  function persistedDraftItemId(item: unknown): string | undefined {
-    if (!item || typeof item !== "object") return undefined;
-    const record = item as Record<string, unknown>;
-    if (typeof record.draftItemId === "string") return record.draftItemId;
-    if (typeof record.id === "string") return record.id;
-    return undefined;
-  }
-
   return { notifyJobUpdated };
 }

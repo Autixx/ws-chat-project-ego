@@ -7,13 +7,14 @@ import type { AppConfig } from "../src/config.js";
 import { ConversationStore } from "../src/conversations/conversationStore.js";
 import { MessageStore } from "../src/conversations/messageStore.js";
 import { openDatabase } from "../src/db/database.js";
+import { createDraftApplyJob } from "../src/jobs/draftApply.js";
 import { handleJobCallback } from "../src/jobs/jobCallback.js";
 import { JobStore } from "../src/jobs/jobStore.js";
 import { dispatchApplyJobToN8n } from "../src/jobs/n8nApply.js";
 import { updateResponseDecision } from "../src/jobs/responseDecision.js";
 import { mapDraftItemForN8n, sendApplyToN8n, type N8nApplyPayload } from "../src/integrations/n8nApplyClient.js";
 import { parseClientMessage } from "../src/ws/protocol.js";
-import type { DraftItem } from "../src/drafts/types.js";
+import type { DraftItem, StoredDraft } from "../src/drafts/types.js";
 
 const user = { username: "worker", email: "worker@example.test", groups: [] };
 const otherUser = { username: "other-worker", email: "other-worker@example.test", groups: [] };
@@ -239,6 +240,74 @@ test("n8n apply sends multiple selected draft items as an array", async () => {
     ]);
   } finally {
     globalThis.fetch = originalFetch;
+    s.cleanup();
+  }
+});
+
+test("Draft Inspector Apply creates execution job and n8n payload uses execution job id", async () => {
+  const s = stores();
+  try {
+    const conversation = await s.conversations.createConversation(user, "Draft apply");
+    const request = await s.messages.appendUserMessage(conversation.id, user, "make tasks", { mode: "tasks" });
+    const draftMessage = await s.messages.appendToolMessage(conversation.id, user, "Draft draft-job-1: 2 item(s).", {
+      kind: "draft",
+      jobId: "draft-job-1",
+      responseToRequestId: request.id,
+      decisionStatus: "pending"
+    });
+    await s.conversations.insertDraftRef(user, {
+      conversationId: conversation.id,
+      messageId: draftMessage.id,
+      jobId: "draft-job-1",
+      mode: "create_tasks",
+      source: "browser_text",
+      itemsCount: 2
+    });
+    const firstItem = draftItem({ title: "First selected item" });
+    const secondItem = { ...draftItem({ title: "Second selected item" }), draftItemId: "persisted-item-2" } as DraftItem & { draftItemId: string };
+    const draft: StoredDraft = {
+      jobId: "draft-job-1",
+      createdAt: new Date().toISOString(),
+      mode: "create_tasks",
+      source: "browser_text",
+      user,
+      result: {
+        status: "done",
+        source_summary: "summary",
+        items: [firstItem, secondItem],
+        needs_clarification: []
+      }
+    };
+
+    const result = await createDraftApplyJob({
+      conversations: s.conversations,
+      messages: s.messages,
+      jobs: s.jobs,
+      user,
+      conversationId: conversation.id,
+      draft,
+      applyEntries: [
+        { itemNumber: 1, itemIndex: 0, item: firstItem },
+        { itemNumber: 2, itemIndex: 1, item: secondItem }
+      ],
+      selection: { apply: [1, 2], keep: [], drop: [] },
+      backendConfigured: true
+    });
+
+    assert.match(result.job.id, /^JOB-/);
+    assert.equal(result.job.status, "queued");
+    assert.equal(result.job.source, "n8n_apply");
+    assert.equal(result.job.draftJobId, "draft-job-1");
+    assert.equal(result.job.conversationId, conversation.id);
+    assert.equal(result.job.requestMessageId, request.id);
+    assert.equal(result.job.responseMessageId, draftMessage.id);
+    assert.equal(result.payload.jobId, result.job.id);
+    assert.notEqual(result.payload.jobId, "draft-job-1");
+    assert.deepEqual(result.selectedDraftItemIds, [`${draftMessage.id}:0`, "persisted-item-2"]);
+    assert.deepEqual(result.payload.items.map((item) => item.draftItemId), [`${draftMessage.id}:0`, "persisted-item-2"]);
+    assert.equal(result.payload.items[0].index, 0);
+    assert.equal(result.payload.items[1].title, "Second selected item");
+  } finally {
     s.cleanup();
   }
 });
