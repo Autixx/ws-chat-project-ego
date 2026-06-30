@@ -28,6 +28,11 @@ export type JobEvent = {
   payload?: Record<string, unknown>;
 };
 
+export type JobUpdateResult = {
+  job: Job;
+  updatedRows: number;
+};
+
 type JobRow = {
   id: string;
   conversation_id: string;
@@ -104,13 +109,17 @@ export class JobStore {
   }
 
   updateJobStatus(jobId: string, status: JobExecutionStatus, patch: Partial<Pick<Job, "startedAt" | "finishedAt" | "errorMessage" | "metadata">> = {}): Promise<Job> {
+    return Promise.resolve(this.updateJobStatusWithResult(jobId, status, patch).job);
+  }
+
+  updateJobStatusWithResult(jobId: string, status: JobExecutionStatus, patch: Partial<Pick<Job, "startedAt" | "finishedAt" | "errorMessage" | "metadata">> = {}): JobUpdateResult {
     const current = this.loadJob(jobId);
     const now = new Date().toISOString();
     const metadata = patch.metadata === undefined ? current.metadata : { ...(current.metadata ?? {}), ...patch.metadata };
     const startedAt = patch.startedAt ?? current.startedAt ?? (status === "running" ? now : undefined);
     const finishedAt = patch.finishedAt ?? current.finishedAt ?? (["succeeded", "failed", "partial", "cancelled"].includes(status) ? now : undefined);
     const errorMessage = patch.errorMessage ?? current.errorMessage;
-    this.database.db
+    const result = this.database.db
       .prepare(
         `UPDATE jobs
          SET status = @status,
@@ -130,7 +139,7 @@ export class JobStore {
         errorMessage: errorMessage ?? null,
         metadataJson: metadata ? JSON.stringify(metadata) : null
       });
-    return Promise.resolve(this.loadJob(jobId));
+    return { job: this.loadJob(jobId), updatedRows: result.changes };
   }
 
   appendJobEvent(jobId: string, eventType: string, payload?: Record<string, unknown>): Promise<JobEvent> {

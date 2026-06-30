@@ -175,6 +175,16 @@ test("job callback updates job to running succeeded and failed", async () => {
       body: { status: "succeeded", eventType: "finished", externalRefs: [{ system: "plane", type: "work_item", id: "P-1" }] }
     });
     assert.equal(succeeded.job.status, "succeeded");
+    assert.equal(succeeded.ok, true);
+    assert.equal(succeeded.jobId, job.id);
+    assert.equal(succeeded.eventType, "finished");
+    assert.equal(succeeded.status, "succeeded");
+    assert.equal(succeeded.previousStatus, "running");
+    assert.equal(succeeded.nextStatus, "succeeded");
+    assert.equal(succeeded.updatedRows, 1);
+    assert.equal(succeeded.saved, true);
+    assert.equal(succeeded.externalRefsCount, 1);
+    assert.equal(succeeded.currentJob.id, job.id);
     assert.ok(succeeded.job.finishedAt);
     assert.deepEqual(succeeded.job.metadata?.externalRefs, [{ system: "plane", type: "work_item", id: "P-1" }]);
 
@@ -398,13 +408,44 @@ test("dedupe finished callback completes running job and preserves duplicate ext
     const debugPayload = (debugCalls[0] as unknown[])?.[1] as Record<string, unknown>;
     assert.equal(debugPayload.jobId, job.id);
     assert.equal(debugPayload.eventType, "finished");
-    assert.equal(debugPayload.callbackStatus, "succeeded");
+    assert.equal(callback.ok, true);
+    assert.equal(callback.jobId, job.id);
+    assert.equal(callback.eventType, "finished");
+    assert.equal(callback.status, "succeeded");
+    assert.equal(callback.previousStatus, "running");
+    assert.equal(callback.nextStatus, "succeeded");
+    assert.equal(callback.updatedRows, 1);
+    assert.equal(callback.saved, true);
+    assert.equal(callback.externalRefsCount, 1);
+    assert.equal(callback.currentJob.id, job.id);
+    assert.equal(debugPayload.status, "succeeded");
     assert.equal(debugPayload.createdCount, 0);
     assert.equal(debugPayload.duplicateCount, 2);
     assert.equal(debugPayload.previousStatus, "running");
     assert.equal(debugPayload.nextStatus, "succeeded");
   } finally {
     console.debug = originalDebug;
+    s.cleanup();
+  }
+});
+
+test("finished callback rejects non-terminal running status", async () => {
+  const s = stores("callback-secret");
+  try {
+    const conversation = await s.conversations.createConversation(user, "bad finished callback");
+    const job = await s.jobs.createJob({ conversationId: conversation.id, status: "running", source: "n8n_apply" });
+    await assert.rejects(
+      handleJobCallback({
+        config: s.config,
+        jobs: s.jobs,
+        jobId: job.id,
+        authorization: "Bearer callback-secret",
+        body: { status: "running", eventType: "finished" }
+      }),
+      /Finished callback requires terminal status/
+    );
+    assert.equal(s.jobs.loadJob(job.id).status, "running");
+  } finally {
     s.cleanup();
   }
 });
