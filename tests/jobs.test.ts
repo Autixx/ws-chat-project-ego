@@ -363,6 +363,52 @@ test("n8n callback marks apply job succeeded and stores external refs", async ()
   }
 });
 
+test("dedupe finished callback completes running job and preserves duplicate external refs", async () => {
+  const s = stores("callback-secret");
+  const originalDebug = console.debug;
+  const debugCalls: unknown[] = [];
+  try {
+    console.debug = (...args: unknown[]) => {
+      debugCalls.push(args);
+    };
+    const conversation = await s.conversations.createConversation(user, "dedupe callback");
+    const job = await s.jobs.createJob({ conversationId: conversation.id, status: "running", source: "n8n_apply" });
+    const externalRefs = [{ system: "plane", type: "work_item", id: "PEGO-42", url: "https://plane.example.test/PEGO-42" }];
+    const callback = await handleJobCallback({
+      config: s.config,
+      jobs: s.jobs,
+      jobId: job.id,
+      authorization: "Bearer callback-secret",
+      body: {
+        status: "succeeded",
+        eventType: "finished",
+        payload: {
+          mode: "dedupe",
+          createdCount: 0,
+          duplicateCount: 2,
+          externalRefs
+        }
+      }
+    });
+
+    assert.equal(callback.job.status, "succeeded");
+    assert.ok(callback.job.finishedAt);
+    assert.equal(callback.job.metadata?.completedAt, callback.job.finishedAt);
+    assert.deepEqual(callback.job.metadata?.externalRefs, externalRefs);
+    const debugPayload = (debugCalls[0] as unknown[])?.[1] as Record<string, unknown>;
+    assert.equal(debugPayload.jobId, job.id);
+    assert.equal(debugPayload.eventType, "finished");
+    assert.equal(debugPayload.callbackStatus, "succeeded");
+    assert.equal(debugPayload.createdCount, 0);
+    assert.equal(debugPayload.duplicateCount, 2);
+    assert.equal(debugPayload.previousStatus, "running");
+    assert.equal(debugPayload.nextStatus, "succeeded");
+  } finally {
+    console.debug = originalDebug;
+    s.cleanup();
+  }
+});
+
 test("Apply decision creates job but does not mark execution succeeded", async () => {
   const s = stores();
   try {
