@@ -21,6 +21,7 @@ const state = {
   attachments: [],
   attachmentsByRequest: {},
   jobs: [],
+  jobEvents: {},
   pendingFiles: [],
   requestMode: "chat",
   displayMode: "text",
@@ -237,6 +238,7 @@ function handleServerMessage(message) {
       state.attachments = [];
       state.attachmentsByRequest = {};
       state.jobs = [];
+      state.jobEvents = {};
     }
     renderConversationSelect();
     if (!state.currentConversationId) {
@@ -257,6 +259,7 @@ function handleServerMessage(message) {
     state.attachments = message.attachments || [];
     state.attachmentsByRequest = groupAttachmentsByRequest(state.attachments);
     state.jobs = message.jobs || [];
+    state.jobEvents = {};
     state.selectedRequestId = firstRequest()?.id || null;
     state.expandedRequestId = state.selectedRequestId;
     state.selectedResponseId = null;
@@ -276,6 +279,8 @@ function handleServerMessage(message) {
     if (!state.showArchived && state.currentConversationId === message.conversationId) {
       state.currentConversationId = null;
       state.messages = [];
+      state.jobs = [];
+      state.jobEvents = {};
     }
     renderAll();
     requestConversationList();
@@ -295,6 +300,7 @@ function handleServerMessage(message) {
       state.attachments = [];
       state.attachmentsByRequest = {};
       state.jobs = [];
+      state.jobEvents = {};
     }
     closeDeleteDialogs();
     renderAll();
@@ -346,9 +352,16 @@ function handleServerMessage(message) {
     renderDraft();
   }
 
+  if (message.type === "job_event") {
+    upsertJobEvent(message.jobId, message.event);
+    renderResponses();
+    renderDraft();
+  }
+
   if (message.type === "job_list" && message.conversationId === state.currentConversationId) {
     state.jobs = message.jobs || [];
     renderResponses();
+    renderDraft();
   }
 
   if (message.type === "attachments_for_request" && message.conversationId === state.currentConversationId) {
@@ -862,6 +875,16 @@ function upsertJob(job) {
   state.jobs.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 
+function upsertJobEvent(jobId, event) {
+  if (!jobId || !event) return;
+  const events = state.jobEvents[jobId] || [];
+  const index = events.findIndex((item) => item.id === event.id);
+  if (index >= 0) events[index] = event;
+  else events.push(event);
+  events.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  state.jobEvents[jobId] = events;
+}
+
 function requestConversationList() {
   send({ type: "conversation_list", includeArchived: state.showArchived });
 }
@@ -1231,7 +1254,12 @@ function renderDraft() {
       const square = document.createElement("span");
       square.className = `sq inline-sq ${executionClassForStatus(executionJob.status)}`;
       execution.append(square, ` ${formatStatus(executionJob.status)}`);
+      const debug = jobDebugInfo(executionJob);
       execution.append(` / Execution Job ID: ${executionJob.id}`);
+      execution.append(document.createElement("br"));
+      execution.append(
+        `persisted job.status: ${executionJob.status} / last event status: ${debug.lastEventStatus} / last eventType: ${debug.lastEventType} / finishedAt: ${executionJob.finishedAt || "-"}`
+      );
       const refs = externalRefsForJob(executionJob);
       if (refs.length) {
         execution.append(" / ");
@@ -1309,11 +1337,19 @@ function jobForResponse(response) {
 }
 
 function executionStatus(response) {
-  return response.metadata?.executionStatus || jobForResponse(response)?.status || "not_started";
+  return jobForExecutionResponse(response)?.status || response.metadata?.executionStatus || "not_started";
 }
 
 function executionJobIdForResponse(response) {
-  return response.metadata?.executionJobId || jobForResponse(response)?.id;
+  return jobForExecutionResponse(response)?.id || response.metadata?.executionJobId;
+}
+
+function jobById(jobId) {
+  return jobId ? state.jobs.find((job) => job.id === jobId) || null : null;
+}
+
+function jobForExecutionResponse(response) {
+  return jobById(response.metadata?.executionJobId) || jobForResponse(response);
 }
 
 function executionClass(response) {
@@ -1358,6 +1394,20 @@ function draftItemIdForDisplay(item, itemIndex) {
 
 function externalRefsForJob(job) {
   return Array.isArray(job?.metadata?.externalRefs) ? job.metadata.externalRefs : [];
+}
+
+function lastEventForJob(jobId) {
+  const events = state.jobEvents[jobId] || [];
+  return events.length ? events[events.length - 1] : null;
+}
+
+function jobDebugInfo(job) {
+  const lastEvent = lastEventForJob(job?.id);
+  const lastEventPayload = lastEvent?.payload || {};
+  return {
+    lastEventStatus: job?.metadata?.lastEventStatus || lastEventPayload.status || lastEventPayload.callbackStatus || "-",
+    lastEventType: job?.metadata?.lastEventType || lastEvent?.eventType || "-"
+  };
 }
 
 function appendExternalRefs(parent, job) {
@@ -1766,6 +1816,7 @@ authEls.logoutBtn.addEventListener("click", async () => {
   state.attachments = [];
   state.attachmentsByRequest = {};
   state.jobs = [];
+  state.jobEvents = {};
   setConnected(false);
   showAuth("Logged out.");
 });

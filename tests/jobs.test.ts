@@ -187,6 +187,8 @@ test("job callback updates job to running succeeded and failed", async () => {
     assert.equal(succeeded.currentJob.id, job.id);
     assert.ok(succeeded.job.finishedAt);
     assert.deepEqual(succeeded.job.metadata?.externalRefs, [{ system: "plane", type: "work_item", id: "P-1" }]);
+    assert.equal(succeeded.job.metadata?.lastEventStatus, "succeeded");
+    assert.equal(succeeded.job.metadata?.lastEventType, "finished");
 
     const failed = await handleJobCallback({
       config: s.config,
@@ -197,6 +199,8 @@ test("job callback updates job to running succeeded and failed", async () => {
     });
     assert.equal(failed.job.status, "failed");
     assert.equal(failed.job.errorMessage, "Plane rejected payload");
+    assert.equal(failed.job.metadata?.lastEventStatus, "failed");
+    assert.equal(failed.job.metadata?.lastEventType, "error");
   } finally {
     s.cleanup();
   }

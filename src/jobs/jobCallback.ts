@@ -64,6 +64,8 @@ export async function handleJobCallback(input: { config: AppConfig; jobs: JobSto
     errorMessage: status === "failed" ? message : undefined,
     metadata: {
       ...(payload.externalRefs ? { externalRefs: payload.externalRefs } : {}),
+      lastEventStatus: status,
+      lastEventType: eventType,
       ...(completedAt ? { completedAt } : {})
     }
   });
