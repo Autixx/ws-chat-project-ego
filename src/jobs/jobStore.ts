@@ -31,7 +31,10 @@ export type JobEvent = {
 export type JobUpdateResult = {
   job: Job;
   updatedRows: number;
+  blocked?: boolean;
 };
+
+type StatusWritePatch = Partial<Pick<Job, "startedAt" | "finishedAt" | "errorMessage" | "metadata">>;
 
 type JobRow = {
   id: string;
@@ -68,6 +71,7 @@ export class JobStore {
     status: JobExecutionStatus;
     source: string;
     metadata?: Record<string, unknown>;
+    statusSource?: string;
   }): Promise<Job> {
     const now = new Date().toISOString();
     const job: Job = {
@@ -105,16 +109,34 @@ export class JobStore {
         updatedAt: job.updatedAt,
         metadataJson: job.metadata ? JSON.stringify(job.metadata) : null
       });
+    logStatusWrite({
+      jobId: job.id,
+      previousStatus: null,
+      newStatus: job.status,
+      source: input.statusSource ?? "JobStore.createJob",
+      timestamp: now
+    });
     return Promise.resolve(job);
   }
 
-  updateJobStatus(jobId: string, status: JobExecutionStatus, patch: Partial<Pick<Job, "startedAt" | "finishedAt" | "errorMessage" | "metadata">> = {}): Promise<Job> {
-    return Promise.resolve(this.updateJobStatusWithResult(jobId, status, patch).job);
+  updateJobStatus(jobId: string, status: JobExecutionStatus, patch: StatusWritePatch = {}, source = "JobStore.updateJobStatus"): Promise<Job> {
+    return Promise.resolve(this.updateJobStatusWithResult(jobId, status, patch, source).job);
   }
 
-  updateJobStatusWithResult(jobId: string, status: JobExecutionStatus, patch: Partial<Pick<Job, "startedAt" | "finishedAt" | "errorMessage" | "metadata">> = {}): JobUpdateResult {
+  updateJobStatusWithResult(jobId: string, status: JobExecutionStatus, patch: StatusWritePatch = {}, source = "JobStore.updateJobStatusWithResult"): JobUpdateResult {
     const current = this.loadJob(jobId);
     const now = new Date().toISOString();
+    if (isForbiddenTerminalRollback(current.status, status)) {
+      logStatusWrite({
+        jobId,
+        previousStatus: current.status,
+        newStatus: status,
+        source,
+        timestamp: now,
+        blocked: true
+      });
+      return { job: current, updatedRows: 0, blocked: true };
+    }
     const metadata = patch.metadata === undefined ? current.metadata : { ...(current.metadata ?? {}), ...patch.metadata };
     const startedAt = patch.startedAt ?? current.startedAt ?? (status === "running" ? now : undefined);
     const finishedAt = patch.finishedAt ?? current.finishedAt ?? (["succeeded", "failed", "partial", "cancelled"].includes(status) ? now : undefined);
@@ -139,6 +161,13 @@ export class JobStore {
         errorMessage: errorMessage ?? null,
         metadataJson: metadata ? JSON.stringify(metadata) : null
       });
+    logStatusWrite({
+      jobId,
+      previousStatus: current.status,
+      newStatus: status,
+      source,
+      timestamp: now
+    });
     return { job: this.loadJob(jobId), updatedRows: result.changes };
   }
 
@@ -204,6 +233,33 @@ export class JobStore {
       return rows.map(rowToJobEvent);
     });
   }
+}
+
+const TERMINAL_STATUSES = new Set<JobExecutionStatus>(["succeeded", "partial", "failed", "cancelled"]);
+const NON_TERMINAL_WRITE_STATUSES = new Set<JobExecutionStatus>(["queued", "running"]);
+
+function isForbiddenTerminalRollback(previousStatus: JobExecutionStatus, newStatus: JobExecutionStatus): boolean {
+  return TERMINAL_STATUSES.has(previousStatus) && NON_TERMINAL_WRITE_STATUSES.has(newStatus);
+}
+
+function logStatusWrite(input: {
+  jobId: string;
+  previousStatus: JobExecutionStatus | null;
+  newStatus: JobExecutionStatus;
+  source: string;
+  timestamp: string;
+  blocked?: boolean;
+}): void {
+  const payload = {
+    jobId: input.jobId,
+    previousStatus: input.previousStatus,
+    newStatus: input.newStatus,
+    source: input.source,
+    timestamp: input.timestamp,
+    ...(input.blocked ? { blocked: true } : {})
+  };
+  if (input.blocked) console.warn("ProjectEGO job status write blocked", payload);
+  else console.debug("ProjectEGO job status write", payload);
 }
 
 function rowToJob(row: JobRow): Job {

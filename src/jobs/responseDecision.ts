@@ -33,6 +33,7 @@ export async function updateResponseDecision(input: {
     draftJobId: typeof message.metadata?.jobId === "string" ? message.metadata.jobId : undefined,
     status: "not_started",
     source: "response_apply",
+    statusSource: "updateResponseDecision",
     metadata: {
       backend: "none",
       backendConfigured: false,

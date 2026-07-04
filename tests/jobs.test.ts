@@ -351,6 +351,34 @@ test("failed n8n apply request marks execution job failed", async () => {
   }
 });
 
+test("n8n accepted dispatch cannot overwrite terminal callback status back to running", async () => {
+  const s = stores("callback-secret");
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () => new Response("accepted", { status: 202 })) as typeof fetch;
+    const conversation = await s.conversations.createConversation(user, "race guard");
+    const job = await s.jobs.createJob({ conversationId: conversation.id, status: "running", source: "n8n_apply" });
+    const callback = await handleJobCallback({
+      config: s.config,
+      jobs: s.jobs,
+      jobId: job.id,
+      authorization: "Bearer callback-secret",
+      body: { status: "succeeded", eventType: "finished" }
+    });
+    assert.equal(callback.job.status, "succeeded");
+
+    const config = { ...s.config, n8nApplyWebhookUrl: "https://n8n.example.test/webhook/apply", n8nWebhookToken: "n8n-secret" };
+    const dispatch = await dispatchApplyJobToN8n({ config, jobs: s.jobs, jobId: job.id, payload: n8nPayload(job.id) });
+
+    assert.equal(dispatch.result.accepted, true);
+    assert.equal(dispatch.job.status, "succeeded");
+    assert.equal(s.jobs.loadJob(job.id).status, "succeeded");
+  } finally {
+    globalThis.fetch = originalFetch;
+    s.cleanup();
+  }
+});
+
 test("n8n callback marks apply job succeeded and stores external refs", async () => {
   const s = stores("callback-secret");
   try {
@@ -409,7 +437,7 @@ test("dedupe finished callback completes running job and preserves duplicate ext
     assert.ok(callback.job.finishedAt);
     assert.equal(callback.job.metadata?.completedAt, callback.job.finishedAt);
     assert.deepEqual(callback.job.metadata?.externalRefs, externalRefs);
-    const debugPayload = (debugCalls[0] as unknown[])?.[1] as Record<string, unknown>;
+    const debugPayload = (debugCalls.find((call) => (call as unknown[])?.[0] === "ProjectEGO job callback") as unknown[])?.[1] as Record<string, unknown>;
     assert.equal(debugPayload.jobId, job.id);
     assert.equal(debugPayload.eventType, "finished");
     assert.equal(callback.ok, true);

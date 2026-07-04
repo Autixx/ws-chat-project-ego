@@ -59,16 +59,21 @@ export async function handleJobCallback(input: { config: AppConfig; jobs: JobSto
     previousStatus: previousJob.status,
     nextStatus
   };
-  const update = input.jobs.updateJobStatusWithResult(input.jobId, nextStatus, {
-    finishedAt: completedAt,
-    errorMessage: status === "failed" ? message : undefined,
-    metadata: {
-      ...(payload.externalRefs ? { externalRefs: payload.externalRefs } : {}),
-      lastEventStatus: status,
-      lastEventType: eventType,
-      ...(completedAt ? { completedAt } : {})
-    }
-  });
+  const update = input.jobs.updateJobStatusWithResult(
+    input.jobId,
+    nextStatus,
+    {
+      finishedAt: completedAt,
+      errorMessage: status === "failed" ? message : undefined,
+      metadata: {
+        ...(payload.externalRefs ? { externalRefs: payload.externalRefs } : {}),
+        lastEventStatus: status,
+        lastEventType: eventType,
+        ...(completedAt ? { completedAt } : {})
+      }
+    },
+    "handleJobCallback"
+  );
   const currentJob = input.jobs.loadJob(input.jobId);
   const saved = update.updatedRows > 0 && currentJob.status === nextStatus;
   if (eventType === "finished" && currentJob.status === "running") {

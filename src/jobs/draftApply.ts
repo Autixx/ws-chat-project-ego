@@ -41,6 +41,7 @@ export async function createDraftApplyJob(input: {
     draftJobId: input.draft.jobId,
     status: "queued",
     source: "n8n_apply",
+    statusSource: "createDraftApplyJob",
     metadata: {
       backend: "n8n",
       selectedDraftItemIds,
