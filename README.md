@@ -53,6 +53,9 @@ PM exposes:
 - `PUT /api/pm/projects/:projectId/members/:userId`
 - `GET /api/pm/projects/:projectId/epics`
 - `POST /api/pm/projects/:projectId/epics`
+- `GET /api/pm/projects/:projectId/sprints`
+- `POST /api/pm/projects/:projectId/sprints`
+- `PATCH /api/pm/sprints/:sprintId`
 - `GET /api/pm/projects/:projectId/boards`
 - `POST /api/pm/projects/:projectId/boards/kanban/default`
 - `GET /api/pm/boards/:boardId`
@@ -62,6 +65,7 @@ PM exposes:
 - `PATCH /api/pm/tasks/:taskId`
 - `POST /api/pm/tasks/:taskId/move`
 - `POST /api/pm/tasks/:taskId/dependencies`
+- `POST /api/pm/tasks/:taskId/sprint`
 - `GET /api/pm/tasks/:taskId/comments`
 - `POST /api/pm/tasks/:taskId/comments`
 - `PATCH /api/pm/comments/:commentId`
@@ -108,7 +112,7 @@ In Docker, run the migration command in the PM image before first production use
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.39 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.40 \
   node dist/pm/migrate.js
 ```
 
@@ -152,6 +156,8 @@ The first PM frontend shell supports:
 - task drawer comments with own-comment edit/delete
 - task drawer file attachments with download/delete
 - task drawer activity history from `audit.events`
+- backlog and sprint planning with sprint lifecycle controls
+- task assignment to backlog or a selected sprint
 - status and priority filters
 - PM WebSocket reconnect and refresh on structured events
 

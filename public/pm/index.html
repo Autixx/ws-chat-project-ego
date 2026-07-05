@@ -60,6 +60,22 @@
               <div id="epicList" class="list compact"></div>
             </section>
 
+            <section class="panel sprints-pane">
+              <div class="panel-title">
+                <h2>Sprints / Backlog</h2>
+                <label class="inline-check"><input id="includeCompletedSprints" type="checkbox" /> completed</label>
+              </div>
+              <form id="sprintForm" class="inline-form">
+                <input id="sprintName" placeholder="Sprint name" />
+                <button type="submit" disabled>Create</button>
+              </form>
+              <div class="sprint-toolbar">
+                <button id="backlogFilterBtn" type="button" class="active" disabled>Backlog</button>
+                <button id="allSprintTasksBtn" type="button" disabled>All tasks</button>
+              </div>
+              <div id="sprintList" class="list compact"></div>
+            </section>
+
             <section class="panel tasks-pane">
               <div class="panel-title">
                 <h2>Tasks</h2>
@@ -129,6 +145,11 @@
                 <option value="medium">medium</option>
                 <option value="low">low</option>
                 <option value="none">none</option>
+              </select>
+            </label>
+            <label>Sprint
+              <select id="editTaskSprint">
+                <option value="">Backlog</option>
               </select>
             </label>
             <label>Description<textarea id="editTaskDescription" rows="8"></textarea></label>

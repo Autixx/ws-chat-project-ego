@@ -2,12 +2,14 @@ const state = {
   user: null,
   projects: [],
   epics: [],
+  sprints: [],
   tasks: [],
   board: null,
   columns: [],
   boardTasks: [],
   activeProjectId: null,
   activeEpicId: null,
+  activeSprintId: "__backlog",
   activeTask: null,
   comments: [],
   attachments: [],
@@ -38,6 +40,12 @@ const els = {
   epicForm: $("epicForm"),
   epicTitle: $("epicTitle"),
   epicList: $("epicList"),
+  sprintForm: $("sprintForm"),
+  sprintName: $("sprintName"),
+  includeCompletedSprints: $("includeCompletedSprints"),
+  backlogFilterBtn: $("backlogFilterBtn"),
+  allSprintTasksBtn: $("allSprintTasksBtn"),
+  sprintList: $("sprintList"),
   taskForm: $("taskForm"),
   taskTitle: $("taskTitle"),
   taskPriority: $("taskPriority"),
@@ -55,6 +63,7 @@ const els = {
   editTaskTitle: $("editTaskTitle"),
   editTaskStatus: $("editTaskStatus"),
   editTaskPriority: $("editTaskPriority"),
+  editTaskSprint: $("editTaskSprint"),
   editTaskDescription: $("editTaskDescription"),
   commentList: $("commentList"),
   commentForm: $("commentForm"),
@@ -118,31 +127,42 @@ async function loadProjectData() {
   els.archiveProjectBtn.disabled = !project;
   els.ensureBoardBtn.disabled = !project;
   els.epicForm.querySelector("button").disabled = !project;
+  els.sprintForm.querySelector("button").disabled = !project;
+  els.backlogFilterBtn.disabled = !project;
+  els.allSprintTasksBtn.disabled = !project;
   els.taskForm.querySelector("button").disabled = !project;
   if (!project) {
     state.epics = [];
+    state.sprints = [];
     state.tasks = [];
     state.board = null;
     state.columns = [];
     state.boardTasks = [];
     renderActiveProject();
     renderEpics();
+    renderSprints();
     renderTasks();
     renderBoard();
     return;
   }
-  const [epicsBody, tasksBody, boardBody] = await Promise.all([
+  const [epicsBody, sprintsBody, tasksBody, boardBody] = await Promise.all([
     api(`/api/pm/projects/${project.id}/epics`),
+    api(`/api/pm/projects/${project.id}/sprints?includeCompleted=${els.includeCompletedSprints.checked ? "true" : "false"}${state.activeEpicId ? `&epicId=${encodeURIComponent(state.activeEpicId)}` : ""}`),
     api(`/api/pm/projects/${project.id}/tasks`),
     ensureDefaultBoard(project.id)
   ]);
   state.epics = epicsBody.epics;
+  state.sprints = sprintsBody.sprints;
+  if (state.activeSprintId && !["__all", "__backlog"].includes(state.activeSprintId) && !state.sprints.some((sprint) => sprint.id === state.activeSprintId)) {
+    state.activeSprintId = "__backlog";
+  }
   state.tasks = tasksBody.tasks;
   state.board = boardBody.board;
   state.columns = boardBody.columns;
   await loadBoardSnapshot();
   renderActiveProject();
   renderEpics();
+  renderSprints();
   renderTasks();
   renderBoard();
 }
@@ -183,6 +203,7 @@ function renderProjects() {
       button.addEventListener("click", async () => {
         state.activeProjectId = project.id;
         state.activeEpicId = null;
+        state.activeSprintId = "__backlog";
         await loadProjectData();
       });
       return button;
@@ -211,7 +232,51 @@ function renderEpics() {
       button.innerHTML = `<div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.status)} / ${escapeHtml(epic.priority)}</div>`;
       button.addEventListener("click", async () => {
         state.activeEpicId = state.activeEpicId === epic.id ? null : epic.id;
+        state.activeSprintId = "__backlog";
         await loadProjectData();
+      });
+      return button;
+    })
+  );
+}
+
+function renderSprints() {
+  els.backlogFilterBtn.classList.toggle("active", state.activeSprintId === "__backlog");
+  els.allSprintTasksBtn.classList.toggle("active", state.activeSprintId === "__all");
+  els.editTaskSprint.replaceChildren(
+    optionEl("", "Backlog"),
+    ...state.sprints.map((sprint) => optionEl(sprint.id, `${sprint.name} / ${sprint.status}`))
+  );
+  if (state.sprints.length === 0) {
+    els.sprintList.innerHTML = `<div class="drawer-empty">No sprints yet.</div>`;
+    return;
+  }
+  els.sprintList.replaceChildren(
+    ...state.sprints.map((sprint) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `sprint-card ${state.activeSprintId === sprint.id ? "active" : ""}`;
+      button.innerHTML = `
+        <div class="card-title">${escapeHtml(sprint.name)}</div>
+        <div class="card-meta">${escapeHtml(sprint.status)} / v${sprint.version}</div>
+        <div class="card-body">${escapeHtml(formatSprintDates(sprint))}</div>
+        <div class="sprint-actions">
+          ${sprint.status !== "active" ? `<span class="badge" data-action="active">active</span>` : ""}
+          ${sprint.status !== "completed" ? `<span class="badge" data-action="completed">complete</span>` : ""}
+          ${sprint.status !== "cancelled" ? `<span class="badge" data-action="cancelled">cancel</span>` : ""}
+        </div>
+      `;
+      button.addEventListener("click", async (event) => {
+        const action = event.target?.dataset?.action;
+        if (action) {
+          event.stopPropagation();
+          await updateSprintStatus(sprint, action);
+          return;
+        }
+        state.activeSprintId = sprint.id;
+        renderSprints();
+        renderTasks();
+        renderBoard();
       });
       return button;
     })
@@ -223,6 +288,8 @@ function renderTasks() {
   const priorityFilter = els.priorityFilter.value;
   const tasks = state.tasks.filter((task) => {
     if (state.activeEpicId && task.epicId !== state.activeEpicId) return false;
+    if (state.activeSprintId === "__backlog" && task.sprintId) return false;
+    if (!["__all", "__backlog"].includes(state.activeSprintId) && task.sprintId !== state.activeSprintId) return false;
     if (statusFilter && task.status !== statusFilter) return false;
     if (priorityFilter && task.priority !== priorityFilter) return false;
     return true;
@@ -236,7 +303,7 @@ function renderTasks() {
         <div>
           <div class="card-title">${escapeHtml(task.title)}</div>
           <div class="card-body">${escapeHtml(task.description || "")}</div>
-          <div class="card-meta">${escapeHtml(task.id)} / v${task.version}</div>
+          <div class="card-meta">${escapeHtml(task.id)} / ${escapeHtml(sprintLabel(task.sprintId))} / v${task.version}</div>
         </div>
         <div class="task-badges">
           <span class="badge">${escapeHtml(task.status)}</span>
@@ -281,6 +348,8 @@ function renderBoard() {
       const tasks = state.boardTasks
         .filter((task) => (task.columnId === column.id || (!task.columnId && task.status === column.statusKey)))
         .filter((task) => !state.activeEpicId || task.epicId === state.activeEpicId)
+        .filter((task) => state.activeSprintId !== "__backlog" || !task.sprintId)
+        .filter((task) => ["__all", "__backlog"].includes(state.activeSprintId) || task.sprintId === state.activeSprintId)
         .filter((task) => !statusFilter || task.status === statusFilter)
         .filter((task) => !priorityFilter || task.priority === priorityFilter)
         .sort((a, b) => (a.boardPosition ?? 1000000000) - (b.boardPosition ?? 1000000000));
@@ -298,7 +367,7 @@ function renderKanbanCard(task) {
   card.dataset.taskId = task.id;
   card.innerHTML = `
     <div class="card-title">${escapeHtml(task.title)}</div>
-    <div class="card-meta">${escapeHtml(task.priority)} / v${task.version}</div>
+    <div class="card-meta">${escapeHtml(task.priority)} / ${escapeHtml(sprintLabel(task.sprintId))} / v${task.version}</div>
     <div class="card-body">${escapeHtml(task.description || "")}</div>
   `;
   card.addEventListener("click", () => openTask(task));
@@ -341,6 +410,7 @@ function openTask(task) {
   els.editTaskTitle.value = task.title;
   els.editTaskStatus.value = task.status;
   els.editTaskPriority.value = task.priority;
+  els.editTaskSprint.value = task.sprintId || "";
   els.editTaskDescription.value = task.description || "";
   state.comments = [];
   state.attachments = [];
@@ -385,6 +455,31 @@ async function createEpic(event) {
   await loadProjectData();
 }
 
+async function createSprint(event) {
+  event.preventDefault();
+  const project = activeProject();
+  if (!project) return;
+  const { sprint } = await api(`/api/pm/projects/${project.id}/sprints`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: els.sprintName.value,
+      epicId: state.activeEpicId || undefined
+    })
+  });
+  els.sprintForm.reset();
+  state.activeSprintId = sprint.id;
+  await loadProjectData();
+}
+
+async function updateSprintStatus(sprint, status) {
+  const { sprint: updated } = await api(`/api/pm/sprints/${sprint.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status, expectedVersion: sprint.version })
+  });
+  state.activeSprintId = updated.id;
+  await loadProjectData();
+}
+
 async function createTask(event) {
   event.preventDefault();
   const project = activeProject();
@@ -394,7 +489,8 @@ async function createTask(event) {
     body: JSON.stringify({
       title: els.taskTitle.value,
       priority: els.taskPriority.value,
-      epicId: state.activeEpicId || undefined
+      epicId: state.activeEpicId || undefined,
+      sprintId: selectedSprintIdForNewTask()
     })
   });
   els.taskForm.reset();
@@ -422,7 +518,8 @@ async function createTask(event) {
 async function saveTask(event) {
   event.preventDefault();
   if (!state.activeTask) return;
-  const { task } = await api(`/api/pm/tasks/${state.activeTask.id}`, {
+  const desiredSprintId = els.editTaskSprint.value || "";
+  let { task } = await api(`/api/pm/tasks/${state.activeTask.id}`, {
     method: "PATCH",
     body: JSON.stringify({
       title: els.editTaskTitle.value,
@@ -432,6 +529,13 @@ async function saveTask(event) {
       expectedVersion: state.activeTask.version
     })
   });
+  if ((task.sprintId || "") !== desiredSprintId) {
+    const assigned = await api(`/api/pm/tasks/${task.id}/sprint`, {
+      method: "POST",
+      body: JSON.stringify({ sprintId: desiredSprintId || undefined })
+    });
+    task = assigned.task;
+  }
   await loadProjectData();
   openTask(task);
 }
@@ -668,6 +772,29 @@ function formatBytes(value) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function optionEl(value, label) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  return option;
+}
+
+function sprintLabel(sprintId) {
+  if (!sprintId) return "backlog";
+  const sprint = state.sprints.find((item) => item.id === sprintId);
+  return sprint ? sprint.name : "sprint";
+}
+
+function formatSprintDates(sprint) {
+  const start = sprint.startsAt ? new Date(sprint.startsAt).toLocaleDateString() : "no start";
+  const end = sprint.endsAt ? new Date(sprint.endsAt).toLocaleDateString() : "no end";
+  return `${start} -> ${end}`;
+}
+
+function selectedSprintIdForNewTask() {
+  return ["__all", "__backlog"].includes(state.activeSprintId) ? undefined : state.activeSprintId;
+}
+
 async function boot() {
   try {
     await refreshHealth();
@@ -682,11 +809,25 @@ async function boot() {
 
 els.projectForm.addEventListener("submit", (event) => createProject(event).catch((error) => setError(error.message)));
 els.epicForm.addEventListener("submit", (event) => createEpic(event).catch((error) => setError(error.message)));
+els.sprintForm.addEventListener("submit", (event) => createSprint(event).catch((error) => setError(error.message)));
 els.taskForm.addEventListener("submit", (event) => createTask(event).catch((error) => setError(error.message)));
 els.taskEditForm.addEventListener("submit", (event) => saveTask(event).catch((error) => setError(error.message)));
 els.commentForm.addEventListener("submit", (event) => createComment(event).catch((error) => setError(error.message)));
 els.attachmentForm.addEventListener("submit", (event) => uploadAttachment(event).catch((error) => setError(error.message)));
 els.includeArchived.addEventListener("change", () => loadProjects().catch((error) => setError(error.message)));
+els.includeCompletedSprints.addEventListener("change", () => loadProjectData().catch((error) => setError(error.message)));
+els.backlogFilterBtn.addEventListener("click", () => {
+  state.activeSprintId = "__backlog";
+  renderSprints();
+  renderTasks();
+  renderBoard();
+});
+els.allSprintTasksBtn.addEventListener("click", () => {
+  state.activeSprintId = "__all";
+  renderSprints();
+  renderTasks();
+  renderBoard();
+});
 els.refreshBtn.addEventListener("click", () => loadProjects().catch((error) => setError(error.message)));
 els.archiveProjectBtn.addEventListener("click", () => toggleArchive().catch((error) => setError(error.message)));
 els.ensureBoardBtn.addEventListener("click", () => loadProjectData().catch((error) => setError(error.message)));

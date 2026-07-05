@@ -7,7 +7,7 @@ import { removePmAttachmentFile, storePmTaskAttachment, streamPmAttachment } fro
 import { normalizeRole, PmPermissionError, requireProjectRole } from "./permissions.js";
 import type { PmEventHub } from "./events.js";
 import type { PmStore, PmConflictError } from "./postgresStore.js";
-import type { CreateBoardColumnInput, CreateEpicInput, CreateProjectInput, CreateTaskInput, MoveTaskInput, PmUser, UpdateProjectInput, UpdateTaskInput } from "./types.js";
+import type { CreateBoardColumnInput, CreateEpicInput, CreateProjectInput, CreateSprintInput, CreateTaskInput, MoveTaskInput, PmSprintStatus, PmUser, UpdateProjectInput, UpdateSprintInput, UpdateTaskInput } from "./types.js";
 
 export type PmAuthedRequest = express.Request & { pmIdentity?: AuthenticatedUser; pmUser?: PmUser };
 export type PmRouterOptions = { attachmentsDir: string; maxAttachmentBytes: number };
@@ -137,6 +137,46 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     }
   });
 
+  router.get("/projects/:projectId/sprints", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
+      res.json({
+        sprints: await store.listSprints(req.params.projectId, {
+          epicId: stringQuery(req.query.epicId),
+          includeCompleted: req.query.includeCompleted === "true"
+        })
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects/:projectId/sprints", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
+      const sprint = await store.createSprint(user, { ...parseCreateSprint(req.body), projectId: req.params.projectId });
+      events.broadcast({ type: "sprint.created", projectId: req.params.projectId, version: sprint.version, createdAt: new Date().toISOString(), payload: { sprint } });
+      res.status(201).json({ sprint });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/sprints/:sprintId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const existing = await store.loadSprint(req.params.sprintId);
+      requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
+      const sprint = await store.updateSprint(user, req.params.sprintId, parseUpdateSprint(req.body));
+      events.broadcast({ type: "sprint.updated", projectId: sprint.projectId, version: sprint.version, createdAt: new Date().toISOString(), payload: { sprint } });
+      res.json({ sprint });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/projects/:projectId/boards", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
@@ -254,6 +294,20 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       await store.addDependency(user, blockingTaskId, req.params.taskId);
       events.broadcast({ type: "task.updated", taskId: req.params.taskId, createdAt: new Date().toISOString(), payload: { dependencyAdded: blockingTaskId } });
       res.status(201).json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/tasks/:taskId/sprint", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
+      const sprintId = optionalString(req.body?.sprintId);
+      const updated = await store.assignTaskToSprint(user, req.params.taskId, sprintId);
+      events.broadcast({ type: "task.updated", projectId: updated.projectId, taskId: updated.id, version: updated.version, createdAt: new Date().toISOString(), payload: { task: updated, sprintId } });
+      res.json({ task: updated });
     } catch (error) {
       next(error);
     }
@@ -441,6 +495,17 @@ function parseCreateEpic(body: unknown): Omit<CreateEpicInput, "projectId"> {
   };
 }
 
+function parseCreateSprint(body: unknown): Omit<CreateSprintInput, "projectId"> {
+  const raw = objectBody(body);
+  return {
+    name: requiredString(raw.name, "name"),
+    epicId: optionalString(raw.epicId),
+    status: optionalSprintStatus(raw.status),
+    startsAt: optionalString(raw.startsAt),
+    endsAt: optionalString(raw.endsAt)
+  };
+}
+
 function parseCreateTask(body: unknown): Omit<CreateTaskInput, "projectId"> {
   const raw = objectBody(body);
   return {
@@ -463,6 +528,18 @@ function parseCreateBoardColumn(body: unknown): Omit<CreateBoardColumnInput, "bo
     statusKey: requiredString(raw.statusKey, "statusKey"),
     position: optionalNumber(raw.position),
     wipLimit: optionalNumber(raw.wipLimit)
+  };
+}
+
+function parseUpdateSprint(body: unknown): UpdateSprintInput {
+  const raw = objectBody(body);
+  return {
+    name: optionalString(raw.name),
+    epicId: optionalString(raw.epicId),
+    status: optionalSprintStatus(raw.status),
+    startsAt: optionalString(raw.startsAt),
+    endsAt: optionalString(raw.endsAt),
+    expectedVersion: optionalNumber(raw.expectedVersion)
   };
 }
 
@@ -527,6 +604,13 @@ function optionalPriority(value: unknown): string | undefined {
   if (!priority) return undefined;
   if (!["urgent", "high", "medium", "low", "none"].includes(priority)) throw new Error("priority must be urgent, high, medium, low, or none.");
   return priority;
+}
+
+function optionalSprintStatus(value: unknown): PmSprintStatus | undefined {
+  const status = optionalString(value);
+  if (!status) return undefined;
+  if (!["planned", "active", "completed", "cancelled"].includes(status)) throw new Error("status must be planned, active, completed, or cancelled.");
+  return status as PmSprintStatus;
 }
 
 function stringQuery(value: unknown): string | undefined {

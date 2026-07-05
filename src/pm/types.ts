@@ -95,6 +95,21 @@ export type PmActivityEvent = {
   createdAt: string;
 };
 
+export type PmSprintStatus = "planned" | "active" | "completed" | "cancelled";
+
+export type PmSprint = {
+  id: string;
+  projectId: string;
+  epicId?: string;
+  name: string;
+  status: PmSprintStatus;
+  startsAt?: string;
+  endsAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+};
+
 export type PmBoard = {
   id: string;
   projectId: string;
@@ -170,6 +185,19 @@ export type CreateTaskInput = {
   priority?: string;
   assigneeId?: string;
   dueAt?: string;
+};
+
+export type CreateSprintInput = {
+  projectId: string;
+  epicId?: string;
+  name: string;
+  status?: PmSprintStatus;
+  startsAt?: string;
+  endsAt?: string;
+};
+
+export type UpdateSprintInput = Partial<Omit<CreateSprintInput, "projectId">> & {
+  expectedVersion?: number;
 };
 
 export type CreateCommentInput = {

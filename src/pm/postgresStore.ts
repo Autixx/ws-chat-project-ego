@@ -7,6 +7,7 @@ import type {
   CreateEpicInput,
   CreateBoardColumnInput,
   CreateProjectInput,
+  CreateSprintInput,
   CreateTaskInput,
   MoveTaskInput,
   PmActivityEvent,
@@ -19,11 +20,13 @@ import type {
   PmEventRecord,
   PmProject,
   PmRole,
+  PmSprint,
   PmTask,
   PmTaskPosition,
   PmUser,
   UpdateProjectInput,
   UpdateCommentInput,
+  UpdateSprintInput,
   UpdateTaskInput
 } from "./types.js";
 
@@ -205,6 +208,96 @@ export class PmStore {
     const epic = mapEpic(result.rows[0]);
     await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: input.projectId, eventType: "epic.created", payload: { epicId: epic.id } });
     return epic;
+  }
+
+  async listSprints(projectId: string, filters: { epicId?: string; includeCompleted?: boolean } = {}): Promise<PmSprint[]> {
+    const result = await this.pool.query(
+      `
+      SELECT *
+      FROM pm.sprints
+      WHERE project_id = $1
+        AND ($2::uuid IS NULL OR epic_id = $2::uuid)
+        AND ($3::boolean OR status IN ('planned', 'active'))
+      ORDER BY
+        CASE status WHEN 'active' THEN 0 WHEN 'planned' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END,
+        COALESCE(starts_at, created_at) DESC
+      `,
+      [projectId, filters.epicId ?? null, Boolean(filters.includeCompleted)]
+    );
+    return result.rows.map(mapSprint);
+  }
+
+  async loadSprint(sprintId: string): Promise<PmSprint> {
+    const result = await this.pool.query("SELECT * FROM pm.sprints WHERE id = $1", [sprintId]);
+    if (!result.rows[0]) throw new Error("Sprint not found.");
+    return mapSprint(result.rows[0]);
+  }
+
+  async createSprint(user: PmUser, input: CreateSprintInput): Promise<PmSprint> {
+    const result = await this.pool.query(
+      `
+      INSERT INTO pm.sprints (project_id, epic_id, name, status, starts_at, ends_at)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+      `,
+      [input.projectId, input.epicId ?? null, input.name.trim(), input.status ?? "planned", input.startsAt ?? null, input.endsAt ?? null]
+    );
+    const sprint = mapSprint(result.rows[0]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: input.projectId, eventType: "sprint.created", payload: { sprintId: sprint.id, name: sprint.name } });
+    return sprint;
+  }
+
+  async updateSprint(user: PmUser, sprintId: string, input: UpdateSprintInput): Promise<PmSprint> {
+    const result = await this.pool.query(
+      `
+      UPDATE pm.sprints
+      SET
+        name = COALESCE($2, name),
+        status = COALESCE($3, status),
+        epic_id = COALESCE($4, epic_id),
+        starts_at = COALESCE($5, starts_at),
+        ends_at = COALESCE($6, ends_at),
+        version = version + 1,
+        updated_at = now()
+      WHERE id = $1
+        AND ($7::bigint IS NULL OR version = $7::bigint)
+      RETURNING *
+      `,
+      [sprintId, input.name?.trim() ?? null, input.status ?? null, input.epicId ?? null, input.startsAt ?? null, input.endsAt ?? null, input.expectedVersion ?? null]
+    );
+    if (!result.rows[0]) throw new PmConflictError("Sprint version conflict or sprint not found.");
+    const sprint = mapSprint(result.rows[0]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: sprint.projectId, eventType: "sprint.updated", payload: { sprintId, ...input } });
+    return sprint;
+  }
+
+  async assignTaskToSprint(user: PmUser, taskId: string, sprintId?: string): Promise<PmTask> {
+    const existing = await this.loadTask(taskId);
+    let sprint: PmSprint | undefined;
+    if (sprintId) {
+      sprint = await this.loadSprint(sprintId);
+      if (sprint.projectId !== existing.projectId) throw new Error("Sprint does not belong to task project.");
+    }
+    const result = await this.pool.query(
+      `
+      UPDATE pm.tasks
+      SET sprint_id = $2, version = version + 1, updated_at = now()
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING *
+      `,
+      [taskId, sprintId ?? null]
+    );
+    if (!result.rows[0]) throw new Error("Task not found.");
+    const task = mapTask(result.rows[0]);
+    await this.insertAudit(this.pool, {
+      actorType: "user",
+      actorId: user.id,
+      projectId: task.projectId,
+      taskId,
+      eventType: sprintId ? "task.sprint_assigned" : "task.backlog_assigned",
+      payload: { sprintId: sprint?.id, sprintName: sprint?.name }
+    });
+    return task;
   }
 
   async listBoards(projectId: string, epicId?: string): Promise<PmBoard[]> {
@@ -700,6 +793,22 @@ function mapEpic(row: Row): PmEpic {
     archivedAt: asIso(row.archived_at),
     deletedAt: asIso(row.deleted_at),
     createdBy: row.created_by ? String(row.created_by) : undefined,
+    createdAt: asIso(row.created_at) ?? "",
+    updatedAt: asIso(row.updated_at) ?? "",
+    version: Number(row.version ?? 1)
+  };
+}
+
+function mapSprint(row: Row): PmSprint {
+  const status = String(row.status);
+  return {
+    id: String(row.id),
+    projectId: String(row.project_id),
+    epicId: row.epic_id ? String(row.epic_id) : undefined,
+    name: String(row.name),
+    status: ["planned", "active", "completed", "cancelled"].includes(status) ? (status as PmSprint["status"]) : "planned",
+    startsAt: asIso(row.starts_at),
+    endsAt: asIso(row.ends_at),
     createdAt: asIso(row.created_at) ?? "",
     updatedAt: asIso(row.updated_at) ?? "",
     version: Number(row.version ?? 1)

@@ -211,7 +211,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 .boards {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .tasks-pane {
@@ -234,6 +234,36 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   padding: 7px 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+.sprints-pane {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.sprint-toolbar {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.sprint-card {
+  border: 1px solid var(--line);
+  background: var(--field);
+  padding: 8px;
+  cursor: pointer;
+}
+
+.sprint-card:hover, .sprint-card.active, .sprint-toolbar button.active {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+
+.sprint-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 7px;
 }
 
 .kanban-board {

@@ -18,6 +18,7 @@ export type PmEventType =
   | "comment.deleted"
   | "attachment.created"
   | "attachment.deleted"
+  | "sprint.created"
   | "sprint.updated"
   | "presence.updated";
 
