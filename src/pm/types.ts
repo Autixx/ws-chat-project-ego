@@ -57,6 +57,44 @@ export type PmTask = {
   version: number;
 };
 
+export type PmComment = {
+  id: string;
+  taskId: string;
+  authorId?: string;
+  authorName?: string;
+  body: string;
+  deletedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+};
+
+export type PmAttachment = {
+  id: string;
+  taskId: string;
+  uploadedBy?: string;
+  uploaderName?: string;
+  originalFileName: string;
+  storedFileName: string;
+  mimeType?: string;
+  sizeBytes: number;
+  storagePath: string;
+  deletedAt?: string;
+  createdAt: string;
+};
+
+export type PmActivityEvent = {
+  id: string;
+  actorType: "user" | "system" | "n8n" | "agent";
+  actorId?: string;
+  actorName?: string;
+  projectId?: string;
+  taskId?: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+};
+
 export type PmBoard = {
   id: string;
   projectId: string;
@@ -132,6 +170,24 @@ export type CreateTaskInput = {
   priority?: string;
   assigneeId?: string;
   dueAt?: string;
+};
+
+export type CreateCommentInput = {
+  taskId: string;
+  body: string;
+};
+
+export type UpdateCommentInput = {
+  body: string;
+};
+
+export type CreateAttachmentInput = {
+  taskId: string;
+  originalFileName: string;
+  storedFileName: string;
+  mimeType?: string;
+  sizeBytes: number;
+  storagePath: string;
 };
 
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "projectId">> & {

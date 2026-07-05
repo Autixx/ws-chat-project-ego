@@ -111,28 +111,60 @@
           </div>
           <button id="closeDrawerBtn" type="button">Close</button>
         </header>
-        <form id="taskEditForm" class="drawer-form">
-          <label>Title<input id="editTaskTitle" /></label>
-          <label>Status
-            <select id="editTaskStatus">
-              <option value="todo">todo</option>
-              <option value="in_progress">in progress</option>
-              <option value="review">review</option>
-              <option value="done">done</option>
-            </select>
-          </label>
-          <label>Priority
-            <select id="editTaskPriority">
-              <option value="urgent">urgent</option>
-              <option value="high">high</option>
-              <option value="medium">medium</option>
-              <option value="low">low</option>
-              <option value="none">none</option>
-            </select>
-          </label>
-          <label>Description<textarea id="editTaskDescription" rows="10"></textarea></label>
-          <button type="submit">Save</button>
-        </form>
+        <div class="drawer-scroll">
+          <form id="taskEditForm" class="drawer-form">
+            <label>Title<input id="editTaskTitle" /></label>
+            <label>Status
+              <select id="editTaskStatus">
+                <option value="todo">todo</option>
+                <option value="in_progress">in progress</option>
+                <option value="review">review</option>
+                <option value="done">done</option>
+              </select>
+            </label>
+            <label>Priority
+              <select id="editTaskPriority">
+                <option value="urgent">urgent</option>
+                <option value="high">high</option>
+                <option value="medium">medium</option>
+                <option value="low">low</option>
+                <option value="none">none</option>
+              </select>
+            </label>
+            <label>Description<textarea id="editTaskDescription" rows="8"></textarea></label>
+            <button type="submit">Save</button>
+          </form>
+
+          <section class="drawer-section">
+            <div class="drawer-section-title">
+              <h3>Comments</h3>
+            </div>
+            <div id="commentList" class="drawer-list"></div>
+            <form id="commentForm" class="comment-form">
+              <textarea id="commentBody" rows="3" placeholder="Write a comment"></textarea>
+              <button type="submit">Add comment</button>
+            </form>
+          </section>
+
+          <section class="drawer-section">
+            <div class="drawer-section-title">
+              <h3>Attachments</h3>
+            </div>
+            <form id="attachmentForm" class="attachment-form">
+              <input id="attachmentFile" type="file" />
+              <button type="submit">Upload</button>
+            </form>
+            <p class="hint">Supported: text, images, audio/video, pdf, zip. Stored under PM_ATTACHMENTS_DIR.</p>
+            <div id="attachmentList" class="drawer-list"></div>
+          </section>
+
+          <section class="drawer-section">
+            <div class="drawer-section-title">
+              <h3>Activity</h3>
+            </div>
+            <div id="activityList" class="drawer-list activity-list"></div>
+          </section>
+        </div>
       </aside>
     </main>
     <script src="/pm.js" defer></script>

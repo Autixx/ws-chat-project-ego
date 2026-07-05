@@ -54,7 +54,7 @@ export function createPmApp(pmConfig: PmConfig, store?: PmStore, events = new Pm
   });
 
   if (store) {
-    pmApp.use("/api/pm", createPmRouter(store, events));
+    pmApp.use("/api/pm", createPmRouter(store, events, { attachmentsDir: pmConfig.attachmentsDir, maxAttachmentBytes: pmConfig.maxAttachmentBytes }));
   } else {
     pmApp.use("/api/pm", (_req, res) => {
       res.status(503).json({ error: "PM_DATABASE_URL is required before PM API can serve project data." });
@@ -72,6 +72,7 @@ export function createPmApp(pmConfig: PmConfig, store?: PmStore, events = new Pm
 export async function startPmServer(pmConfig = loadPmConfig()): Promise<void> {
   assertPmCanStart(pmConfig);
   await fs.mkdir(pmConfig.attachmentsDir, { recursive: true });
+  await fs.mkdir(path.join(pmConfig.attachmentsDir, "tmp"), { recursive: true });
 
   const eventHub = new PmEventHub();
   const store = pmConfig.databaseUrl ? new PmStore(pmConfig.databaseUrl) : undefined;

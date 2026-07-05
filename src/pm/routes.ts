@@ -1,14 +1,23 @@
 import express from "express";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import multer from "multer";
 import type { AuthenticatedUser } from "../auth/authelia.js";
+import { removePmAttachmentFile, storePmTaskAttachment, streamPmAttachment } from "./attachmentService.js";
 import { normalizeRole, PmPermissionError, requireProjectRole } from "./permissions.js";
 import type { PmEventHub } from "./events.js";
 import type { PmStore, PmConflictError } from "./postgresStore.js";
 import type { CreateBoardColumnInput, CreateEpicInput, CreateProjectInput, CreateTaskInput, MoveTaskInput, PmUser, UpdateProjectInput, UpdateTaskInput } from "./types.js";
 
 export type PmAuthedRequest = express.Request & { pmIdentity?: AuthenticatedUser; pmUser?: PmUser };
+export type PmRouterOptions = { attachmentsDir: string; maxAttachmentBytes: number };
 
-export function createPmRouter(store: PmStore, events: PmEventHub): express.Router {
+export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRouterOptions): express.Router {
   const router = express.Router();
+  const upload = multer({
+    dest: path.join(options.attachmentsDir, "tmp"),
+    limits: { fileSize: options.maxAttachmentBytes }
+  });
 
   router.use(async (req: PmAuthedRequest, res, next) => {
     try {
@@ -250,6 +259,134 @@ export function createPmRouter(store: PmStore, events: PmEventHub): express.Rout
     }
   });
 
+  router.get("/tasks/:taskId/comments", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "viewer");
+      res.json({ comments: await store.listComments(req.params.taskId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/tasks/:taskId/comments", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
+      const body = requiredString(objectBody(req.body).body, "body");
+      const comment = await store.createComment(user, { taskId: req.params.taskId, body });
+      events.broadcast({ type: "comment.created", projectId: task.projectId, taskId: task.id, createdAt: new Date().toISOString(), payload: { comment } });
+      res.status(201).json({ comment });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/comments/:commentId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const existing = await store.loadComment(req.params.commentId);
+      const task = await store.loadTask(existing.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
+      const body = requiredString(objectBody(req.body).body, "body");
+      const comment = await store.updateComment(user, req.params.commentId, { body });
+      events.broadcast({ type: "comment.updated", projectId: task.projectId, taskId: comment.taskId, createdAt: new Date().toISOString(), payload: { comment } });
+      res.json({ comment });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/comments/:commentId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const existing = await store.loadComment(req.params.commentId);
+      const task = await store.loadTask(existing.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
+      const comment = await store.softDeleteComment(user, req.params.commentId);
+      events.broadcast({ type: "comment.deleted", projectId: task.projectId, taskId: comment.taskId, createdAt: new Date().toISOString(), payload: { commentId: comment.id } });
+      res.json({ comment });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/tasks/:taskId/attachments", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "viewer");
+      res.json({ attachments: await store.listTaskAttachments(req.params.taskId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/tasks/:taskId/attachments", upload.single("file"), async (req: PmAuthedRequest, res, next) => {
+    const uploadedFile = req.file;
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
+      if (!uploadedFile) throw new Error("file is required.");
+      const stored = await storePmTaskAttachment({
+        attachmentsDir: options.attachmentsDir,
+        taskId: task.id,
+        tempPath: uploadedFile.path,
+        originalName: uploadedFile.originalname,
+        mimeType: uploadedFile.mimetype,
+        sizeBytes: uploadedFile.size,
+        maxBytes: options.maxAttachmentBytes
+      });
+      const attachment = await store.createAttachment(user, { taskId: task.id, ...stored });
+      events.broadcast({ type: "attachment.created", projectId: task.projectId, taskId: task.id, createdAt: new Date().toISOString(), payload: { attachment } });
+      res.status(201).json({ attachment });
+    } catch (error) {
+      if (uploadedFile?.path) await fs.rm(uploadedFile.path, { force: true }).catch(() => undefined);
+      next(error);
+    }
+  });
+
+  router.get("/attachments/:attachmentId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const attachment = await store.loadAttachment(req.params.attachmentId);
+      const task = await store.loadTask(attachment.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "viewer");
+      streamPmAttachment(options.attachmentsDir, attachment, res);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/attachments/:attachmentId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const attachment = await store.loadAttachment(req.params.attachmentId);
+      const task = await store.loadTask(attachment.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
+      const deleted = await store.softDeleteAttachment(user, attachment.id);
+      await removePmAttachmentFile(options.attachmentsDir, attachment);
+      events.broadcast({ type: "attachment.deleted", projectId: task.projectId, taskId: task.id, createdAt: new Date().toISOString(), payload: { attachmentId: attachment.id } });
+      res.json({ attachment: deleted });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/tasks/:taskId/activity", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "viewer");
+      res.json({ activity: await store.listTaskActivity(req.params.taskId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const statusCode = statusForError(error);
     res.status(statusCode).json({ error: error instanceof Error ? error.message : String(error) });
@@ -267,7 +404,7 @@ function statusForError(error: unknown): number {
   if (error instanceof PmPermissionError) return error.statusCode;
   if (isConflict(error)) return 409;
   if (error instanceof Error && /not found/i.test(error.message)) return 404;
-  if (error instanceof Error && (/required/i.test(error.message) || /must be/i.test(error.message))) return 400;
+  if (error instanceof Error && (/required/i.test(error.message) || /must be/i.test(error.message) || /unsupported/i.test(error.message) || /exceeds/i.test(error.message) || /file too large/i.test(error.message))) return 400;
   return 500;
 }
 

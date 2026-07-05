@@ -62,6 +62,15 @@ PM exposes:
 - `PATCH /api/pm/tasks/:taskId`
 - `POST /api/pm/tasks/:taskId/move`
 - `POST /api/pm/tasks/:taskId/dependencies`
+- `GET /api/pm/tasks/:taskId/comments`
+- `POST /api/pm/tasks/:taskId/comments`
+- `PATCH /api/pm/comments/:commentId`
+- `DELETE /api/pm/comments/:commentId`
+- `GET /api/pm/tasks/:taskId/attachments`
+- `POST /api/pm/tasks/:taskId/attachments`
+- `GET /api/pm/attachments/:attachmentId`
+- `DELETE /api/pm/attachments/:attachmentId`
+- `GET /api/pm/tasks/:taskId/activity`
 - `GET /pm/ws`
 
 PM also serves its browser shell from the PM service root:
@@ -99,9 +108,18 @@ In Docker, run the migration command in the PM image before first production use
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.38 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.39 \
   node dist/pm/migrate.js
 ```
+
+PM attachment storage is filesystem-backed and separate from PostgreSQL binary data:
+
+```env
+PM_ATTACHMENTS_DIR=/app/pm-data/attachments
+PM_MAX_ATTACHMENT_BYTES=26214400
+```
+
+Uploaded PM task files are stored under `PM_ATTACHMENTS_DIR` with internal safe filenames. PostgreSQL stores metadata only: original display filename, internal stored filename, MIME type, size, and storage path.
 
 The schema separates logical areas:
 
@@ -131,6 +149,9 @@ The first PM frontend shell supports:
 - project-level and epic-level default Kanban boards
 - Kanban columns with drag-and-drop task movement
 - task drawer editing
+- task drawer comments with own-comment edit/delete
+- task drawer file attachments with download/delete
+- task drawer activity history from `audit.events`
 - status and priority filters
 - PM WebSocket reconnect and refresh on structured events
 

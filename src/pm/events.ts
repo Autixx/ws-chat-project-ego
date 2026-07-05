@@ -14,7 +14,10 @@ export type PmEventType =
   | "task.moved"
   | "task.deleted"
   | "comment.created"
+  | "comment.updated"
+  | "comment.deleted"
   | "attachment.created"
+  | "attachment.deleted"
   | "sprint.updated"
   | "presence.updated";
 

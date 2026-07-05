@@ -5,6 +5,7 @@ export type PmConfig = {
   publicBaseUrl?: string;
   dataDir: string;
   attachmentsDir: string;
+  maxAttachmentBytes: number;
   devAuthBypass: boolean;
   trustAutheliaHeaders: boolean;
   smtp?: {
@@ -49,6 +50,7 @@ export function loadPmConfig(env: NodeJS.ProcessEnv = process.env): PmConfig {
     publicBaseUrl: env.PM_PUBLIC_BASE_URL,
     dataDir,
     attachmentsDir: env.PM_ATTACHMENTS_DIR ?? `${dataDir}/attachments`,
+    maxAttachmentBytes: numberFromEnv(env.PM_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024),
     devAuthBypass: boolFromEnv(env.PM_DEV_AUTH_BYPASS, env.NODE_ENV !== "production"),
     trustAutheliaHeaders: boolFromEnv(env.PM_TRUST_AUTHELIA_HEADERS ?? env.TRUST_AUTHELIA_HEADERS, false),
     smtp: {

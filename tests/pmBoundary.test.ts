@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import test from "node:test";
+import { resolveAttachmentPath, sanitizePmFileName, storePmTaskAttachment, validatePmAttachmentFile } from "../src/pm/attachmentService.js";
 import { assertPmCanStart, forbiddenPmEnv, loadPmConfig } from "../src/pm/config.js";
 import { canManageProject, canViewProject, canWriteProject, requireProjectRole } from "../src/pm/permissions.js";
 import { createPmApp } from "../src/pm/server.js";
@@ -17,6 +20,7 @@ test("PM config defaults to a separate service port and data area", () => {
   assert.equal(config.port, 19110);
   assert.equal(config.dataDir, "/app/dashboard-data");
   assert.equal(config.attachmentsDir, "/app/dashboard-data/attachments");
+  assert.equal(config.maxAttachmentBytes, 25 * 1024 * 1024);
   assert.equal(config.databaseUrl, "postgres://pm:test@postgres/projectego");
 });
 
@@ -102,4 +106,40 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/boards\/kanban\/default`?/);
   assert.match(readme, /GET `?\/api\/pm\/boards\/:boardId`?/);
   assert.match(readme, /drag-and-drop task movement/);
+});
+
+test("PM attachment validation accepts supported files and rejects unsafe inputs", () => {
+  for (const name of ["note.txt", "design.png", "demo.mp4", "archive.zip"]) {
+    assert.doesNotThrow(() => validatePmAttachmentFile(name, 128, 1024));
+  }
+
+  assert.throws(() => validatePmAttachmentFile("run.exe", 128, 1024), /Unsupported attachment extension/);
+  assert.throws(() => validatePmAttachmentFile("large.txt", 2048, 1024), /exceeds/);
+  assert.equal(sanitizePmFileName("../Пример file.txt"), "Пример file.txt");
+});
+
+test("PM task attachment storage uses internal names and path safety", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "projectego-pm-"));
+  try {
+    const tempPath = path.join(root, "upload.tmp");
+    writeFileSync(tempPath, "hello");
+    const stored = await storePmTaskAttachment({
+      attachmentsDir: path.join(root, "attachments"),
+      taskId: "task-1",
+      tempPath,
+      originalName: "example image.png",
+      mimeType: "image/png",
+      sizeBytes: 5,
+      maxBytes: 1024
+    });
+
+    assert.equal(stored.originalFileName, "example image.png");
+    assert.match(stored.storedFileName, /^PMATT_[a-f0-9]{20}\.png$/);
+    assert.equal(path.basename(stored.storagePath), stored.storedFileName);
+    assert.ok(stored.storagePath.includes(`${path.sep}attachments${path.sep}task-1${path.sep}`));
+    assert.equal(resolveAttachmentPath(path.join(root, "attachments"), stored.storagePath), stored.storagePath);
+    assert.throws(() => resolveAttachmentPath(path.join(root, "attachments"), path.join(root, "outside.txt")), /escapes/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

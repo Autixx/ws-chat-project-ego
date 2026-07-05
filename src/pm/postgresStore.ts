@@ -2,14 +2,19 @@ import { Pool, type PoolClient } from "pg";
 import type { AuthenticatedUser } from "../auth/authelia.js";
 import { normalizeRole } from "./permissions.js";
 import type {
+  CreateAttachmentInput,
+  CreateCommentInput,
   CreateEpicInput,
   CreateBoardColumnInput,
   CreateProjectInput,
   CreateTaskInput,
   MoveTaskInput,
+  PmActivityEvent,
+  PmAttachment,
   PmBoard,
   PmBoardColumn,
   PmBoardTask,
+  PmComment,
   PmEpic,
   PmEventRecord,
   PmProject,
@@ -18,6 +23,7 @@ import type {
   PmTaskPosition,
   PmUser,
   UpdateProjectInput,
+  UpdateCommentInput,
   UpdateTaskInput
 } from "./types.js";
 
@@ -439,6 +445,178 @@ export class PmStore {
     await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, taskId: blockedTaskId, eventType: "task.dependency_added", payload: { blockingTaskId } });
   }
 
+  async listComments(taskId: string): Promise<PmComment[]> {
+    const result = await this.pool.query(
+      `
+      SELECT c.*, COALESCE(u.display_name, u.username) AS author_name
+      FROM pm.comments c
+      LEFT JOIN core.users u ON u.id = c.author_id
+      WHERE c.task_id = $1 AND c.deleted_at IS NULL
+      ORDER BY c.created_at ASC
+      `,
+      [taskId]
+    );
+    return result.rows.map(mapComment);
+  }
+
+  async loadComment(commentId: string): Promise<PmComment> {
+    const result = await this.pool.query(
+      `
+      SELECT c.*, COALESCE(u.display_name, u.username) AS author_name
+      FROM pm.comments c
+      LEFT JOIN core.users u ON u.id = c.author_id
+      WHERE c.id = $1 AND c.deleted_at IS NULL
+      `,
+      [commentId]
+    );
+    if (!result.rows[0]) throw new Error("Comment not found.");
+    return mapComment(result.rows[0]);
+  }
+
+  async createComment(user: PmUser, input: CreateCommentInput): Promise<PmComment> {
+    const task = await this.loadTask(input.taskId);
+    const comment = await this.withTransaction(async (client) => {
+      const result = await client.query(
+        `
+        INSERT INTO pm.comments (task_id, author_id, body)
+        VALUES ($1, $2, $3)
+        RETURNING *
+        `,
+        [input.taskId, user.id, input.body.trim()]
+      );
+      await this.insertAudit(client, {
+        actorType: "user",
+        actorId: user.id,
+        projectId: task.projectId,
+        taskId: input.taskId,
+        eventType: "comment.created",
+        payload: { commentId: result.rows[0].id }
+      });
+      return mapComment({ ...result.rows[0], author_name: user.displayName ?? user.username });
+    });
+    return comment;
+  }
+
+  async updateComment(user: PmUser, commentId: string, input: UpdateCommentInput): Promise<PmComment> {
+    const result = await this.pool.query(
+      `
+      UPDATE pm.comments
+      SET body = $2, updated_at = now(), version = version + 1
+      WHERE id = $1 AND author_id = $3 AND deleted_at IS NULL
+      RETURNING *
+      `,
+      [commentId, input.body.trim(), user.id]
+    );
+    if (!result.rows[0]) throw new Error("Comment not found or not owned by current user.");
+    const comment = mapComment({ ...result.rows[0], author_name: user.displayName ?? user.username });
+    const task = await this.loadTask(comment.taskId);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: task.projectId, taskId: comment.taskId, eventType: "comment.updated", payload: { commentId } });
+    return comment;
+  }
+
+  async softDeleteComment(user: PmUser, commentId: string): Promise<PmComment> {
+    const result = await this.pool.query(
+      `
+      UPDATE pm.comments
+      SET deleted_at = now(), updated_at = now(), version = version + 1
+      WHERE id = $1 AND author_id = $2 AND deleted_at IS NULL
+      RETURNING *
+      `,
+      [commentId, user.id]
+    );
+    if (!result.rows[0]) throw new Error("Comment not found or not owned by current user.");
+    const comment = mapComment({ ...result.rows[0], author_name: user.displayName ?? user.username });
+    const task = await this.loadTask(comment.taskId);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: task.projectId, taskId: comment.taskId, eventType: "comment.deleted", payload: { commentId } });
+    return comment;
+  }
+
+  async listTaskAttachments(taskId: string): Promise<PmAttachment[]> {
+    const result = await this.pool.query(
+      `
+      SELECT a.*, COALESCE(u.display_name, u.username) AS uploader_name
+      FROM pm.attachments a
+      LEFT JOIN core.users u ON u.id = a.uploaded_by
+      WHERE a.task_id = $1 AND a.deleted_at IS NULL
+      ORDER BY a.created_at DESC
+      `,
+      [taskId]
+    );
+    return result.rows.map(mapAttachment);
+  }
+
+  async createAttachment(user: PmUser, input: CreateAttachmentInput): Promise<PmAttachment> {
+    const task = await this.loadTask(input.taskId);
+    const attachment = await this.withTransaction(async (client) => {
+      const result = await client.query(
+        `
+        INSERT INTO pm.attachments (task_id, uploaded_by, original_file_name, stored_file_name, mime_type, size_bytes, storage_path)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *
+        `,
+        [input.taskId, user.id, input.originalFileName, input.storedFileName, input.mimeType ?? null, input.sizeBytes, input.storagePath]
+      );
+      await this.insertAudit(client, {
+        actorType: "user",
+        actorId: user.id,
+        projectId: task.projectId,
+        taskId: input.taskId,
+        eventType: "attachment.created",
+        payload: { attachmentId: result.rows[0].id, fileName: input.originalFileName, sizeBytes: input.sizeBytes }
+      });
+      return mapAttachment({ ...result.rows[0], uploader_name: user.displayName ?? user.username });
+    });
+    return attachment;
+  }
+
+  async loadAttachment(attachmentId: string): Promise<PmAttachment> {
+    const result = await this.pool.query(
+      `
+      SELECT a.*, COALESCE(u.display_name, u.username) AS uploader_name
+      FROM pm.attachments a
+      LEFT JOIN core.users u ON u.id = a.uploaded_by
+      WHERE a.id = $1 AND a.deleted_at IS NULL
+      `,
+      [attachmentId]
+    );
+    if (!result.rows[0]) throw new Error("Attachment not found.");
+    return mapAttachment(result.rows[0]);
+  }
+
+  async softDeleteAttachment(user: PmUser, attachmentId: string): Promise<PmAttachment> {
+    const existing = await this.loadAttachment(attachmentId);
+    const task = await this.loadTask(existing.taskId);
+    const result = await this.pool.query(
+      "UPDATE pm.attachments SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING *",
+      [attachmentId]
+    );
+    if (!result.rows[0]) throw new Error("Attachment not found.");
+    await this.insertAudit(this.pool, {
+      actorType: "user",
+      actorId: user.id,
+      projectId: task.projectId,
+      taskId: existing.taskId,
+      eventType: "attachment.deleted",
+      payload: { attachmentId, fileName: existing.originalFileName }
+    });
+    return mapAttachment({ ...result.rows[0], uploader_name: user.displayName ?? user.username });
+  }
+
+  async listTaskActivity(taskId: string): Promise<PmActivityEvent[]> {
+    const result = await this.pool.query(
+      `
+      SELECT e.*, COALESCE(u.display_name, u.username) AS actor_name
+      FROM audit.events e
+      LEFT JOIN core.users u ON u.id::text = e.actor_id
+      WHERE e.task_id = $1
+      ORDER BY e.created_at DESC
+      LIMIT 100
+      `,
+      [taskId]
+    );
+    return result.rows.map(mapActivity);
+  }
+
   private async withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
     try {
@@ -550,6 +728,50 @@ function mapTask(row: Row): PmTask {
   };
 }
 
+function mapComment(row: Row): PmComment {
+  return {
+    id: String(row.id),
+    taskId: String(row.task_id),
+    authorId: row.author_id ? String(row.author_id) : undefined,
+    authorName: row.author_name ? String(row.author_name) : undefined,
+    body: String(row.body ?? ""),
+    deletedAt: asIso(row.deleted_at),
+    createdAt: asIso(row.created_at) ?? "",
+    updatedAt: asIso(row.updated_at) ?? "",
+    version: Number(row.version ?? 1)
+  };
+}
+
+function mapAttachment(row: Row): PmAttachment {
+  return {
+    id: String(row.id),
+    taskId: String(row.task_id),
+    uploadedBy: row.uploaded_by ? String(row.uploaded_by) : undefined,
+    uploaderName: row.uploader_name ? String(row.uploader_name) : undefined,
+    originalFileName: String(row.original_file_name),
+    storedFileName: String(row.stored_file_name),
+    mimeType: row.mime_type ? String(row.mime_type) : undefined,
+    sizeBytes: Number(row.size_bytes ?? 0),
+    storagePath: String(row.storage_path),
+    deletedAt: asIso(row.deleted_at),
+    createdAt: asIso(row.created_at) ?? ""
+  };
+}
+
+function mapActivity(row: Row): PmActivityEvent {
+  return {
+    id: String(row.id),
+    actorType: ["user", "system", "n8n", "agent"].includes(String(row.actor_type)) ? (String(row.actor_type) as PmActivityEvent["actorType"]) : "system",
+    actorId: row.actor_id ? String(row.actor_id) : undefined,
+    actorName: row.actor_name ? String(row.actor_name) : undefined,
+    projectId: row.project_id ? String(row.project_id) : undefined,
+    taskId: row.task_id ? String(row.task_id) : undefined,
+    eventType: String(row.event_type),
+    payload: parseJsonObject(row.payload),
+    createdAt: asIso(row.created_at) ?? ""
+  };
+}
+
 function mapBoard(row: Row): PmBoard {
   return {
     id: String(row.id),
@@ -605,4 +827,18 @@ function asIso(value: unknown): string | undefined {
   if (!value) return undefined;
   if (value instanceof Date) return value.toISOString();
   return String(value);
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }

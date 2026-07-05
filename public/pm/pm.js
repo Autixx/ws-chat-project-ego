@@ -9,6 +9,9 @@ const state = {
   activeProjectId: null,
   activeEpicId: null,
   activeTask: null,
+  comments: [],
+  attachments: [],
+  activity: [],
   ws: null,
   shouldReconnect: true
 };
@@ -52,7 +55,14 @@ const els = {
   editTaskTitle: $("editTaskTitle"),
   editTaskStatus: $("editTaskStatus"),
   editTaskPriority: $("editTaskPriority"),
-  editTaskDescription: $("editTaskDescription")
+  editTaskDescription: $("editTaskDescription"),
+  commentList: $("commentList"),
+  commentForm: $("commentForm"),
+  commentBody: $("commentBody"),
+  attachmentForm: $("attachmentForm"),
+  attachmentFile: $("attachmentFile"),
+  attachmentList: $("attachmentList"),
+  activityList: $("activityList")
 };
 
 function setError(message) {
@@ -61,10 +71,11 @@ function setError(message) {
 }
 
 async function api(path, options = {}) {
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(path, {
     ...options,
     headers: {
-      "content-type": "application/json",
+      ...(isFormData ? {} : { "content-type": "application/json" }),
       ...(options.headers || {})
     }
   });
@@ -331,7 +342,12 @@ function openTask(task) {
   els.editTaskStatus.value = task.status;
   els.editTaskPriority.value = task.priority;
   els.editTaskDescription.value = task.description || "";
+  state.comments = [];
+  state.attachments = [];
+  state.activity = [];
+  renderDrawerData();
   renderTasks();
+  loadTaskDrawerData(task.id).catch((error) => setError(error.message));
 }
 
 function closeTask() {
@@ -420,6 +436,186 @@ async function saveTask(event) {
   openTask(task);
 }
 
+async function loadTaskDrawerData(taskId) {
+  const [commentsBody, attachmentsBody, activityBody] = await Promise.all([
+    api(`/api/pm/tasks/${taskId}/comments`),
+    api(`/api/pm/tasks/${taskId}/attachments`),
+    api(`/api/pm/tasks/${taskId}/activity`)
+  ]);
+  if (!state.activeTask || state.activeTask.id !== taskId) return;
+  state.comments = commentsBody.comments;
+  state.attachments = attachmentsBody.attachments;
+  state.activity = activityBody.activity;
+  renderDrawerData();
+}
+
+function renderDrawerData() {
+  renderComments();
+  renderAttachments();
+  renderActivity();
+}
+
+function renderComments() {
+  if (!els.commentList) return;
+  if (state.comments.length === 0) {
+    els.commentList.innerHTML = `<div class="drawer-empty">No comments yet.</div>`;
+    return;
+  }
+  els.commentList.replaceChildren(
+    ...state.comments.map((comment) => {
+      const card = document.createElement("article");
+      card.className = "comment-card";
+      const canEdit = state.user?.id && comment.authorId === state.user.id;
+      card.innerHTML = `
+        <div class="comment-head">
+          <span>${escapeHtml(comment.authorName || comment.authorId || "unknown")}</span>
+          <span>${formatDate(comment.createdAt)}</span>
+        </div>
+        <div class="comment-body">${escapeHtml(comment.body)}</div>
+        ${canEdit ? `<div class="attachment-actions"><button class="mini-button" data-action="edit" type="button">Edit</button><button class="mini-button" data-action="delete" type="button">Delete</button></div>` : ""}
+      `;
+      if (canEdit) {
+        card.querySelector('[data-action="edit"]').addEventListener("click", () => editComment(comment, card).catch((error) => setError(error.message)));
+        card.querySelector('[data-action="delete"]').addEventListener("click", () => deleteComment(comment).catch((error) => setError(error.message)));
+      }
+      return card;
+    })
+  );
+}
+
+async function editComment(comment, card) {
+  const body = card.querySelector(".comment-body");
+  const actions = card.querySelector(".attachment-actions");
+  const textarea = document.createElement("textarea");
+  textarea.rows = 4;
+  textarea.value = comment.body;
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "mini-button";
+  save.textContent = "Save";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "mini-button";
+  cancel.textContent = "Cancel";
+  body.replaceWith(textarea);
+  actions.replaceChildren(save, cancel);
+  cancel.addEventListener("click", renderComments);
+  save.addEventListener("click", async () => {
+    const { comment: updated } = await api(`/api/pm/comments/${comment.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ body: textarea.value })
+    });
+    state.comments = state.comments.map((item) => (item.id === updated.id ? updated : item));
+    await reloadActivityForActiveTask();
+    renderDrawerData();
+  });
+}
+
+async function deleteComment(comment) {
+  await api(`/api/pm/comments/${comment.id}`, { method: "DELETE" });
+  state.comments = state.comments.filter((item) => item.id !== comment.id);
+  await reloadActivityForActiveTask();
+  renderDrawerData();
+}
+
+function renderAttachments() {
+  if (!els.attachmentList) return;
+  if (state.attachments.length === 0) {
+    els.attachmentList.innerHTML = `<div class="drawer-empty">No attachments.</div>`;
+    return;
+  }
+  els.attachmentList.replaceChildren(
+    ...state.attachments.map((attachment) => {
+      const card = document.createElement("article");
+      card.className = "attachment-card";
+      card.innerHTML = `
+        <div class="attachment-head">
+          <span>${escapeHtml(attachment.originalFileName)}</span>
+          <span>${formatBytes(attachment.sizeBytes)}</span>
+        </div>
+        <div class="card-meta">${escapeHtml(attachment.mimeType || "application/octet-stream")} / ${escapeHtml(attachment.storedFileName)}</div>
+        <div class="attachment-actions">
+          <a href="/api/pm/attachments/${encodeURIComponent(attachment.id)}">Download</a>
+          <button class="mini-button" type="button">Delete</button>
+        </div>
+      `;
+      card.querySelector("button").addEventListener("click", () => deleteAttachment(attachment).catch((error) => setError(error.message)));
+      return card;
+    })
+  );
+}
+
+async function deleteAttachment(attachment) {
+  await api(`/api/pm/attachments/${attachment.id}`, { method: "DELETE" });
+  state.attachments = state.attachments.filter((item) => item.id !== attachment.id);
+  await reloadActivityForActiveTask();
+  renderDrawerData();
+}
+
+function renderActivity() {
+  if (!els.activityList) return;
+  if (state.activity.length === 0) {
+    els.activityList.innerHTML = `<div class="drawer-empty">No activity yet.</div>`;
+    return;
+  }
+  els.activityList.replaceChildren(
+    ...state.activity.map((event) => {
+      const card = document.createElement("article");
+      card.className = "activity-card";
+      card.innerHTML = `
+        <div class="activity-head">
+          <span>${escapeHtml(event.eventType)}</span>
+          <span>${formatDate(event.createdAt)}</span>
+        </div>
+        <div class="activity-body">${escapeHtml(activitySummary(event))}</div>
+      `;
+      return card;
+    })
+  );
+}
+
+function activitySummary(event) {
+  const actor = event.actorName || event.actorId || event.actorType;
+  const payload = event.payload && Object.keys(event.payload).length > 0 ? ` / ${JSON.stringify(event.payload)}` : "";
+  return `${actor}${payload}`;
+}
+
+async function reloadActivityForActiveTask() {
+  if (!state.activeTask) return;
+  const { activity } = await api(`/api/pm/tasks/${state.activeTask.id}/activity`);
+  state.activity = activity;
+}
+
+async function createComment(event) {
+  event.preventDefault();
+  if (!state.activeTask) return;
+  const body = els.commentBody.value.trim();
+  if (!body) return;
+  const { comment } = await api(`/api/pm/tasks/${state.activeTask.id}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ body })
+  });
+  els.commentForm.reset();
+  state.comments = [...state.comments, comment];
+  await reloadActivityForActiveTask();
+  renderDrawerData();
+}
+
+async function uploadAttachment(event) {
+  event.preventDefault();
+  if (!state.activeTask || !els.attachmentFile.files?.[0]) return;
+  const formData = new FormData();
+  formData.append("file", els.attachmentFile.files[0]);
+  const { attachment } = await api(`/api/pm/tasks/${state.activeTask.id}/attachments`, {
+    method: "POST",
+    body: formData
+  });
+  els.attachmentForm.reset();
+  state.attachments = [attachment, ...state.attachments];
+  await reloadActivityForActiveTask();
+  renderDrawerData();
+}
+
 async function toggleArchive() {
   const project = activeProject();
   if (!project) return;
@@ -441,7 +637,10 @@ function connectWs() {
   });
   ws.addEventListener("message", async (event) => {
     const message = JSON.parse(event.data);
-    if (message.type && message.type !== "presence.updated") await loadProjects();
+    if (message.type && message.type !== "presence.updated") {
+      await loadProjects();
+      if (state.activeTask) await loadTaskDrawerData(state.activeTask.id);
+    }
   });
   ws.addEventListener("close", () => {
     els.wsDot.className = "dot red";
@@ -462,6 +661,13 @@ function formatDate(value) {
   return value ? new Date(value).toLocaleString() : "unknown";
 }
 
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 async function boot() {
   try {
     await refreshHealth();
@@ -478,6 +684,8 @@ els.projectForm.addEventListener("submit", (event) => createProject(event).catch
 els.epicForm.addEventListener("submit", (event) => createEpic(event).catch((error) => setError(error.message)));
 els.taskForm.addEventListener("submit", (event) => createTask(event).catch((error) => setError(error.message)));
 els.taskEditForm.addEventListener("submit", (event) => saveTask(event).catch((error) => setError(error.message)));
+els.commentForm.addEventListener("submit", (event) => createComment(event).catch((error) => setError(error.message)));
+els.attachmentForm.addEventListener("submit", (event) => uploadAttachment(event).catch((error) => setError(error.message)));
 els.includeArchived.addEventListener("change", () => loadProjects().catch((error) => setError(error.message)));
 els.refreshBtn.addEventListener("click", () => loadProjects().catch((error) => setError(error.message)));
 els.archiveProjectBtn.addEventListener("click", () => toggleArchive().catch((error) => setError(error.message)));
