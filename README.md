@@ -25,6 +25,54 @@ Browser dashboard for ProjectEGO planning automation. The UI separates user requ
 - Multipart upload API for text-like files, media attachments, and image previews.
 - Local SQLite-backed registration, login, logout, and persistent sessions.
 
+## ProjectEGO PM Boundary
+
+ProjectEGO PM is designed as a separate service next to the Dashboard, not as a privileged Dashboard screen. The intended deployment is:
+
+- `dashboard.project-ego.online`: closed administrative Dashboard with Codex-agent/n8n execution.
+- `pm.project-ego.online`: team project-management surface.
+
+PM runs from the same repository and image, but with a separate entrypoint:
+
+```bash
+node dist/pm/server.js
+```
+
+PM exposes:
+
+- `GET /health`
+- `GET /api/pm/me`
+- `GET /api/pm/security-boundary`
+- `GET /api/pm/architecture`
+- `GET /pm/ws`
+
+PM must not receive Dashboard/agent secrets. Keep these variables out of the `projectego-pm` service:
+
+- `CODEX_AGENT_TOKEN`
+- `AGENT_ATTACHMENT_TOKEN`
+- `JOB_CALLBACK_TOKEN`
+- `N8N_WEBHOOK_TOKEN`
+- `PLANE_API_KEY`
+- `DASHBOARD_INTERNAL_BASE_URL`
+
+The PM runtime validates this boundary on startup. If any of those variables are present, the PM service refuses to start.
+
+PM uses PostgreSQL as its planned source of truth through `PM_DATABASE_URL`. The initial schema contract is in:
+
+```text
+src/pm/postgres-schema.sql
+```
+
+The schema separates logical areas:
+
+- `core`
+- `pm`
+- `agent`
+- `automation`
+- `audit`
+
+Dashboard may later receive read-only PM database access if needed. PM must not receive direct access to Dashboard chat history, prompts, agent sessions, Codex APIs, or automation secrets.
+
 ## UI Layout
 
 The primary screen is a compact technical dashboard:

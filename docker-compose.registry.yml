@@ -38,5 +38,48 @@ services:
     volumes:
       - projectego-chat-data:/app/data
 
+  projectego-pm:
+    image: ghcr.io/autixx/ws-chat-project-ego:latest
+    container_name: projectego-pm
+    command: ["node", "dist/pm/server.js"]
+    pull_policy: always
+    restart: unless-stopped
+    user: "568:568"
+    environment:
+      NODE_ENV: production
+      PM_HOST: 0.0.0.0
+      PM_PORT: 19110
+      PM_DATA_DIR: /app/data
+      PM_ATTACHMENTS_DIR: /app/data/attachments
+      PM_DATABASE_URL: postgres://projectego_pm_app:change-me@projectego-postgres:5432/projectego
+      PM_PUBLIC_BASE_URL: https://pm.project-ego.online
+      PM_TRUST_AUTHELIA_HEADERS: "true"
+      PM_DEV_AUTH_BYPASS: "false"
+      SMTP_HOST: ""
+      SMTP_PORT: "587"
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      SMTP_FROM: pm@project-ego.online
+      SMTP_TLS: "true"
+    ports:
+      - "19110:19110"
+    volumes:
+      - projectego-pm-data:/app/data
+    depends_on:
+      - projectego-postgres
+
+  projectego-postgres:
+    image: postgres:16-alpine
+    container_name: projectego-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: projectego
+      POSTGRES_USER: projectego_admin
+      POSTGRES_PASSWORD: change-me
+    volumes:
+      - projectego-postgres-data:/var/lib/postgresql/data
+
 volumes:
   projectego-chat-data:
+  projectego-pm-data:
+  projectego-postgres-data:
