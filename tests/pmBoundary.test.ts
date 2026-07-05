@@ -52,6 +52,8 @@ test("PM PostgreSQL schema defines required logical boundaries", () => {
 
   assert.match(schema, /actor_type TEXT NOT NULL CHECK \(actor_type IN \('user', 'system', 'n8n', 'agent'\)\)/);
   assert.match(schema, /storage_path TEXT NOT NULL/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS pm\.board_columns/);
+  assert.match(schema, /CREATE INDEX IF NOT EXISTS idx_pm_task_positions_column/);
 });
 
 test("PM role checks keep viewer read-only and member writable", () => {
@@ -93,4 +95,11 @@ test("PM service serves browser shell separately from Dashboard", async () => {
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
+});
+
+test("PM README documents Kanban board API", () => {
+  const readme = readFileSync(path.resolve("README.md"), "utf8");
+  assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/boards\/kanban\/default`?/);
+  assert.match(readme, /GET `?\/api\/pm\/boards\/:boardId`?/);
+  assert.match(readme, /drag-and-drop task movement/);
 });

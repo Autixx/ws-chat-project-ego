@@ -53,6 +53,10 @@ PM exposes:
 - `PUT /api/pm/projects/:projectId/members/:userId`
 - `GET /api/pm/projects/:projectId/epics`
 - `POST /api/pm/projects/:projectId/epics`
+- `GET /api/pm/projects/:projectId/boards`
+- `POST /api/pm/projects/:projectId/boards/kanban/default`
+- `GET /api/pm/boards/:boardId`
+- `POST /api/pm/boards/:boardId/columns`
 - `GET /api/pm/projects/:projectId/tasks`
 - `POST /api/pm/projects/:projectId/tasks`
 - `PATCH /api/pm/tasks/:taskId`
@@ -95,7 +99,7 @@ In Docker, run the migration command in the PM image before first production use
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.37 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.38 \
   node dist/pm/migrate.js
 ```
 
@@ -124,6 +128,8 @@ The first PM frontend shell supports:
 - project archive/unarchive
 - epic list and creation
 - task list and creation
+- project-level and epic-level default Kanban boards
+- Kanban columns with drag-and-drop task movement
 - task drawer editing
 - status and priority filters
 - PM WebSocket reconnect and refresh on structured events

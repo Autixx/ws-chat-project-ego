@@ -3,9 +3,13 @@ import type { AuthenticatedUser } from "../auth/authelia.js";
 import { normalizeRole } from "./permissions.js";
 import type {
   CreateEpicInput,
+  CreateBoardColumnInput,
   CreateProjectInput,
   CreateTaskInput,
   MoveTaskInput,
+  PmBoard,
+  PmBoardColumn,
+  PmBoardTask,
   PmEpic,
   PmEventRecord,
   PmProject,
@@ -197,6 +201,103 @@ export class PmStore {
     return epic;
   }
 
+  async listBoards(projectId: string, epicId?: string): Promise<PmBoard[]> {
+    const result = await this.pool.query(
+      `
+      SELECT *
+      FROM pm.boards
+      WHERE project_id = $1
+        AND ($2::uuid IS NULL OR epic_id = $2::uuid)
+      ORDER BY board_type ASC, updated_at DESC
+      `,
+      [projectId, epicId ?? null]
+    );
+    return result.rows.map(mapBoard);
+  }
+
+  async loadBoard(boardId: string): Promise<PmBoard> {
+    const result = await this.pool.query("SELECT * FROM pm.boards WHERE id = $1", [boardId]);
+    if (!result.rows[0]) throw new Error("Board not found.");
+    return mapBoard(result.rows[0]);
+  }
+
+  async ensureDefaultKanbanBoard(user: PmUser, projectId: string, epicId?: string): Promise<{ board: PmBoard; columns: PmBoardColumn[] }> {
+    return this.withTransaction(async (client) => {
+      const existing = await client.query(
+        `
+        SELECT *
+        FROM pm.boards
+        WHERE project_id = $1
+          AND epic_id IS NOT DISTINCT FROM $2::uuid
+          AND board_type = 'kanban'
+        ORDER BY created_at ASC
+        LIMIT 1
+        `,
+        [projectId, epicId ?? null]
+      );
+      const board = existing.rows[0]
+        ? mapBoard(existing.rows[0])
+        : mapBoard(
+            (
+              await client.query(
+                `
+                INSERT INTO pm.boards (project_id, epic_id, name, board_type)
+                VALUES ($1, $2, $3, 'kanban')
+                RETURNING *
+                `,
+                [projectId, epicId ?? null, epicId ? "Epic Kanban" : "Project Kanban"]
+              )
+            ).rows[0]
+          );
+
+      await this.ensureDefaultColumns(client, board.id);
+      const columns = (await client.query("SELECT * FROM pm.board_columns WHERE board_id = $1 ORDER BY position ASC", [board.id])).rows.map(mapColumn);
+      if (!existing.rows[0]) {
+        await this.insertAudit(client, { actorType: "user", actorId: user.id, projectId, eventType: "board.created", payload: { boardId: board.id, type: "kanban" } });
+      }
+      return { board, columns };
+    });
+  }
+
+  async listBoardColumns(boardId: string): Promise<PmBoardColumn[]> {
+    const result = await this.pool.query("SELECT * FROM pm.board_columns WHERE board_id = $1 ORDER BY position ASC", [boardId]);
+    return result.rows.map(mapColumn);
+  }
+
+  async createBoardColumn(user: PmUser, input: CreateBoardColumnInput): Promise<PmBoardColumn> {
+    const board = await this.loadBoard(input.boardId);
+    const result = await this.pool.query(
+      `
+      INSERT INTO pm.board_columns (board_id, name, status_key, position, wip_limit)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+      `,
+      [input.boardId, input.name.trim(), normalizeStatusKey(input.statusKey), input.position ?? 1000, input.wipLimit ?? null]
+    );
+    const column = mapColumn(result.rows[0]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: board.projectId, eventType: "board.column_created", payload: { boardId: board.id, columnId: column.id } });
+    return column;
+  }
+
+  async loadBoardSnapshot(boardId: string): Promise<{ board: PmBoard; columns: PmBoardColumn[]; tasks: PmBoardTask[] }> {
+    const board = await this.loadBoard(boardId);
+    const columns = await this.listBoardColumns(boardId);
+    const taskResult = await this.pool.query(
+      `
+      SELECT t.*, tp.column_id, tp.position AS board_position
+      FROM pm.tasks t
+      LEFT JOIN pm.task_positions tp ON tp.task_id = t.id AND tp.board_id = $1
+      WHERE t.project_id = $2
+        AND t.deleted_at IS NULL
+        AND t.archived_at IS NULL
+        AND ($3::uuid IS NULL OR t.epic_id = $3::uuid)
+      ORDER BY COALESCE(tp.position, 1000000000), t.updated_at DESC
+      `,
+      [board.id, board.projectId, board.epicId ?? null]
+    );
+    return { board, columns, tasks: taskResult.rows.map(mapBoardTask) };
+  }
+
   async listTasks(projectId: string, filters: { epicId?: string; sprintId?: string; includeArchived?: boolean } = {}): Promise<PmTask[]> {
     const result = await this.pool.query(
       `
@@ -362,6 +463,20 @@ export class PmStore {
       [event.actorType, event.actorId ?? null, event.projectId ?? null, event.taskId ?? null, event.eventType, JSON.stringify(event.payload ?? {})]
     );
   }
+
+  private async ensureDefaultColumns(client: PoolClient, boardId: string): Promise<void> {
+    const count = Number((await client.query("SELECT COUNT(*) AS count FROM pm.board_columns WHERE board_id = $1", [boardId])).rows[0]?.count ?? 0);
+    if (count > 0) return;
+    const defaults = [
+      ["Todo", "todo", 1000],
+      ["In Progress", "in_progress", 2000],
+      ["Review", "review", 3000],
+      ["Done", "done", 4000]
+    ] as const;
+    for (const [name, statusKey, position] of defaults) {
+      await client.query("INSERT INTO pm.board_columns (board_id, name, status_key, position) VALUES ($1, $2, $3, $4)", [boardId, name, statusKey, position]);
+    }
+  }
 }
 
 function normalizeKey(value: string): string {
@@ -435,6 +550,40 @@ function mapTask(row: Row): PmTask {
   };
 }
 
+function mapBoard(row: Row): PmBoard {
+  return {
+    id: String(row.id),
+    projectId: String(row.project_id),
+    epicId: row.epic_id ? String(row.epic_id) : undefined,
+    name: String(row.name),
+    boardType: row.board_type === "scrum" ? "scrum" : "kanban",
+    createdAt: asIso(row.created_at) ?? "",
+    updatedAt: asIso(row.updated_at) ?? "",
+    version: Number(row.version ?? 1)
+  };
+}
+
+function mapColumn(row: Row): PmBoardColumn {
+  return {
+    id: String(row.id),
+    boardId: String(row.board_id),
+    name: String(row.name),
+    statusKey: String(row.status_key),
+    position: Number(row.position ?? 1000),
+    wipLimit: row.wip_limit === null || row.wip_limit === undefined ? undefined : Number(row.wip_limit),
+    createdAt: asIso(row.created_at) ?? "",
+    updatedAt: asIso(row.updated_at) ?? ""
+  };
+}
+
+function mapBoardTask(row: Row): PmBoardTask {
+  return {
+    ...mapTask(row),
+    columnId: row.column_id ? String(row.column_id) : undefined,
+    boardPosition: row.board_position === null || row.board_position === undefined ? undefined : Number(row.board_position)
+  };
+}
+
 function mapPosition(row: Row): PmTaskPosition {
   return {
     taskId: String(row.task_id),
@@ -444,6 +593,12 @@ function mapPosition(row: Row): PmTaskPosition {
     backlogScope: String(row.backlog_scope ?? "project"),
     position: Number(row.position ?? 1000)
   };
+}
+
+function normalizeStatusKey(value: string): string {
+  const key = value.trim().toLowerCase().replaceAll(/\s+/g, "_");
+  if (!/^[a-z][a-z0-9_-]{1,31}$/.test(key)) throw new Error("statusKey must be 2-32 characters: a-z, 0-9, underscore, dash.");
+  return key;
 }
 
 function asIso(value: unknown): string | undefined {

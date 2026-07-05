@@ -216,7 +216,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .tasks-pane {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(260px, 1fr) minmax(140px, .45fr);
 }
 
 .task-card {
@@ -224,6 +224,75 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: start;
+}
+
+.kanban-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.kanban-board {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 1fr);
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.kanban-column {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--line);
+  background: var(--field);
+}
+
+.kanban-column.drag-over {
+  border-color: var(--accent);
+}
+
+.kanban-column header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.kanban-dropzone {
+  min-height: 160px;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 8px;
+}
+
+.kanban-card {
+  width: 100%;
+  min-height: 74px;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 8px;
+}
+
+.kanban-card:hover {
+  border-color: var(--accent);
+}
+
+.kanban-card.dragging {
+  opacity: .55;
 }
 
 .task-badges {

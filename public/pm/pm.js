@@ -3,6 +3,9 @@ const state = {
   projects: [],
   epics: [],
   tasks: [],
+  board: null,
+  columns: [],
+  boardTasks: [],
   activeProjectId: null,
   activeEpicId: null,
   activeTask: null,
@@ -36,6 +39,9 @@ const els = {
   taskTitle: $("taskTitle"),
   taskPriority: $("taskPriority"),
   taskList: $("taskList"),
+  activeBoardLine: $("activeBoardLine"),
+  ensureBoardBtn: $("ensureBoardBtn"),
+  kanbanBoard: $("kanbanBoard"),
   statusFilter: $("statusFilter"),
   priorityFilter: $("priorityFilter"),
   taskDrawer: $("taskDrawer"),
@@ -99,25 +105,53 @@ async function loadProjects() {
 async function loadProjectData() {
   const project = activeProject();
   els.archiveProjectBtn.disabled = !project;
+  els.ensureBoardBtn.disabled = !project;
   els.epicForm.querySelector("button").disabled = !project;
   els.taskForm.querySelector("button").disabled = !project;
   if (!project) {
     state.epics = [];
     state.tasks = [];
+    state.board = null;
+    state.columns = [];
+    state.boardTasks = [];
     renderActiveProject();
     renderEpics();
     renderTasks();
+    renderBoard();
     return;
   }
-  const [epicsBody, tasksBody] = await Promise.all([
+  const [epicsBody, tasksBody, boardBody] = await Promise.all([
     api(`/api/pm/projects/${project.id}/epics`),
-    api(`/api/pm/projects/${project.id}/tasks`)
+    api(`/api/pm/projects/${project.id}/tasks`),
+    ensureDefaultBoard(project.id)
   ]);
   state.epics = epicsBody.epics;
   state.tasks = tasksBody.tasks;
+  state.board = boardBody.board;
+  state.columns = boardBody.columns;
+  await loadBoardSnapshot();
   renderActiveProject();
   renderEpics();
   renderTasks();
+  renderBoard();
+}
+
+async function ensureDefaultBoard(projectId) {
+  return api(`/api/pm/projects/${projectId}/boards/kanban/default`, {
+    method: "POST",
+    body: JSON.stringify({ epicId: state.activeEpicId || undefined })
+  });
+}
+
+async function loadBoardSnapshot() {
+  if (!state.board) {
+    state.boardTasks = [];
+    return;
+  }
+  const snapshot = await api(`/api/pm/boards/${state.board.id}`);
+  state.board = snapshot.board;
+  state.columns = snapshot.columns;
+  state.boardTasks = snapshot.tasks;
 }
 
 function activeProject() {
@@ -164,10 +198,9 @@ function renderEpics() {
       button.type = "button";
       button.className = `epic-card ${epic.id === state.activeEpicId ? "active" : ""}`;
       button.innerHTML = `<div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.status)} / ${escapeHtml(epic.priority)}</div>`;
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         state.activeEpicId = state.activeEpicId === epic.id ? null : epic.id;
-        renderEpics();
-        renderTasks();
+        await loadProjectData();
       });
       return button;
     })
@@ -203,6 +236,90 @@ function renderTasks() {
       return button;
     })
   );
+}
+
+function renderBoard() {
+  if (!state.board) {
+    els.activeBoardLine.textContent = "No board";
+    els.kanbanBoard.replaceChildren();
+    return;
+  }
+  els.activeBoardLine.textContent = `${state.board.name} / ${state.columns.length} columns`;
+  const statusFilter = els.statusFilter.value;
+  const priorityFilter = els.priorityFilter.value;
+  els.kanbanBoard.replaceChildren(
+    ...state.columns.map((column) => {
+      const columnEl = document.createElement("section");
+      columnEl.className = "kanban-column";
+      columnEl.dataset.columnId = column.id;
+      columnEl.dataset.statusKey = column.statusKey;
+      columnEl.innerHTML = `
+        <header>
+          <span>${escapeHtml(column.name)}</span>
+          <span>${state.boardTasks.filter((task) => task.columnId === column.id || (!task.columnId && task.status === column.statusKey)).length}</span>
+        </header>
+        <div class="kanban-dropzone"></div>
+      `;
+      const dropzone = columnEl.querySelector(".kanban-dropzone");
+      dropzone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        columnEl.classList.add("drag-over");
+      });
+      dropzone.addEventListener("dragleave", () => columnEl.classList.remove("drag-over"));
+      dropzone.addEventListener("drop", (event) => handleTaskDrop(event, column).catch((error) => setError(error.message)));
+      const tasks = state.boardTasks
+        .filter((task) => (task.columnId === column.id || (!task.columnId && task.status === column.statusKey)))
+        .filter((task) => !state.activeEpicId || task.epicId === state.activeEpicId)
+        .filter((task) => !statusFilter || task.status === statusFilter)
+        .filter((task) => !priorityFilter || task.priority === priorityFilter)
+        .sort((a, b) => (a.boardPosition ?? 1000000000) - (b.boardPosition ?? 1000000000));
+      dropzone.replaceChildren(...tasks.map(renderKanbanCard));
+      return columnEl;
+    })
+  );
+}
+
+function renderKanbanCard(task) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "kanban-card";
+  card.draggable = true;
+  card.dataset.taskId = task.id;
+  card.innerHTML = `
+    <div class="card-title">${escapeHtml(task.title)}</div>
+    <div class="card-meta">${escapeHtml(task.priority)} / v${task.version}</div>
+    <div class="card-body">${escapeHtml(task.description || "")}</div>
+  `;
+  card.addEventListener("click", () => openTask(task));
+  card.addEventListener("dragstart", (event) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", task.id);
+    card.classList.add("dragging");
+  });
+  card.addEventListener("dragend", () => card.classList.remove("dragging"));
+  return card;
+}
+
+async function handleTaskDrop(event, column) {
+  event.preventDefault();
+  const taskId = event.dataTransfer.getData("text/plain");
+  const task = state.boardTasks.find((item) => item.id === taskId);
+  if (!task || !state.board) return;
+  const siblings = state.boardTasks.filter((item) => item.columnId === column.id || (!item.columnId && item.status === column.statusKey));
+  const maxPosition = siblings.reduce((max, item) => Math.max(max, item.boardPosition ?? 0), 0);
+  const { task: movedTask } = await api(`/api/pm/tasks/${task.id}/move`, {
+    method: "POST",
+    body: JSON.stringify({
+      boardId: state.board.id,
+      columnId: column.id,
+      status: column.statusKey,
+      position: maxPosition + 1000,
+      expectedVersion: task.version
+    })
+  });
+  setError("");
+  await loadProjectData();
+  openTask(movedTask);
 }
 
 function openTask(task) {
@@ -256,7 +373,7 @@ async function createTask(event) {
   event.preventDefault();
   const project = activeProject();
   if (!project) return;
-  const { task } = await api(`/api/pm/projects/${project.id}/tasks`, {
+  let { task } = await api(`/api/pm/projects/${project.id}/tasks`, {
     method: "POST",
     body: JSON.stringify({
       title: els.taskTitle.value,
@@ -266,6 +383,22 @@ async function createTask(event) {
   });
   els.taskForm.reset();
   els.taskPriority.value = "medium";
+  if (state.board) {
+    const todoColumn = state.columns.find((column) => column.statusKey === "todo") || state.columns[0];
+    if (todoColumn) {
+      const moved = await api(`/api/pm/tasks/${task.id}/move`, {
+        method: "POST",
+        body: JSON.stringify({
+          boardId: state.board.id,
+          columnId: todoColumn.id,
+          status: todoColumn.statusKey,
+          position: Date.now(),
+          expectedVersion: task.version
+        })
+      });
+      task = moved.task;
+    }
+  }
   await loadProjectData();
   openTask(task);
 }
@@ -348,8 +481,15 @@ els.taskEditForm.addEventListener("submit", (event) => saveTask(event).catch((er
 els.includeArchived.addEventListener("change", () => loadProjects().catch((error) => setError(error.message)));
 els.refreshBtn.addEventListener("click", () => loadProjects().catch((error) => setError(error.message)));
 els.archiveProjectBtn.addEventListener("click", () => toggleArchive().catch((error) => setError(error.message)));
+els.ensureBoardBtn.addEventListener("click", () => loadProjectData().catch((error) => setError(error.message)));
 els.closeDrawerBtn.addEventListener("click", closeTask);
-els.statusFilter.addEventListener("change", renderTasks);
-els.priorityFilter.addEventListener("change", renderTasks);
+els.statusFilter.addEventListener("change", () => {
+  renderTasks();
+  renderBoard();
+});
+els.priorityFilter.addEventListener("change", () => {
+  renderTasks();
+  renderBoard();
+});
 
 boot();

@@ -3,7 +3,7 @@ import type { AuthenticatedUser } from "../auth/authelia.js";
 import { normalizeRole, PmPermissionError, requireProjectRole } from "./permissions.js";
 import type { PmEventHub } from "./events.js";
 import type { PmStore, PmConflictError } from "./postgresStore.js";
-import type { CreateEpicInput, CreateProjectInput, CreateTaskInput, MoveTaskInput, PmUser, UpdateProjectInput, UpdateTaskInput } from "./types.js";
+import type { CreateBoardColumnInput, CreateEpicInput, CreateProjectInput, CreateTaskInput, MoveTaskInput, PmUser, UpdateProjectInput, UpdateTaskInput } from "./types.js";
 
 export type PmAuthedRequest = express.Request & { pmIdentity?: AuthenticatedUser; pmUser?: PmUser };
 
@@ -123,6 +123,52 @@ export function createPmRouter(store: PmStore, events: PmEventHub): express.Rout
       const epic = await store.createEpic(user, { ...parseCreateEpic(req.body), projectId: req.params.projectId });
       events.broadcast({ type: "epic.created", projectId: req.params.projectId, version: epic.version, createdAt: new Date().toISOString(), payload: { epic } });
       res.status(201).json({ epic });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/projects/:projectId/boards", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
+      res.json({ boards: await store.listBoards(req.params.projectId, stringQuery(req.query.epicId)) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects/:projectId/boards/kanban/default", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
+      const result = await store.ensureDefaultKanbanBoard(user, req.params.projectId, optionalString(req.body?.epicId));
+      events.broadcast({ type: "board.created", projectId: req.params.projectId, version: result.board.version, createdAt: new Date().toISOString(), payload: result });
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/boards/:boardId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const board = await store.loadBoard(req.params.boardId);
+      requireProjectRole(await store.getProjectRole(user.id, board.projectId), "viewer");
+      res.json(await store.loadBoardSnapshot(req.params.boardId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/boards/:boardId/columns", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const board = await store.loadBoard(req.params.boardId);
+      requireProjectRole(await store.getProjectRole(user.id, board.projectId), "project_owner");
+      const column = await store.createBoardColumn(user, { ...parseCreateBoardColumn(req.body), boardId: req.params.boardId });
+      events.broadcast({ type: "board.column_created", projectId: board.projectId, createdAt: new Date().toISOString(), payload: { boardId: board.id, column } });
+      res.status(201).json({ column });
     } catch (error) {
       next(error);
     }
@@ -270,6 +316,16 @@ function parseCreateTask(body: unknown): Omit<CreateTaskInput, "projectId"> {
     parentTaskId: optionalString(raw.parentTaskId),
     assigneeId: optionalString(raw.assigneeId),
     dueAt: optionalString(raw.dueAt)
+  };
+}
+
+function parseCreateBoardColumn(body: unknown): Omit<CreateBoardColumnInput, "boardId"> {
+  const raw = objectBody(body);
+  return {
+    name: requiredString(raw.name, "name"),
+    statusKey: requiredString(raw.statusKey, "statusKey"),
+    position: optionalNumber(raw.position),
+    wipLimit: optionalNumber(raw.wipLimit)
   };
 }
 

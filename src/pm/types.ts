@@ -57,6 +57,28 @@ export type PmTask = {
   version: number;
 };
 
+export type PmBoard = {
+  id: string;
+  projectId: string;
+  epicId?: string;
+  name: string;
+  boardType: "kanban" | "scrum";
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+};
+
+export type PmBoardColumn = {
+  id: string;
+  boardId: string;
+  name: string;
+  statusKey: string;
+  position: number;
+  wipLimit?: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type PmTaskPosition = {
   taskId: string;
   boardId?: string;
@@ -64,6 +86,11 @@ export type PmTaskPosition = {
   sprintId?: string;
   backlogScope: string;
   position: number;
+};
+
+export type PmBoardTask = PmTask & {
+  columnId?: string;
+  boardPosition?: number;
 };
 
 export type PmEventRecord = {
@@ -120,4 +147,12 @@ export type MoveTaskInput = {
   position: number;
   status?: string;
   expectedVersion?: number;
+};
+
+export type CreateBoardColumnInput = {
+  boardId: string;
+  name: string;
+  statusKey: string;
+  position?: number;
+  wipLimit?: number;
 };
