@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProjectEGO PM</title>
+    <link rel="stylesheet" href="/pm.css" />
+  </head>
+  <body>
+    <main class="pm-shell">
+      <header class="pm-topbar">
+        <div>
+          <h1>ProjectEGO PM</h1>
+          <p id="identityLine">Checking identity...</p>
+        </div>
+        <div class="pm-status">
+          <span id="healthDot" class="dot gray"></span><span id="healthText">health unknown</span>
+          <span id="wsDot" class="dot gray"></span><span id="wsText">ws disconnected</span>
+        </div>
+      </header>
+
+      <section id="errorBanner" class="error-banner" hidden></section>
+
+      <section class="pm-grid">
+        <aside class="project-pane panel">
+          <div class="panel-title">
+            <h2>Projects</h2>
+            <label class="inline-check"><input id="includeArchived" type="checkbox" /> archived</label>
+          </div>
+          <form id="projectForm" class="stack-form">
+            <input id="projectKey" maxlength="32" placeholder="KEY" />
+            <input id="projectName" maxlength="120" placeholder="Project name" />
+            <textarea id="projectDescription" rows="3" placeholder="Description"></textarea>
+            <button type="submit">Create project</button>
+          </form>
+          <div id="projectList" class="list"></div>
+        </aside>
+
+        <section class="work-pane">
+          <section class="project-header panel">
+            <div>
+              <h2 id="activeProjectName">No project selected</h2>
+              <p id="activeProjectMeta">Create or select a project.</p>
+            </div>
+            <div class="header-actions">
+              <button id="refreshBtn" type="button">Refresh</button>
+              <button id="archiveProjectBtn" type="button" disabled>Archive</button>
+            </div>
+          </section>
+
+          <section class="boards">
+            <section class="panel epics-pane">
+              <div class="panel-title">
+                <h2>Epics</h2>
+              </div>
+              <form id="epicForm" class="inline-form">
+                <input id="epicTitle" placeholder="Epic title" />
+                <button type="submit" disabled>Create</button>
+              </form>
+              <div id="epicList" class="list compact"></div>
+            </section>
+
+            <section class="panel tasks-pane">
+              <div class="panel-title">
+                <h2>Tasks</h2>
+                <div class="filters">
+                  <select id="statusFilter">
+                    <option value="">All status</option>
+                    <option value="todo">todo</option>
+                    <option value="in_progress">in progress</option>
+                    <option value="review">review</option>
+                    <option value="done">done</option>
+                  </select>
+                  <select id="priorityFilter">
+                    <option value="">All priority</option>
+                    <option value="urgent">urgent</option>
+                    <option value="high">high</option>
+                    <option value="medium">medium</option>
+                    <option value="low">low</option>
+                    <option value="none">none</option>
+                  </select>
+                </div>
+              </div>
+              <form id="taskForm" class="task-form">
+                <input id="taskTitle" placeholder="Task title" />
+                <select id="taskPriority">
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                  <option value="urgent">urgent</option>
+                  <option value="low">low</option>
+                  <option value="none">none</option>
+                </select>
+                <button type="submit" disabled>Create task</button>
+              </form>
+              <div id="taskList" class="task-list"></div>
+            </section>
+          </section>
+        </section>
+      </section>
+
+      <aside id="taskDrawer" class="task-drawer" hidden>
+        <header>
+          <div>
+            <h2 id="drawerTitle">Task</h2>
+            <p id="drawerMeta"></p>
+          </div>
+          <button id="closeDrawerBtn" type="button">Close</button>
+        </header>
+        <form id="taskEditForm" class="drawer-form">
+          <label>Title<input id="editTaskTitle" /></label>
+          <label>Status
+            <select id="editTaskStatus">
+              <option value="todo">todo</option>
+              <option value="in_progress">in progress</option>
+              <option value="review">review</option>
+              <option value="done">done</option>
+            </select>
+          </label>
+          <label>Priority
+            <select id="editTaskPriority">
+              <option value="urgent">urgent</option>
+              <option value="high">high</option>
+              <option value="medium">medium</option>
+              <option value="low">low</option>
+              <option value="none">none</option>
+            </select>
+          </label>
+          <label>Description<textarea id="editTaskDescription" rows="10"></textarea></label>
+          <button type="submit">Save</button>
+        </form>
+      </aside>
+    </main>
+    <script src="/pm.js" defer></script>
+  </body>
+</html>

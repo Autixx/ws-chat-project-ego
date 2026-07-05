@@ -77,3 +77,20 @@ test("PM API reports project endpoints unavailable without PM_DATABASE_URL", asy
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });
+
+test("PM service serves browser shell separately from Dashboard", async () => {
+  const app = createPmApp(loadPmConfig({ NODE_ENV: "development", PM_DEV_AUTH_BYPASS: "true" }));
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const response = await fetch(`http://127.0.0.1:${address.port}/`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /ProjectEGO PM/);
+    assert.match(html, /\/pm\.js/);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});

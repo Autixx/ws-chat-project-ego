@@ -60,6 +60,12 @@ PM exposes:
 - `POST /api/pm/tasks/:taskId/dependencies`
 - `GET /pm/ws`
 
+PM also serves its browser shell from the PM service root:
+
+```text
+https://pm.project-ego.online/
+```
+
 PM must not receive Dashboard/agent secrets. Keep these variables out of the `projectego-pm` service:
 
 - `CODEX_AGENT_TOKEN`
@@ -75,6 +81,22 @@ PM uses PostgreSQL as its planned source of truth through `PM_DATABASE_URL`. The
 
 ```text
 src/pm/postgres-schema.sql
+```
+
+Apply the PM schema after build with:
+
+```bash
+npm run build
+PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego npm run pm:migrate
+```
+
+In Docker, run the migration command in the PM image before first production use:
+
+```bash
+docker run --rm \
+  -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.37 \
+  node dist/pm/migrate.js
 ```
 
 The schema separates logical areas:
@@ -95,6 +117,16 @@ PM authorization is enforced server-side. Authelia identifies the user; the PM b
 - `viewer`
 
 Project/task mutations use optimistic `version` fields. Clients can send `expectedVersion`; stale writes return conflict responses instead of silently overwriting another user's change. Task moves store numeric position values so cards can be inserted between existing cards without full-board renumbering.
+
+The first PM frontend shell supports:
+
+- project list and creation
+- project archive/unarchive
+- epic list and creation
+- task list and creation
+- task drawer editing
+- status and priority filters
+- PM WebSocket reconnect and refresh on structured events
 
 ## UI Layout
 

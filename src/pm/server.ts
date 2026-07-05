@@ -14,6 +14,7 @@ type PmIdentityRequest = express.Request & { pmIdentity?: AuthenticatedUser };
 
 export function createPmApp(pmConfig: PmConfig, store?: PmStore, events = new PmEventHub()): express.Express {
   const pmApp = express();
+  const pmPublicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "public", "pm");
   pmApp.disable("x-powered-by");
   pmApp.use(express.json({ limit: "256kb" }));
 
@@ -59,6 +60,11 @@ export function createPmApp(pmConfig: PmConfig, store?: PmStore, events = new Pm
       res.status(503).json({ error: "PM_DATABASE_URL is required before PM API can serve project data." });
     });
   }
+
+  pmApp.use(express.static(pmPublicDir, { extensions: ["html"] }));
+  pmApp.get("*", (_req, res) => {
+    res.sendFile(path.join(pmPublicDir, "index.html"));
+  });
 
   return pmApp;
 }

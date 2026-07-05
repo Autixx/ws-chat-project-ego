@@ -9,6 +9,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package*.json tsconfig.json ./
 COPY src ./src
 COPY public ./public
+COPY scripts ./scripts
 RUN npm run build
 
 FROM node:20-bookworm-slim AS runtime
