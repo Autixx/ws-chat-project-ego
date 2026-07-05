@@ -1,6 +1,7 @@
 const state = {
   user: null,
   projects: [],
+  members: [],
   epics: [],
   sprints: [],
   tasks: [],
@@ -38,6 +39,10 @@ const els = {
   projectKey: $("projectKey"),
   projectName: $("projectName"),
   projectDescription: $("projectDescription"),
+  memberForm: $("memberForm"),
+  memberIdentifier: $("memberIdentifier"),
+  memberRole: $("memberRole"),
+  memberList: $("memberList"),
   projectList: $("projectList"),
   activeProjectName: $("activeProjectName"),
   activeProjectMeta: $("activeProjectMeta"),
@@ -55,6 +60,7 @@ const els = {
   taskForm: $("taskForm"),
   taskTitle: $("taskTitle"),
   taskPriority: $("taskPriority"),
+  taskAssignee: $("taskAssignee"),
   taskList: $("taskList"),
   activeBoardLine: $("activeBoardLine"),
   ensureBoardBtn: $("ensureBoardBtn"),
@@ -69,6 +75,7 @@ const els = {
   editTaskTitle: $("editTaskTitle"),
   editTaskStatus: $("editTaskStatus"),
   editTaskPriority: $("editTaskPriority"),
+  editTaskAssignee: $("editTaskAssignee"),
   editTaskSprint: $("editTaskSprint"),
   editTaskDescription: $("editTaskDescription"),
   commentList: $("commentList"),
@@ -139,12 +146,14 @@ async function loadProjectData() {
   const project = activeProject();
   els.archiveProjectBtn.disabled = !project;
   els.ensureBoardBtn.disabled = !project;
+  els.memberForm.querySelector("button").disabled = !project;
   els.epicForm.querySelector("button").disabled = !project;
   els.sprintForm.querySelector("button").disabled = !project;
   els.backlogFilterBtn.disabled = !project;
   els.allSprintTasksBtn.disabled = !project;
   els.taskForm.querySelector("button").disabled = !project;
   if (!project) {
+    state.members = [];
     state.epics = [];
     state.sprints = [];
     state.tasks = [];
@@ -152,18 +161,21 @@ async function loadProjectData() {
     state.columns = [];
     state.boardTasks = [];
     renderActiveProject();
+    renderMembers();
     renderEpics();
     renderSprints();
     renderTasks();
     renderBoard();
     return;
   }
-  const [epicsBody, sprintsBody, tasksBody, boardBody] = await Promise.all([
+  const [membersBody, epicsBody, sprintsBody, tasksBody, boardBody] = await Promise.all([
+    api(`/api/pm/projects/${project.id}/members`),
     api(`/api/pm/projects/${project.id}/epics`),
     api(`/api/pm/projects/${project.id}/sprints?includeCompleted=${els.includeCompletedSprints.checked ? "true" : "false"}${state.activeEpicId ? `&epicId=${encodeURIComponent(state.activeEpicId)}` : ""}`),
     api(`/api/pm/projects/${project.id}/tasks`),
     ensureDefaultBoard(project.id)
   ]);
+  state.members = membersBody.members;
   state.epics = epicsBody.epics;
   state.sprints = sprintsBody.sprints;
   if (state.activeSprintId && !["__all", "__backlog"].includes(state.activeSprintId) && !state.sprints.some((sprint) => sprint.id === state.activeSprintId)) {
@@ -174,6 +186,7 @@ async function loadProjectData() {
   state.columns = boardBody.columns;
   await loadBoardSnapshot();
   renderActiveProject();
+  renderMembers();
   renderEpics();
   renderSprints();
   renderTasks();
@@ -234,6 +247,39 @@ function renderActiveProject() {
   els.activeProjectName.textContent = `${project.key} / ${project.name}`;
   els.activeProjectMeta.textContent = `role: ${project.role || "viewer"} / version ${project.version} / updated ${formatDate(project.updatedAt)}`;
   els.archiveProjectBtn.textContent = project.archivedAt ? "Unarchive" : "Archive";
+}
+
+function renderMembers() {
+  const options = [optionEl("", "unassigned"), ...state.members.map((member) => optionEl(member.id, memberLabel(member)))];
+  els.taskAssignee.replaceChildren(...options.map((option) => option.cloneNode(true)));
+  els.editTaskAssignee.replaceChildren(...options.map((option) => option.cloneNode(true)));
+  if (state.members.length === 0) {
+    els.memberList.innerHTML = `<div class="drawer-empty">No project selected.</div>`;
+    return;
+  }
+  els.memberList.replaceChildren(
+    ...state.members.map((member) => {
+      const card = document.createElement("article");
+      card.className = "member-card";
+      card.innerHTML = `
+        <div class="card-title">${escapeHtml(memberLabel(member))}</div>
+        <div class="card-meta">${escapeHtml(member.email || member.id)}</div>
+        <div class="member-actions">
+          <select>
+            <option value="viewer">viewer</option>
+            <option value="member">member</option>
+            <option value="project_owner">project owner</option>
+          </select>
+          <button class="mini-button" type="button">Remove</button>
+        </div>
+      `;
+      const select = card.querySelector("select");
+      select.value = member.role;
+      select.addEventListener("change", () => updateMemberRole(member, select.value).catch((error) => setError(error.message)));
+      card.querySelector("button").addEventListener("click", () => removeMember(member).catch((error) => setError(error.message)));
+      return card;
+    })
+  );
 }
 
 function renderEpics() {
@@ -353,6 +399,7 @@ function renderTasks() {
         <div class="task-badges">
           <span class="badge">${escapeHtml(task.status)}</span>
           <span class="badge">${escapeHtml(task.priority)}</span>
+          <span class="badge">${escapeHtml(assigneeLabel(task.assigneeId))}</span>
         </div>
       `;
       button.addEventListener("click", () => openTask(task));
@@ -412,7 +459,7 @@ function renderKanbanCard(task) {
   card.dataset.taskId = task.id;
   card.innerHTML = `
     <div class="card-title">${escapeHtml(task.title)}</div>
-    <div class="card-meta">${escapeHtml(task.priority)} / ${escapeHtml(sprintLabel(task.sprintId))} / v${task.version}</div>
+    <div class="card-meta">${escapeHtml(task.priority)} / ${escapeHtml(assigneeLabel(task.assigneeId))} / ${escapeHtml(sprintLabel(task.sprintId))} / v${task.version}</div>
     <div class="card-body">${escapeHtml(task.description || "")}</div>
   `;
   card.addEventListener("click", () => openTask(task));
@@ -455,6 +502,7 @@ function openTask(task) {
   els.editTaskTitle.value = task.title;
   els.editTaskStatus.value = task.status;
   els.editTaskPriority.value = task.priority;
+  els.editTaskAssignee.value = task.assigneeId || "";
   els.editTaskSprint.value = task.sprintId || "";
   els.editTaskDescription.value = task.description || "";
   state.comments = [];
@@ -500,6 +548,39 @@ async function createEpic(event) {
   await loadProjectData();
 }
 
+async function addMember(event) {
+  event.preventDefault();
+  const project = activeProject();
+  if (!project) return;
+  await api(`/api/pm/projects/${project.id}/members`, {
+    method: "POST",
+    body: JSON.stringify({
+      identifier: els.memberIdentifier.value,
+      role: els.memberRole.value
+    })
+  });
+  els.memberForm.reset();
+  els.memberRole.value = "member";
+  await loadProjectData();
+}
+
+async function updateMemberRole(member, role) {
+  const project = activeProject();
+  if (!project) return;
+  await api(`/api/pm/projects/${project.id}/members/${member.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ role })
+  });
+  await loadProjectData();
+}
+
+async function removeMember(member) {
+  const project = activeProject();
+  if (!project) return;
+  await api(`/api/pm/projects/${project.id}/members/${member.id}`, { method: "DELETE" });
+  await loadProjectData();
+}
+
 async function createSprint(event) {
   event.preventDefault();
   const project = activeProject();
@@ -534,12 +615,14 @@ async function createTask(event) {
     body: JSON.stringify({
       title: els.taskTitle.value,
       priority: els.taskPriority.value,
+      assigneeId: els.taskAssignee.value || undefined,
       epicId: state.activeEpicId || undefined,
       sprintId: selectedSprintIdForNewTask()
     })
   });
   els.taskForm.reset();
   els.taskPriority.value = "medium";
+  els.taskAssignee.value = "";
   if (state.board) {
     const todoColumn = state.columns.find((column) => column.statusKey === "todo") || state.columns[0];
     if (todoColumn) {
@@ -564,6 +647,7 @@ async function saveTask(event) {
   event.preventDefault();
   if (!state.activeTask) return;
   const desiredSprintId = els.editTaskSprint.value || "";
+  const desiredAssigneeId = els.editTaskAssignee.value || "";
   let { task } = await api(`/api/pm/tasks/${state.activeTask.id}`, {
     method: "PATCH",
     body: JSON.stringify({
@@ -578,6 +662,13 @@ async function saveTask(event) {
     const assigned = await api(`/api/pm/tasks/${task.id}/sprint`, {
       method: "POST",
       body: JSON.stringify({ sprintId: desiredSprintId || undefined })
+    });
+    task = assigned.task;
+  }
+  if ((task.assigneeId || "") !== desiredAssigneeId) {
+    const assigned = await api(`/api/pm/tasks/${task.id}/assignee`, {
+      method: "POST",
+      body: JSON.stringify({ assigneeId: desiredAssigneeId || undefined })
     });
     task = assigned.task;
   }
@@ -846,6 +937,16 @@ function sprintLabel(sprintId) {
   return sprint ? sprint.name : "sprint";
 }
 
+function memberLabel(member) {
+  return member.displayName || member.username || member.email || member.id;
+}
+
+function assigneeLabel(assigneeId) {
+  if (!assigneeId) return "unassigned";
+  const member = state.members.find((item) => item.id === assigneeId);
+  return member ? memberLabel(member) : "assigned";
+}
+
 function formatSprintDates(sprint) {
   const start = sprint.startsAt ? new Date(sprint.startsAt).toLocaleDateString() : "no start";
   const end = sprint.endsAt ? new Date(sprint.endsAt).toLocaleDateString() : "no end";
@@ -869,6 +970,7 @@ async function boot() {
 }
 
 els.projectForm.addEventListener("submit", (event) => createProject(event).catch((error) => setError(error.message)));
+els.memberForm.addEventListener("submit", (event) => addMember(event).catch((error) => setError(error.message)));
 els.epicForm.addEventListener("submit", (event) => createEpic(event).catch((error) => setError(error.message)));
 els.sprintForm.addEventListener("submit", (event) => createSprint(event).catch((error) => setError(error.message)));
 els.taskForm.addEventListener("submit", (event) => createTask(event).catch((error) => setError(error.message)));

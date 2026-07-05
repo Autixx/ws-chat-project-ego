@@ -178,7 +178,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .project-pane {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 10px;
   overflow: hidden;
 }
@@ -196,7 +196,32 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 }
 
 .task-form {
-  grid-template-columns: minmax(0, 1fr) 130px auto;
+  grid-template-columns: minmax(0, 1fr) 130px 170px auto;
+}
+
+.team-box {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+}
+
+.member-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px auto;
+  gap: 7px;
+}
+
+.member-card {
+  border: 1px solid var(--line);
+  background: var(--field);
+  padding: 8px;
+}
+
+.member-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  margin-top: 7px;
 }
 
 .list, .task-list {

@@ -177,7 +177,28 @@ export class PmStore {
     return result.rows.map((row) => ({ ...mapUser(row), role: normalizeRole(row.role) }));
   }
 
-  async setMemberRole(actor: PmUser, projectId: string, userId: string, role: PmRole): Promise<void> {
+  async findUserByIdentifier(identifier: string): Promise<PmUser> {
+    const value = identifier.trim();
+    const result = await this.pool.query(
+      `
+      SELECT id, username, email, display_name
+      FROM core.users
+      WHERE disabled = false
+        AND (lower(username) = lower($1) OR lower(email) = lower($1) OR id::text = $1)
+      LIMIT 1
+      `,
+      [value]
+    );
+    if (!result.rows[0]) throw new Error("User not found. The user must sign in to PM at least once before being added to a project.");
+    return mapUser(result.rows[0]);
+  }
+
+  async setMemberRole(actor: PmUser, projectId: string, userId: string, role: PmRole): Promise<PmUser & { role: PmRole }> {
+    const existingRole = await this.getProjectRole(userId, projectId);
+    if (existingRole === "project_owner" && role !== "project_owner") {
+      const ownerCount = await this.countProjectOwners(projectId);
+      if (ownerCount <= 1) throw new Error("Project must keep at least one project_owner.");
+    }
     await this.pool.query(
       `
       INSERT INTO pm.project_members (project_id, user_id, role)
@@ -187,6 +208,22 @@ export class PmStore {
       [projectId, userId, role]
     );
     await this.insertAudit(this.pool, { actorType: "user", actorId: actor.id, projectId, eventType: "member.role_set", payload: { userId, role } });
+    const members = await this.listMembers(projectId);
+    const member = members.find((item) => item.id === userId);
+    if (!member) throw new Error("Project member not found after role update.");
+    return member;
+  }
+
+  async removeMember(actor: PmUser, projectId: string, userId: string): Promise<void> {
+    const existingRole = await this.getProjectRole(userId, projectId);
+    if (!existingRole) throw new Error("Project member not found.");
+    if (existingRole === "project_owner") {
+      const ownerCount = await this.countProjectOwners(projectId);
+      if (ownerCount <= 1) throw new Error("Project must keep at least one project_owner.");
+    }
+    await this.pool.query("DELETE FROM pm.project_members WHERE project_id = $1 AND user_id = $2", [projectId, userId]);
+    await this.pool.query("UPDATE pm.tasks SET assignee_id = NULL, updated_at = now(), version = version + 1 WHERE project_id = $1 AND assignee_id = $2", [projectId, userId]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: actor.id, projectId, eventType: "member.removed", payload: { userId } });
   }
 
   async listEpics(projectId: string): Promise<PmEpic[]> {
@@ -298,6 +335,27 @@ export class PmStore {
       eventType: sprintId ? "task.sprint_assigned" : "task.backlog_assigned",
       payload: { sprintId: sprint?.id, sprintName: sprint?.name }
     });
+    return task;
+  }
+
+  async assignTask(user: PmUser, taskId: string, assigneeId?: string): Promise<PmTask> {
+    const existing = await this.loadTask(taskId);
+    if (assigneeId) {
+      const role = await this.getProjectRole(assigneeId, existing.projectId);
+      if (!role) throw new Error("Assignee must be a project member.");
+    }
+    const result = await this.pool.query(
+      `
+      UPDATE pm.tasks
+      SET assignee_id = $2, version = version + 1, updated_at = now()
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING *
+      `,
+      [taskId, assigneeId ?? null]
+    );
+    if (!result.rows[0]) throw new Error("Task not found.");
+    const task = mapTask(result.rows[0]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: task.projectId, taskId, eventType: "task.assigned", payload: { assigneeId } });
     return task;
   }
 
@@ -801,6 +859,11 @@ export class PmStore {
       [input.userId, input.projectId ?? null, input.taskId ?? null, input.actorId ?? null, input.eventType, input.title, input.body ?? "", JSON.stringify(input.payload ?? {})]
     );
     return mapNotification(result.rows[0]);
+  }
+
+  private async countProjectOwners(projectId: string): Promise<number> {
+    const result = await this.pool.query("SELECT COUNT(*) AS count FROM pm.project_members WHERE project_id = $1 AND role = 'project_owner'", [projectId]);
+    return Number(result.rows[0]?.count ?? 0);
   }
 
   private async withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {

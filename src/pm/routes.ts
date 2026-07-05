@@ -137,8 +137,35 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
       const role = normalizeRole(req.body?.role);
-      await store.setMemberRole(user, req.params.projectId, req.params.userId, role);
+      const member = await store.setMemberRole(user, req.params.projectId, req.params.userId, role);
       events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { memberId: req.params.userId, role } });
+      res.json({ member });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects/:projectId/members", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
+      const identifier = requiredString(req.body?.identifier, "identifier");
+      const target = await store.findUserByIdentifier(identifier);
+      const role = normalizeRole(req.body?.role ?? "member");
+      const member = await store.setMemberRole(user, req.params.projectId, target.id, role);
+      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { memberId: target.id, role } });
+      res.status(201).json({ member });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/projects/:projectId/members/:userId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
+      await store.removeMember(user, req.params.projectId, req.params.userId);
+      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { memberId: req.params.userId, removed: true } });
       res.json({ ok: true });
     } catch (error) {
       next(error);
@@ -338,6 +365,20 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const sprintId = optionalString(req.body?.sprintId);
       const updated = await store.assignTaskToSprint(user, req.params.taskId, sprintId);
       events.broadcast({ type: "task.updated", projectId: updated.projectId, taskId: updated.id, version: updated.version, createdAt: new Date().toISOString(), payload: { task: updated, sprintId } });
+      res.json({ task: updated });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/tasks/:taskId/assignee", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
+      const assigneeId = optionalString(req.body?.assigneeId);
+      const updated = await store.assignTask(user, req.params.taskId, assigneeId);
+      events.broadcast({ type: "task.updated", projectId: updated.projectId, taskId: updated.id, version: updated.version, createdAt: new Date().toISOString(), payload: { task: updated, assigneeId } });
       res.json({ task: updated });
     } catch (error) {
       next(error);

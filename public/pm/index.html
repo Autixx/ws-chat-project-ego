@@ -42,6 +42,21 @@
             <textarea id="projectDescription" rows="3" placeholder="Description"></textarea>
             <button type="submit">Create project</button>
           </form>
+          <section class="team-box">
+            <div class="panel-title">
+              <h2>Team</h2>
+            </div>
+            <form id="memberForm" class="member-form">
+              <input id="memberIdentifier" placeholder="username or email" />
+              <select id="memberRole">
+                <option value="member">member</option>
+                <option value="viewer">viewer</option>
+                <option value="project_owner">project owner</option>
+              </select>
+              <button type="submit" disabled>Add</button>
+            </form>
+            <div id="memberList" class="list compact"></div>
+          </section>
           <div id="projectList" class="list"></div>
         </aside>
 
@@ -115,6 +130,9 @@
                   <option value="low">low</option>
                   <option value="none">none</option>
                 </select>
+                <select id="taskAssignee">
+                  <option value="">unassigned</option>
+                </select>
                 <button type="submit" disabled>Create task</button>
               </form>
               <div class="kanban-toolbar">
@@ -154,6 +172,11 @@
                 <option value="medium">medium</option>
                 <option value="low">low</option>
                 <option value="none">none</option>
+              </select>
+            </label>
+            <label>Assignee
+              <select id="editTaskAssignee">
+                <option value="">Unassigned</option>
               </select>
             </label>
             <label>Sprint

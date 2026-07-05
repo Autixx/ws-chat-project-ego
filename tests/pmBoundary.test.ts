@@ -111,6 +111,9 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /backlog and sprint planning/);
   assert.match(readme, /GET `?\/api\/pm\/notifications`?/);
   assert.match(readme, /@username/);
+  assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/members`?/);
+  assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/assignee`?/);
+  assert.match(readme, /task assignee picker/);
 });
 
 test("PM attachment validation accepts supported files and rejects unsafe inputs", () => {

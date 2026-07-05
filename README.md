@@ -53,7 +53,9 @@ PM exposes:
 - `POST /api/pm/projects/:projectId/archive`
 - `DELETE /api/pm/projects/:projectId`
 - `GET /api/pm/projects/:projectId/members`
+- `POST /api/pm/projects/:projectId/members`
 - `PUT /api/pm/projects/:projectId/members/:userId`
+- `DELETE /api/pm/projects/:projectId/members/:userId`
 - `GET /api/pm/projects/:projectId/epics`
 - `POST /api/pm/projects/:projectId/epics`
 - `GET /api/pm/projects/:projectId/sprints`
@@ -69,6 +71,7 @@ PM exposes:
 - `POST /api/pm/tasks/:taskId/move`
 - `POST /api/pm/tasks/:taskId/dependencies`
 - `POST /api/pm/tasks/:taskId/sprint`
+- `POST /api/pm/tasks/:taskId/assignee`
 - `GET /api/pm/tasks/:taskId/comments`
 - `POST /api/pm/tasks/:taskId/comments`
 - `PATCH /api/pm/comments/:commentId`
@@ -115,7 +118,7 @@ In Docker, run the migration command in the PM image before first production use
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.41 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.42 \
   node dist/pm/migrate.js
 ```
 
@@ -162,6 +165,8 @@ The first PM frontend shell supports:
 - backlog and sprint planning with sprint lifecycle controls
 - task assignment to backlog or a selected sprint
 - in-app notifications for task comments, assignee/creator updates, and `@username` mentions
+- project team management with role changes and member removal
+- task assignee picker backed by project membership
 - status and priority filters
 - PM WebSocket reconnect and refresh on structured events
 
