@@ -171,6 +171,20 @@ CREATE TABLE IF NOT EXISTS pm.attachments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS pm.notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES core.users(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES pm.projects(id) ON DELETE CASCADE,
+  task_id UUID REFERENCES pm.tasks(id) ON DELETE CASCADE,
+  actor_id UUID REFERENCES core.users(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS pm.saved_filters (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES pm.projects(id) ON DELETE CASCADE,
@@ -204,6 +218,7 @@ CREATE INDEX IF NOT EXISTS idx_pm_tasks_project_updated ON pm.tasks(project_id, 
 CREATE INDEX IF NOT EXISTS idx_pm_tasks_assignee ON pm.tasks(assignee_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_pm_task_positions_column ON pm.task_positions(column_id, position);
 CREATE INDEX IF NOT EXISTS idx_pm_comments_task_created ON pm.comments(task_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_pm_notifications_user_unread ON pm.notifications(user_id, created_at DESC) WHERE read_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_audit_project_created ON audit.events(project_id, created_at DESC);
 
 -- Runtime grant sketch:

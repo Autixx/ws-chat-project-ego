@@ -50,7 +50,7 @@ test("PM PostgreSQL schema defines required logical boundaries", () => {
     assert.match(schema, new RegExp(`CREATE SCHEMA IF NOT EXISTS ${schemaName}`));
   }
 
-  for (const table of ["pm.projects", "pm.epics", "pm.boards", "pm.sprints", "pm.tasks", "pm.task_dependencies", "pm.comments", "pm.attachments", "audit.events"]) {
+  for (const table of ["pm.projects", "pm.epics", "pm.boards", "pm.sprints", "pm.tasks", "pm.task_dependencies", "pm.comments", "pm.attachments", "pm.notifications", "audit.events"]) {
     assert.match(schema, new RegExp(`CREATE TABLE IF NOT EXISTS ${table.replace(".", "\\.")}`));
   }
 
@@ -109,6 +109,8 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /GET `?\/api\/pm\/projects\/:projectId\/sprints`?/);
   assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/sprint`?/);
   assert.match(readme, /backlog and sprint planning/);
+  assert.match(readme, /GET `?\/api\/pm\/notifications`?/);
+  assert.match(readme, /@username/);
 });
 
 test("PM attachment validation accepts supported files and rejects unsafe inputs", () => {

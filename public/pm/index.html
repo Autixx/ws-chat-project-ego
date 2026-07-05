@@ -14,10 +14,19 @@
           <p id="identityLine">Checking identity...</p>
         </div>
         <div class="pm-status">
+          <button id="notificationToggle" type="button" class="notification-toggle">Notifications <span id="notificationCount">0</span></button>
           <span id="healthDot" class="dot gray"></span><span id="healthText">health unknown</span>
           <span id="wsDot" class="dot gray"></span><span id="wsText">ws disconnected</span>
         </div>
       </header>
+
+      <section id="notificationPanel" class="notification-panel" hidden>
+        <div class="panel-title">
+          <h2>Notifications</h2>
+          <button id="markAllNotificationsReadBtn" type="button">Mark all read</button>
+        </div>
+        <div id="notificationList" class="notification-list"></div>
+      </section>
 
       <section id="errorBanner" class="error-banner" hidden></section>
 

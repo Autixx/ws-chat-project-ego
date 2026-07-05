@@ -14,6 +14,7 @@ const state = {
   comments: [],
   attachments: [],
   activity: [],
+  notifications: [],
   ws: null,
   shouldReconnect: true
 };
@@ -27,6 +28,11 @@ const els = {
   wsDot: $("wsDot"),
   wsText: $("wsText"),
   errorBanner: $("errorBanner"),
+  notificationToggle: $("notificationToggle"),
+  notificationCount: $("notificationCount"),
+  notificationPanel: $("notificationPanel"),
+  notificationList: $("notificationList"),
+  markAllNotificationsReadBtn: $("markAllNotificationsReadBtn"),
   includeArchived: $("includeArchived"),
   projectForm: $("projectForm"),
   projectKey: $("projectKey"),
@@ -109,6 +115,13 @@ async function loadIdentity() {
   const { user } = await api("/api/pm/me");
   state.user = user;
   els.identityLine.textContent = `${user.displayName || user.username} / ${user.email || "no email"}`;
+  await loadNotifications();
+}
+
+async function loadNotifications() {
+  const { notifications } = await api("/api/pm/notifications");
+  state.notifications = notifications;
+  renderNotifications();
 }
 
 async function loadProjects() {
@@ -279,6 +292,38 @@ function renderSprints() {
         renderBoard();
       });
       return button;
+    })
+  );
+}
+
+function renderNotifications() {
+  els.notificationCount.textContent = String(state.notifications.filter((notification) => !notification.readAt).length);
+  if (state.notifications.length === 0) {
+    els.notificationList.innerHTML = `<div class="drawer-empty">No unread notifications.</div>`;
+    return;
+  }
+  els.notificationList.replaceChildren(
+    ...state.notifications.map((notification) => {
+      const card = document.createElement("article");
+      card.className = `notification-card ${notification.readAt ? "" : "unread"}`;
+      card.innerHTML = `
+        <div class="card-title">
+          <span>${escapeHtml(notification.title)}</span>
+          <button class="mini-button" type="button">Read</button>
+        </div>
+        <div class="card-meta">${escapeHtml(notification.actorName || notification.eventType)} / ${formatDate(notification.createdAt)}</div>
+        <div class="card-body">${escapeHtml(notification.body)}</div>
+      `;
+      card.querySelector("button").addEventListener("click", () => markNotificationRead(notification).catch((error) => setError(error.message)));
+      card.addEventListener("click", async (event) => {
+        if (event.target.tagName === "BUTTON") return;
+        if (notification.projectId) state.activeProjectId = notification.projectId;
+        state.activeSprintId = "__all";
+        await loadProjectData();
+        const task = notification.taskId ? state.tasks.find((item) => item.id === notification.taskId) : null;
+        if (task) openTask(task);
+      });
+      return card;
     })
   );
 }
@@ -690,6 +735,18 @@ async function reloadActivityForActiveTask() {
   state.activity = activity;
 }
 
+async function markNotificationRead(notification) {
+  await api(`/api/pm/notifications/${notification.id}/read`, { method: "POST" });
+  state.notifications = state.notifications.filter((item) => item.id !== notification.id);
+  renderNotifications();
+}
+
+async function markAllNotificationsRead() {
+  await api("/api/pm/notifications/read-all", { method: "POST" });
+  state.notifications = [];
+  renderNotifications();
+}
+
 async function createComment(event) {
   event.preventDefault();
   if (!state.activeTask) return;
@@ -742,6 +799,10 @@ function connectWs() {
   ws.addEventListener("message", async (event) => {
     const message = JSON.parse(event.data);
     if (message.type && message.type !== "presence.updated") {
+      if (message.type.startsWith("notification.")) {
+        if (message.payload?.userId === state.user?.id) await loadNotifications();
+        return;
+      }
       await loadProjects();
       if (state.activeTask) await loadTaskDrawerData(state.activeTask.id);
     }
@@ -814,6 +875,10 @@ els.taskForm.addEventListener("submit", (event) => createTask(event).catch((erro
 els.taskEditForm.addEventListener("submit", (event) => saveTask(event).catch((error) => setError(error.message)));
 els.commentForm.addEventListener("submit", (event) => createComment(event).catch((error) => setError(error.message)));
 els.attachmentForm.addEventListener("submit", (event) => uploadAttachment(event).catch((error) => setError(error.message)));
+els.notificationToggle.addEventListener("click", () => {
+  els.notificationPanel.hidden = !els.notificationPanel.hidden;
+});
+els.markAllNotificationsReadBtn.addEventListener("click", () => markAllNotificationsRead().catch((error) => setError(error.message)));
 els.includeArchived.addEventListener("change", () => loadProjects().catch((error) => setError(error.message)));
 els.includeCompletedSprints.addEventListener("change", () => loadProjectData().catch((error) => setError(error.message)));
 els.backlogFilterBtn.addEventListener("click", () => {

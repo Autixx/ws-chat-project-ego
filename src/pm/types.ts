@@ -95,6 +95,21 @@ export type PmActivityEvent = {
   createdAt: string;
 };
 
+export type PmNotification = {
+  id: string;
+  userId: string;
+  projectId?: string;
+  taskId?: string;
+  actorId?: string;
+  actorName?: string;
+  eventType: string;
+  title: string;
+  body: string;
+  payload: Record<string, unknown>;
+  readAt?: string;
+  createdAt: string;
+};
+
 export type PmSprintStatus = "planned" | "active" | "completed" | "cancelled";
 
 export type PmSprint = {

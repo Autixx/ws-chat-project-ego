@@ -18,6 +18,7 @@ import type {
   PmComment,
   PmEpic,
   PmEventRecord,
+  PmNotification,
   PmProject,
   PmRole,
   PmSprint,
@@ -590,6 +591,42 @@ export class PmStore {
     return comment;
   }
 
+  async createCommentNotifications(actor: PmUser, task: PmTask, comment: PmComment): Promise<PmNotification[]> {
+    const mentions = extractMentions(comment.body);
+    const memberResult = await this.pool.query(
+      `
+      SELECT u.id, u.username, u.email, u.display_name
+      FROM pm.project_members m
+      JOIN core.users u ON u.id = m.user_id
+      WHERE m.project_id = $1
+        AND u.disabled = false
+      `,
+      [task.projectId]
+    );
+    const members = memberResult.rows.map(mapUser);
+    const mentionedUsers = mentions.size > 0 ? members.filter((member) => mentions.has(member.username.toLowerCase())) : [];
+    const directUsers = members.filter((member) => member.id === task.assigneeId || member.id === task.creatorId);
+    const recipients = uniqueUsers([...mentionedUsers, ...directUsers]).filter((member) => member.id !== actor.id);
+    if (recipients.length === 0) return [];
+
+    const notifications: PmNotification[] = [];
+    for (const recipient of recipients) {
+      const isMention = mentionedUsers.some((member) => member.id === recipient.id);
+      const notification = await this.createNotification({
+        userId: recipient.id,
+        actorId: actor.id,
+        projectId: task.projectId,
+        taskId: task.id,
+        eventType: isMention ? "comment.mention" : "comment.created",
+        title: isMention ? `Mention in ${task.title}` : `New comment on ${task.title}`,
+        body: comment.body.slice(0, 500),
+        payload: { commentId: comment.id, taskTitle: task.title }
+      });
+      notifications.push(notification);
+    }
+    return notifications;
+  }
+
   async updateComment(user: PmUser, commentId: string, input: UpdateCommentInput): Promise<PmComment> {
     const result = await this.pool.query(
       `
@@ -708,6 +745,62 @@ export class PmStore {
       [taskId]
     );
     return result.rows.map(mapActivity);
+  }
+
+  async listNotifications(userId: string, includeRead = false): Promise<PmNotification[]> {
+    const result = await this.pool.query(
+      `
+      SELECT n.*, COALESCE(u.display_name, u.username) AS actor_name
+      FROM pm.notifications n
+      LEFT JOIN core.users u ON u.id = n.actor_id
+      WHERE n.user_id = $1
+        AND ($2::boolean OR n.read_at IS NULL)
+      ORDER BY n.created_at DESC
+      LIMIT 100
+      `,
+      [userId, includeRead]
+    );
+    return result.rows.map(mapNotification);
+  }
+
+  async markNotificationRead(userId: string, notificationId: string): Promise<PmNotification> {
+    const result = await this.pool.query(
+      `
+      UPDATE pm.notifications
+      SET read_at = COALESCE(read_at, now())
+      WHERE id = $1 AND user_id = $2
+      RETURNING *
+      `,
+      [notificationId, userId]
+    );
+    if (!result.rows[0]) throw new Error("Notification not found.");
+    return mapNotification(result.rows[0]);
+  }
+
+  async markAllNotificationsRead(userId: string): Promise<{ updated: number }> {
+    const result = await this.pool.query("UPDATE pm.notifications SET read_at = COALESCE(read_at, now()) WHERE user_id = $1 AND read_at IS NULL", [userId]);
+    return { updated: result.rowCount ?? 0 };
+  }
+
+  private async createNotification(input: {
+    userId: string;
+    actorId?: string;
+    projectId?: string;
+    taskId?: string;
+    eventType: string;
+    title: string;
+    body?: string;
+    payload?: Record<string, unknown>;
+  }): Promise<PmNotification> {
+    const result = await this.pool.query(
+      `
+      INSERT INTO pm.notifications (user_id, project_id, task_id, actor_id, event_type, title, body, payload)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+      `,
+      [input.userId, input.projectId ?? null, input.taskId ?? null, input.actorId ?? null, input.eventType, input.title, input.body ?? "", JSON.stringify(input.payload ?? {})]
+    );
+    return mapNotification(result.rows[0]);
   }
 
   private async withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -881,6 +974,23 @@ function mapActivity(row: Row): PmActivityEvent {
   };
 }
 
+function mapNotification(row: Row): PmNotification {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    projectId: row.project_id ? String(row.project_id) : undefined,
+    taskId: row.task_id ? String(row.task_id) : undefined,
+    actorId: row.actor_id ? String(row.actor_id) : undefined,
+    actorName: row.actor_name ? String(row.actor_name) : undefined,
+    eventType: String(row.event_type),
+    title: String(row.title),
+    body: String(row.body ?? ""),
+    payload: parseJsonObject(row.payload),
+    readAt: asIso(row.read_at),
+    createdAt: asIso(row.created_at) ?? ""
+  };
+}
+
 function mapBoard(row: Row): PmBoard {
   return {
     id: String(row.id),
@@ -950,4 +1060,23 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
     }
   }
   return {};
+}
+
+function extractMentions(value: string): Set<string> {
+  const mentions = new Set<string>();
+  for (const match of value.matchAll(/(^|[\s([{:])@([A-Za-z0-9_.-]{2,64})\b/g)) {
+    mentions.add(match[2].toLowerCase());
+  }
+  return mentions;
+}
+
+function uniqueUsers(users: PmUser[]): PmUser[] {
+  const seen = new Set<string>();
+  const result: PmUser[] = [];
+  for (const user of users) {
+    if (seen.has(user.id)) continue;
+    seen.add(user.id);
+    result.push(user);
+  }
+  return result;
 }

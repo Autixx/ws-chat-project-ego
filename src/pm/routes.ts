@@ -36,6 +36,37 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     res.json({ user: req.pmUser });
   });
 
+  router.get("/notifications", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      res.json({ notifications: await store.listNotifications(user.id, req.query.includeRead === "true") });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/notifications/read-all", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const result = await store.markAllNotificationsRead(user.id);
+      events.broadcast({ type: "notification.read", createdAt: new Date().toISOString(), payload: { userId: user.id, ...result } });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/notifications/:notificationId/read", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const notification = await store.markNotificationRead(user.id, req.params.notificationId);
+      events.broadcast({ type: "notification.read", createdAt: new Date().toISOString(), payload: { userId: user.id, notificationId: notification.id } });
+      res.json({ notification });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/projects", async (req: PmAuthedRequest, res, next) => {
     try {
       res.json({ projects: await store.listProjects(requirePmUser(req).id, req.query.includeArchived === "true") });
@@ -331,7 +362,11 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
       const body = requiredString(objectBody(req.body).body, "body");
       const comment = await store.createComment(user, { taskId: req.params.taskId, body });
+      const notifications = await store.createCommentNotifications(user, task, comment);
       events.broadcast({ type: "comment.created", projectId: task.projectId, taskId: task.id, createdAt: new Date().toISOString(), payload: { comment } });
+      for (const notification of notifications) {
+        events.broadcast({ type: "notification.created", projectId: task.projectId, taskId: task.id, createdAt: notification.createdAt, payload: { notification, userId: notification.userId } });
+      }
       res.status(201).json({ comment });
     } catch (error) {
       next(error);

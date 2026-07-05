@@ -72,6 +72,20 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   flex-wrap: wrap;
 }
 
+.notification-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.notification-toggle span {
+  min-width: 22px;
+  border: 1px solid var(--line);
+  padding: 1px 5px;
+  text-align: center;
+  color: var(--yellow);
+}
+
 .dot {
   width: 10px;
   height: 10px;
@@ -88,6 +102,47 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   border-bottom: 1px solid var(--red);
   color: var(--red);
   background: #180808;
+}
+
+.notification-panel {
+  position: fixed;
+  top: 48px;
+  right: 14px;
+  z-index: 30;
+  width: min(460px, calc(100vw - 28px));
+  max-height: min(620px, calc(100vh - 74px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--accent);
+  background: var(--panel);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .48);
+  padding: 10px;
+}
+
+.notification-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding-top: 8px;
+}
+
+.notification-card {
+  border: 1px solid var(--line);
+  background: var(--field);
+  padding: 8px;
+}
+
+.notification-card.unread {
+  border-color: var(--yellow);
+}
+
+.notification-card .card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .pm-grid {
