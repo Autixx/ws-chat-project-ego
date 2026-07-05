@@ -44,6 +44,20 @@ PM exposes:
 - `GET /api/pm/me`
 - `GET /api/pm/security-boundary`
 - `GET /api/pm/architecture`
+- `GET /api/pm/projects`
+- `POST /api/pm/projects`
+- `PATCH /api/pm/projects/:projectId`
+- `POST /api/pm/projects/:projectId/archive`
+- `DELETE /api/pm/projects/:projectId`
+- `GET /api/pm/projects/:projectId/members`
+- `PUT /api/pm/projects/:projectId/members/:userId`
+- `GET /api/pm/projects/:projectId/epics`
+- `POST /api/pm/projects/:projectId/epics`
+- `GET /api/pm/projects/:projectId/tasks`
+- `POST /api/pm/projects/:projectId/tasks`
+- `PATCH /api/pm/tasks/:taskId`
+- `POST /api/pm/tasks/:taskId/move`
+- `POST /api/pm/tasks/:taskId/dependencies`
 - `GET /pm/ws`
 
 PM must not receive Dashboard/agent secrets. Keep these variables out of the `projectego-pm` service:
@@ -72,6 +86,15 @@ The schema separates logical areas:
 - `audit`
 
 Dashboard may later receive read-only PM database access if needed. PM must not receive direct access to Dashboard chat history, prompts, agent sessions, Codex APIs, or automation secrets.
+
+PM authorization is enforced server-side. Authelia identifies the user; the PM backend checks project membership and role before returning or mutating project data. The first API layer supports these roles:
+
+- `admin`
+- `project_owner`
+- `member`
+- `viewer`
+
+Project/task mutations use optimistic `version` fields. Clients can send `expectedVersion`; stale writes return conflict responses instead of silently overwriting another user's change. Task moves store numeric position values so cards can be inserted between existing cards without full-board renumbering.
 
 ## UI Layout
 

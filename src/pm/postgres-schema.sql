@@ -2,6 +2,8 @@
 -- Apply with a migration runner or psql as an admin role. Runtime services should
 -- use restricted roles and must not share Dashboard/agent secrets.
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE SCHEMA IF NOT EXISTS core;
 CREATE SCHEMA IF NOT EXISTS pm;
 CREATE SCHEMA IF NOT EXISTS agent;

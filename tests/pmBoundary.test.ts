@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import http from "node:http";
 import test from "node:test";
 import { assertPmCanStart, forbiddenPmEnv, loadPmConfig } from "../src/pm/config.js";
+import { canManageProject, canViewProject, canWriteProject, requireProjectRole } from "../src/pm/permissions.js";
+import { createPmApp } from "../src/pm/server.js";
 
 test("PM config defaults to a separate service port and data area", () => {
   const config = loadPmConfig({
@@ -49,4 +52,28 @@ test("PM PostgreSQL schema defines required logical boundaries", () => {
 
   assert.match(schema, /actor_type TEXT NOT NULL CHECK \(actor_type IN \('user', 'system', 'n8n', 'agent'\)\)/);
   assert.match(schema, /storage_path TEXT NOT NULL/);
+});
+
+test("PM role checks keep viewer read-only and member writable", () => {
+  assert.equal(canViewProject("viewer"), true);
+  assert.equal(canWriteProject("viewer"), false);
+  assert.equal(canWriteProject("member"), true);
+  assert.equal(canManageProject("member"), false);
+  assert.equal(canManageProject("project_owner"), true);
+  assert.throws(() => requireProjectRole("viewer", "member"), /access denied/);
+});
+
+test("PM API reports project endpoints unavailable without PM_DATABASE_URL", async () => {
+  const app = createPmApp(loadPmConfig({ NODE_ENV: "development", PM_DEV_AUTH_BYPASS: "true" }));
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/pm/projects`);
+    assert.equal(response.status, 503);
+    assert.match(await response.text(), /PM_DATABASE_URL is required/);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
 });

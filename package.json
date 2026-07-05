@@ -1,6 +1,6 @@
 {
   "name": "projectego-ws-chat",
-  "version": "0.1.35",
+  "version": "0.1.36",
   "description": "ProjectEGO Dashboard",
   "type": "module",
   "scripts": {
@@ -13,10 +13,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@types/pg": "^8.20.0",
     "argon2": "^0.44.0",
     "better-sqlite3": "^11.8.1",
     "express": "^4.19.2",
     "multer": "^2.2.0",
+    "pg": "^8.22.0",
     "ws": "^8.17.1"
   },
   "devDependencies": {

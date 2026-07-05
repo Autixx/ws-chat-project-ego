@@ -1,0 +1,341 @@
+import express from "express";
+import type { AuthenticatedUser } from "../auth/authelia.js";
+import { normalizeRole, PmPermissionError, requireProjectRole } from "./permissions.js";
+import type { PmEventHub } from "./events.js";
+import type { PmStore, PmConflictError } from "./postgresStore.js";
+import type { CreateEpicInput, CreateProjectInput, CreateTaskInput, MoveTaskInput, PmUser, UpdateProjectInput, UpdateTaskInput } from "./types.js";
+
+export type PmAuthedRequest = express.Request & { pmIdentity?: AuthenticatedUser; pmUser?: PmUser };
+
+export function createPmRouter(store: PmStore, events: PmEventHub): express.Router {
+  const router = express.Router();
+
+  router.use(async (req: PmAuthedRequest, res, next) => {
+    try {
+      if (!req.pmIdentity) {
+        res.status(401).json({ error: "Authentication required." });
+        return;
+      }
+      req.pmUser = await store.ensureUser(req.pmIdentity);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/me", (req: PmAuthedRequest, res) => {
+    res.json({ user: req.pmUser });
+  });
+
+  router.get("/projects", async (req: PmAuthedRequest, res, next) => {
+    try {
+      res.json({ projects: await store.listProjects(requirePmUser(req).id, req.query.includeArchived === "true") });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const input = parseCreateProject(req.body);
+      const project = await store.createProject(requirePmUser(req), input);
+      events.broadcast({ type: "project.created", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { project } });
+      res.status(201).json({ project });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/projects/:projectId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
+      const project = await store.updateProject(user, req.params.projectId, parseUpdateProject(req.body));
+      events.broadcast({ type: "project.updated", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { project } });
+      res.json({ project });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects/:projectId/archive", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
+      const project = await store.archiveProject(user, req.params.projectId, Boolean(req.body?.archived ?? true));
+      events.broadcast({ type: "project.archived", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { project } });
+      res.json({ project });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/projects/:projectId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
+      const project = await store.softDeleteProject(user, req.params.projectId);
+      events.broadcast({ type: "project.updated", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { deleted: true } });
+      res.json({ project });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/projects/:projectId/members", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
+      res.json({ members: await store.listMembers(req.params.projectId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.put("/projects/:projectId/members/:userId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
+      const role = normalizeRole(req.body?.role);
+      await store.setMemberRole(user, req.params.projectId, req.params.userId, role);
+      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { memberId: req.params.userId, role } });
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/projects/:projectId/epics", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
+      res.json({ epics: await store.listEpics(req.params.projectId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects/:projectId/epics", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const role = await store.getProjectRole(user.id, req.params.projectId);
+      requireProjectRole(role, "member");
+      const epic = await store.createEpic(user, { ...parseCreateEpic(req.body), projectId: req.params.projectId });
+      events.broadcast({ type: "epic.created", projectId: req.params.projectId, version: epic.version, createdAt: new Date().toISOString(), payload: { epic } });
+      res.status(201).json({ epic });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/projects/:projectId/tasks", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
+      res.json({
+        tasks: await store.listTasks(req.params.projectId, {
+          epicId: stringQuery(req.query.epicId),
+          sprintId: stringQuery(req.query.sprintId),
+          includeArchived: req.query.includeArchived === "true"
+        })
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects/:projectId/tasks", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
+      const task = await store.createTask(user, { ...parseCreateTask(req.body), projectId: req.params.projectId });
+      events.broadcast({ type: "task.created", projectId: req.params.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { task } });
+      res.status(201).json({ task });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/tasks/:taskId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const existing = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
+      const task = await store.updateTask(user, req.params.taskId, parseUpdateTask(req.body));
+      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { task } });
+      res.json({ task });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/tasks/:taskId/move", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const existing = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
+      const move = parseMoveTask(req.params.taskId, req.body);
+      const result = await store.moveTask(user, move);
+      events.broadcast({
+        type: "task.moved",
+        projectId: result.task.projectId,
+        taskId: result.task.id,
+        version: result.task.version,
+        createdAt: new Date().toISOString(),
+        payload: { task: result.task, position: result.position }
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/tasks/:taskId/dependencies", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
+      const blockingTaskId = requiredString(req.body?.blockingTaskId, "blockingTaskId");
+      await store.addDependency(user, blockingTaskId, req.params.taskId);
+      events.broadcast({ type: "task.updated", taskId: req.params.taskId, createdAt: new Date().toISOString(), payload: { dependencyAdded: blockingTaskId } });
+      res.status(201).json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const statusCode = statusForError(error);
+    res.status(statusCode).json({ error: error instanceof Error ? error.message : String(error) });
+  });
+
+  return router;
+}
+
+function requirePmUser(req: PmAuthedRequest): PmUser {
+  if (!req.pmUser) throw new PmPermissionError(401, "Authentication required.");
+  return req.pmUser;
+}
+
+function statusForError(error: unknown): number {
+  if (error instanceof PmPermissionError) return error.statusCode;
+  if (isConflict(error)) return 409;
+  if (error instanceof Error && /not found/i.test(error.message)) return 404;
+  if (error instanceof Error && (/required/i.test(error.message) || /must be/i.test(error.message))) return 400;
+  return 500;
+}
+
+function isConflict(error: unknown): error is PmConflictError {
+  return Boolean(error && typeof error === "object" && "statusCode" in error && error.statusCode === 409);
+}
+
+function parseCreateProject(body: unknown): CreateProjectInput {
+  const raw = objectBody(body);
+  return {
+    key: requiredString(raw.key, "key"),
+    name: requiredString(raw.name, "name"),
+    description: optionalString(raw.description)
+  };
+}
+
+function parseUpdateProject(body: unknown): UpdateProjectInput {
+  const raw = objectBody(body);
+  return {
+    name: optionalString(raw.name),
+    description: optionalString(raw.description),
+    expectedVersion: optionalNumber(raw.expectedVersion)
+  };
+}
+
+function parseCreateEpic(body: unknown): Omit<CreateEpicInput, "projectId"> {
+  const raw = objectBody(body);
+  return {
+    title: requiredString(raw.title, "title"),
+    description: optionalString(raw.description),
+    status: optionalString(raw.status),
+    priority: optionalString(raw.priority),
+    position: optionalNumber(raw.position)
+  };
+}
+
+function parseCreateTask(body: unknown): Omit<CreateTaskInput, "projectId"> {
+  const raw = objectBody(body);
+  return {
+    title: requiredString(raw.title, "title"),
+    description: optionalString(raw.description),
+    status: optionalString(raw.status),
+    priority: optionalPriority(raw.priority),
+    epicId: optionalString(raw.epicId),
+    sprintId: optionalString(raw.sprintId),
+    parentTaskId: optionalString(raw.parentTaskId),
+    assigneeId: optionalString(raw.assigneeId),
+    dueAt: optionalString(raw.dueAt)
+  };
+}
+
+function parseUpdateTask(body: unknown): UpdateTaskInput {
+  const raw = objectBody(body);
+  return {
+    title: optionalString(raw.title),
+    description: optionalString(raw.description),
+    status: optionalString(raw.status),
+    priority: optionalPriority(raw.priority),
+    epicId: optionalString(raw.epicId),
+    sprintId: optionalString(raw.sprintId),
+    assigneeId: optionalString(raw.assigneeId),
+    dueAt: optionalString(raw.dueAt),
+    expectedVersion: optionalNumber(raw.expectedVersion)
+  };
+}
+
+function parseMoveTask(taskId: string, body: unknown): MoveTaskInput {
+  const raw = objectBody(body);
+  return {
+    taskId,
+    boardId: optionalString(raw.boardId),
+    columnId: optionalString(raw.columnId),
+    sprintId: optionalString(raw.sprintId),
+    backlogScope: optionalString(raw.backlogScope),
+    position: requiredNumber(raw.position, "position"),
+    status: optionalString(raw.status),
+    expectedVersion: optionalNumber(raw.expectedVersion)
+  };
+}
+
+function objectBody(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("JSON object body is required.");
+  return value as Record<string, unknown>;
+}
+
+function requiredString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${field} is required.`);
+  return value.trim();
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+function requiredNumber(value: unknown, field: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${field} must be a number.`);
+  return parsed;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) throw new Error("Numeric field must be a number.");
+  return parsed;
+}
+
+function optionalPriority(value: unknown): string | undefined {
+  const priority = optionalString(value);
+  if (!priority) return undefined;
+  if (!["urgent", "high", "medium", "low", "none"].includes(priority)) throw new Error("priority must be urgent, high, medium, low, or none.");
+  return priority;
+}
+
+function stringQuery(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value : undefined;
+}
