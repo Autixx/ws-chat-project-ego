@@ -8,6 +8,12 @@ export type PmConfig = {
   maxAttachmentBytes: number;
   devAuthBypass: boolean;
   trustAutheliaHeaders: boolean;
+  automationToken?: string;
+  webhooks: {
+    urls: string[];
+    secret?: string;
+    timeoutMs: number;
+  };
   smtp?: {
     host?: string;
     port: number;
@@ -53,6 +59,12 @@ export function loadPmConfig(env: NodeJS.ProcessEnv = process.env): PmConfig {
     maxAttachmentBytes: numberFromEnv(env.PM_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024),
     devAuthBypass: boolFromEnv(env.PM_DEV_AUTH_BYPASS, env.NODE_ENV !== "production"),
     trustAutheliaHeaders: boolFromEnv(env.PM_TRUST_AUTHELIA_HEADERS ?? env.TRUST_AUTHELIA_HEADERS, false),
+    automationToken: env.PM_AUTOMATION_TOKEN,
+    webhooks: {
+      urls: csvFromEnv(env.PM_WEBHOOK_URLS),
+      secret: env.PM_WEBHOOK_SECRET,
+      timeoutMs: numberFromEnv(env.PM_WEBHOOK_TIMEOUT_MS, 5000)
+    },
     smtp: {
       host: env.SMTP_HOST,
       port: numberFromEnv(env.SMTP_PORT, 587),
@@ -62,6 +74,14 @@ export function loadPmConfig(env: NodeJS.ProcessEnv = process.env): PmConfig {
       tls: boolFromEnv(env.SMTP_TLS, true)
     }
   };
+}
+
+function csvFromEnv(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 export function assertPmCanStart(config: PmConfig, env: NodeJS.ProcessEnv = process.env): void {

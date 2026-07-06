@@ -139,7 +139,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.49 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.50 \
   node dist/pm/migrate.js
 ```
 
@@ -219,6 +219,35 @@ The first PM frontend shell supports:
 - task due dates with overdue highlighting
 - task archive/delete actions
 - PM WebSocket reconnect and refresh on structured events
+- outgoing PM webhooks for task/comment/attachment/project events with `X-ProjectEGO-Signature`
+- SMTP-backed project invites through `POST /api/pm/projects/:projectId/invites`
+
+PM outgoing webhooks are configured with:
+
+```env
+PM_WEBHOOK_URLS=https://n8n.example/webhook/projectego/pm-events
+PM_WEBHOOK_SECRET=<shared-secret>
+PM_WEBHOOK_TIMEOUT_MS=5000
+```
+
+Each PM event is posted as JSON with:
+
+- `X-ProjectEGO-Event`
+- `X-ProjectEGO-Delivery`
+- `X-ProjectEGO-Signature: sha256=<hmac>` when `PM_WEBHOOK_SECRET` is set
+
+PM SMTP mail is configured with:
+
+```env
+SMTP_HOST=mail.project-ego.online
+SMTP_PORT=587
+SMTP_USERNAME=<smtp-user>
+SMTP_PASSWORD=<smtp-password>
+SMTP_FROM=pm@project-ego.online
+SMTP_TLS=false
+```
+
+`GET /api/pm/mail/status` reports whether host/from are configured. `POST /api/pm/projects/:projectId/invites` sends a project invite email. Invites do not create PM passwords or a second login stack; invited users still authenticate through the configured identity provider.
 
 ## UI Layout
 

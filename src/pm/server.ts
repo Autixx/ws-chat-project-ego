@@ -7,6 +7,7 @@ import { WebSocketServer } from "ws";
 import { getAutheliaUser, type AuthenticatedUser } from "../auth/authelia.js";
 import { assertPmCanStart, forbiddenPmEnv, loadPmConfig, PM_FORBIDDEN_ENV_KEYS, type PmConfig } from "./config.js";
 import { PmEventHub } from "./events.js";
+import { PmWebhookDispatcher } from "./webhookDispatcher.js";
 import { PmStore } from "./postgresStore.js";
 import { createPmRouter } from "./routes.js";
 
@@ -54,7 +55,8 @@ export function createPmApp(pmConfig: PmConfig, store?: PmStore, events = new Pm
   });
 
   if (store) {
-    pmApp.use("/api/pm", createPmRouter(store, events, { attachmentsDir: pmConfig.attachmentsDir, maxAttachmentBytes: pmConfig.maxAttachmentBytes }));
+    const webhooks = new PmWebhookDispatcher(pmConfig.webhooks);
+    pmApp.use("/api/pm", createPmRouter(store, events, { attachmentsDir: pmConfig.attachmentsDir, maxAttachmentBytes: pmConfig.maxAttachmentBytes, pmConfig, webhooks }));
   } else {
     pmApp.use("/api/pm", (_req, res) => {
       res.status(503).json({ error: "PM_DATABASE_URL is required before PM API can serve project data." });

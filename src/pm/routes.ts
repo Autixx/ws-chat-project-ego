@@ -4,13 +4,16 @@ import path from "node:path";
 import multer from "multer";
 import type { AuthenticatedUser } from "../auth/authelia.js";
 import { removePmAttachmentFile, storePmTaskAttachment, streamPmAttachment } from "./attachmentService.js";
+import type { PmConfig } from "./config.js";
 import { normalizeRole, PmPermissionError, requireProjectRole } from "./permissions.js";
-import type { PmEventHub } from "./events.js";
+import type { PmEvent, PmEventHub } from "./events.js";
+import { buildPmInviteEmail, sendPmMail } from "./mailer.js";
 import type { PmStore, PmConflictError } from "./postgresStore.js";
 import type { CreateBoardColumnInput, CreateEpicInput, CreateProjectInput, CreateSprintInput, CreateTaskInput, MoveTaskInput, PmSprintStatus, PmUser, UpdateProjectInput, UpdateSprintInput, UpdateTaskInput } from "./types.js";
+import type { PmWebhookDispatcher } from "./webhookDispatcher.js";
 
 export type PmAuthedRequest = express.Request & { pmIdentity?: AuthenticatedUser; pmUser?: PmUser };
-export type PmRouterOptions = { attachmentsDir: string; maxAttachmentBytes: number };
+export type PmRouterOptions = { attachmentsDir: string; maxAttachmentBytes: number; pmConfig: PmConfig; webhooks?: PmWebhookDispatcher };
 
 export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRouterOptions): express.Router {
   const router = express.Router();
@@ -18,6 +21,16 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     dest: path.join(options.attachmentsDir, "tmp"),
     limits: { fileSize: options.maxAttachmentBytes }
   });
+  const emit = (event: PmEvent) => {
+    events.broadcast(event);
+    if (options.webhooks?.enabled) {
+      void options.webhooks.dispatch(event).then((deliveries) => {
+        for (const delivery of deliveries) {
+          if (!delivery.ok) console.warn("PM webhook delivery failed", delivery);
+        }
+      });
+    }
+  };
 
   router.use(async (req: PmAuthedRequest, res, next) => {
     try {
@@ -36,6 +49,14 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     res.json({ user: req.pmUser });
   });
 
+  router.get("/mail/status", (_req: PmAuthedRequest, res) => {
+    res.json({
+      smtpConfigured: Boolean(options.pmConfig.smtp?.host && options.pmConfig.smtp.from),
+      fromConfigured: Boolean(options.pmConfig.smtp?.from),
+      hostConfigured: Boolean(options.pmConfig.smtp?.host)
+    });
+  });
+
   router.get("/notifications", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
@@ -49,7 +70,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     try {
       const user = requirePmUser(req);
       const result = await store.markAllNotificationsRead(user.id);
-      events.broadcast({ type: "notification.read", createdAt: new Date().toISOString(), payload: { userId: user.id, ...result } });
+      emit({ type: "notification.read", createdAt: new Date().toISOString(), payload: { userId: user.id, ...result } });
       res.json(result);
     } catch (error) {
       next(error);
@@ -60,7 +81,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     try {
       const user = requirePmUser(req);
       const notification = await store.markNotificationRead(user.id, req.params.notificationId);
-      events.broadcast({ type: "notification.read", createdAt: new Date().toISOString(), payload: { userId: user.id, notificationId: notification.id } });
+      emit({ type: "notification.read", createdAt: new Date().toISOString(), payload: { userId: user.id, notificationId: notification.id } });
       res.json({ notification });
     } catch (error) {
       next(error);
@@ -79,7 +100,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     try {
       const input = parseCreateProject(req.body);
       const project = await store.createProject(requirePmUser(req), input);
-      events.broadcast({ type: "project.created", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { project } });
+      emit({ type: "project.created", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { project } });
       res.status(201).json({ project });
     } catch (error) {
       next(error);
@@ -91,7 +112,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
       const project = await store.updateProject(user, req.params.projectId, parseUpdateProject(req.body));
-      events.broadcast({ type: "project.updated", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { project } });
+      emit({ type: "project.updated", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { project } });
       res.json({ project });
     } catch (error) {
       next(error);
@@ -103,7 +124,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
       const project = await store.archiveProject(user, req.params.projectId, Boolean(req.body?.archived ?? true));
-      events.broadcast({ type: "project.archived", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { project } });
+      emit({ type: "project.archived", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { project } });
       res.json({ project });
     } catch (error) {
       next(error);
@@ -115,7 +136,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
       const project = await store.softDeleteProject(user, req.params.projectId);
-      events.broadcast({ type: "project.updated", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { deleted: true } });
+      emit({ type: "project.updated", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { deleted: true } });
       res.json({ project });
     } catch (error) {
       next(error);
@@ -138,7 +159,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
       const role = normalizeRole(req.body?.role);
       const member = await store.setMemberRole(user, req.params.projectId, req.params.userId, role);
-      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { memberId: req.params.userId, role } });
+      emit({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { memberId: req.params.userId, role } });
       res.json({ member });
     } catch (error) {
       next(error);
@@ -153,8 +174,28 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const target = await store.findUserByIdentifier(identifier);
       const role = normalizeRole(req.body?.role ?? "member");
       const member = await store.setMemberRole(user, req.params.projectId, target.id, role);
-      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { memberId: target.id, role } });
+      emit({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { memberId: target.id, role } });
       res.status(201).json({ member });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects/:projectId/invites", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
+      const email = requiredEmail(req.body?.email);
+      const project = await store.loadProject(req.params.projectId);
+      const mail = buildPmInviteEmail({
+        to: email,
+        inviterName: user.displayName ?? user.username,
+        projectName: project.name,
+        publicBaseUrl: options.pmConfig.publicBaseUrl
+      });
+      const result = await sendPmMail(options.pmConfig, mail);
+      emit({ type: "project.updated", projectId: project.id, version: project.version, createdAt: new Date().toISOString(), payload: { inviteEmail: email, mailSent: result.sent } });
+      res.status(result.sent ? 202 : 503).json({ invite: { email, sent: result.sent, disabled: result.disabled, message: result.message } });
     } catch (error) {
       next(error);
     }
@@ -165,7 +206,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
       await store.removeMember(user, req.params.projectId, req.params.userId);
-      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { memberId: req.params.userId, removed: true } });
+      emit({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { memberId: req.params.userId, removed: true } });
       res.json({ ok: true });
     } catch (error) {
       next(error);
@@ -187,7 +228,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
       const label = await store.createLabel(user, { ...parseCreateLabel(req.body), projectId: req.params.projectId });
-      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { label } });
+      emit({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { label } });
       res.status(201).json({ label });
     } catch (error) {
       next(error);
@@ -199,7 +240,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
       const label = await store.updateLabel(user, req.params.projectId, req.params.labelId, parseUpdateLabel(req.body));
-      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { label } });
+      emit({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { label } });
       res.json({ label });
     } catch (error) {
       next(error);
@@ -211,7 +252,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
       await store.deleteLabel(user, req.params.projectId, req.params.labelId);
-      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { labelId: req.params.labelId, deleted: true } });
+      emit({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { labelId: req.params.labelId, deleted: true } });
       res.json({ ok: true });
     } catch (error) {
       next(error);
@@ -233,7 +274,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
       const filter = await store.createSavedFilter(user, { ...parseCreateSavedFilter(req.body), projectId: req.params.projectId, userId: user.id });
-      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { filterId: filter.id } });
+      emit({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { filterId: filter.id } });
       res.status(201).json({ filter });
     } catch (error) {
       next(error);
@@ -245,7 +286,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
       await store.deleteSavedFilter(user, req.params.projectId, req.params.filterId);
-      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { filterId: req.params.filterId, deleted: true } });
+      emit({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { filterId: req.params.filterId, deleted: true } });
       res.json({ ok: true });
     } catch (error) {
       next(error);
@@ -257,7 +298,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
       const filter = await store.updateSavedFilter(user, req.params.projectId, req.params.filterId, parseUpdateSavedFilter(req.body));
-      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { filterId: filter.id } });
+      emit({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { filterId: filter.id } });
       res.json({ filter });
     } catch (error) {
       next(error);
@@ -280,7 +321,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const role = await store.getProjectRole(user.id, req.params.projectId);
       requireProjectRole(role, "member");
       const epic = await store.createEpic(user, { ...parseCreateEpic(req.body), projectId: req.params.projectId });
-      events.broadcast({ type: "epic.created", projectId: req.params.projectId, version: epic.version, createdAt: new Date().toISOString(), payload: { epic } });
+      emit({ type: "epic.created", projectId: req.params.projectId, version: epic.version, createdAt: new Date().toISOString(), payload: { epic } });
       res.status(201).json({ epic });
     } catch (error) {
       next(error);
@@ -307,7 +348,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
       const sprint = await store.createSprint(user, { ...parseCreateSprint(req.body), projectId: req.params.projectId });
-      events.broadcast({ type: "sprint.created", projectId: req.params.projectId, version: sprint.version, createdAt: new Date().toISOString(), payload: { sprint } });
+      emit({ type: "sprint.created", projectId: req.params.projectId, version: sprint.version, createdAt: new Date().toISOString(), payload: { sprint } });
       res.status(201).json({ sprint });
     } catch (error) {
       next(error);
@@ -320,7 +361,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const existing = await store.loadSprint(req.params.sprintId);
       requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
       const sprint = await store.updateSprint(user, req.params.sprintId, parseUpdateSprint(req.body));
-      events.broadcast({ type: "sprint.updated", projectId: sprint.projectId, version: sprint.version, createdAt: new Date().toISOString(), payload: { sprint } });
+      emit({ type: "sprint.updated", projectId: sprint.projectId, version: sprint.version, createdAt: new Date().toISOString(), payload: { sprint } });
       res.json({ sprint });
     } catch (error) {
       next(error);
@@ -342,7 +383,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
       const result = await store.ensureDefaultKanbanBoard(user, req.params.projectId, optionalString(req.body?.epicId));
-      events.broadcast({ type: "board.created", projectId: req.params.projectId, version: result.board.version, createdAt: new Date().toISOString(), payload: result });
+      emit({ type: "board.created", projectId: req.params.projectId, version: result.board.version, createdAt: new Date().toISOString(), payload: result });
       res.status(201).json(result);
     } catch (error) {
       next(error);
@@ -366,7 +407,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const board = await store.loadBoard(req.params.boardId);
       requireProjectRole(await store.getProjectRole(user.id, board.projectId), "project_owner");
       const column = await store.createBoardColumn(user, { ...parseCreateBoardColumn(req.body), boardId: req.params.boardId });
-      events.broadcast({ type: "board.column_created", projectId: board.projectId, createdAt: new Date().toISOString(), payload: { boardId: board.id, column } });
+      emit({ type: "board.column_created", projectId: board.projectId, createdAt: new Date().toISOString(), payload: { boardId: board.id, column } });
       res.status(201).json({ column });
     } catch (error) {
       next(error);
@@ -394,7 +435,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
       const task = await store.createTask(user, { ...parseCreateTask(req.body), projectId: req.params.projectId });
-      events.broadcast({ type: "task.created", projectId: req.params.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { task } });
+      emit({ type: "task.created", projectId: req.params.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { task } });
       res.status(201).json({ task });
     } catch (error) {
       next(error);
@@ -407,7 +448,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const existing = await store.loadTask(req.params.taskId);
       requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
       const task = await store.updateTask(user, req.params.taskId, parseUpdateTask(req.body));
-      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { task } });
+      emit({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { task } });
       res.json({ task });
     } catch (error) {
       next(error);
@@ -420,7 +461,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const existing = await store.loadTask(req.params.taskId);
       requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
       const task = await store.archiveTask(user, req.params.taskId, Boolean(req.body?.archived ?? true));
-      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { task } });
+      emit({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { task } });
       res.json({ task });
     } catch (error) {
       next(error);
@@ -433,7 +474,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const existing = await store.loadTask(req.params.taskId);
       requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
       const task = await store.softDeleteTask(user, req.params.taskId);
-      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { deleted: true } });
+      emit({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { deleted: true } });
       res.json({ task });
     } catch (error) {
       next(error);
@@ -447,7 +488,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
       const move = parseMoveTask(req.params.taskId, req.body);
       const result = await store.moveTask(user, move);
-      events.broadcast({
+      emit({
         type: "task.moved",
         projectId: result.task.projectId,
         taskId: result.task.id,
@@ -479,7 +520,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
       const blockingTaskId = requiredString(req.body?.blockingTaskId, "blockingTaskId");
       await store.addDependency(user, blockingTaskId, req.params.taskId);
-      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: req.params.taskId, createdAt: new Date().toISOString(), payload: { dependencyAdded: blockingTaskId } });
+      emit({ type: "task.updated", projectId: task.projectId, taskId: req.params.taskId, createdAt: new Date().toISOString(), payload: { dependencyAdded: blockingTaskId } });
       res.status(201).json({ ok: true });
     } catch (error) {
       next(error);
@@ -492,7 +533,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const task = await store.loadTask(req.params.taskId);
       requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
       await store.removeDependency(user, req.params.blockingTaskId, req.params.taskId);
-      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: req.params.taskId, createdAt: new Date().toISOString(), payload: { dependencyRemoved: req.params.blockingTaskId } });
+      emit({ type: "task.updated", projectId: task.projectId, taskId: req.params.taskId, createdAt: new Date().toISOString(), payload: { dependencyRemoved: req.params.blockingTaskId } });
       res.json({ ok: true });
     } catch (error) {
       next(error);
@@ -506,7 +547,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
       const sprintId = optionalString(req.body?.sprintId);
       const updated = await store.assignTaskToSprint(user, req.params.taskId, sprintId);
-      events.broadcast({ type: "task.updated", projectId: updated.projectId, taskId: updated.id, version: updated.version, createdAt: new Date().toISOString(), payload: { task: updated, sprintId } });
+      emit({ type: "task.updated", projectId: updated.projectId, taskId: updated.id, version: updated.version, createdAt: new Date().toISOString(), payload: { task: updated, sprintId } });
       res.json({ task: updated });
     } catch (error) {
       next(error);
@@ -520,7 +561,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
       const assigneeId = optionalString(req.body?.assigneeId);
       const updated = await store.assignTask(user, req.params.taskId, assigneeId);
-      events.broadcast({ type: "task.updated", projectId: updated.projectId, taskId: updated.id, version: updated.version, createdAt: new Date().toISOString(), payload: { task: updated, assigneeId } });
+      emit({ type: "task.updated", projectId: updated.projectId, taskId: updated.id, version: updated.version, createdAt: new Date().toISOString(), payload: { task: updated, assigneeId } });
       res.json({ task: updated });
     } catch (error) {
       next(error);
@@ -545,7 +586,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
       const labelId = requiredString(req.body?.labelId, "labelId");
       const label = await store.addTaskLabel(user, req.params.taskId, labelId);
-      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { labelAdded: label.id } });
+      emit({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { labelAdded: label.id } });
       res.status(201).json({ label });
     } catch (error) {
       next(error);
@@ -558,7 +599,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const task = await store.loadTask(req.params.taskId);
       requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
       await store.removeTaskLabel(user, req.params.taskId, req.params.labelId);
-      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { labelRemoved: req.params.labelId } });
+      emit({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { labelRemoved: req.params.labelId } });
       res.json({ ok: true });
     } catch (error) {
       next(error);
@@ -584,9 +625,9 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const body = requiredString(objectBody(req.body).body, "body");
       const comment = await store.createComment(user, { taskId: req.params.taskId, body });
       const notifications = await store.createCommentNotifications(user, task, comment);
-      events.broadcast({ type: "comment.created", projectId: task.projectId, taskId: task.id, createdAt: new Date().toISOString(), payload: { comment } });
+      emit({ type: "comment.created", projectId: task.projectId, taskId: task.id, createdAt: new Date().toISOString(), payload: { comment } });
       for (const notification of notifications) {
-        events.broadcast({ type: "notification.created", projectId: task.projectId, taskId: task.id, createdAt: notification.createdAt, payload: { notification, userId: notification.userId } });
+        emit({ type: "notification.created", projectId: task.projectId, taskId: task.id, createdAt: notification.createdAt, payload: { notification, userId: notification.userId } });
       }
       res.status(201).json({ comment });
     } catch (error) {
@@ -602,7 +643,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
       const body = requiredString(objectBody(req.body).body, "body");
       const comment = await store.updateComment(user, req.params.commentId, { body });
-      events.broadcast({ type: "comment.updated", projectId: task.projectId, taskId: comment.taskId, createdAt: new Date().toISOString(), payload: { comment } });
+      emit({ type: "comment.updated", projectId: task.projectId, taskId: comment.taskId, createdAt: new Date().toISOString(), payload: { comment } });
       res.json({ comment });
     } catch (error) {
       next(error);
@@ -616,7 +657,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const task = await store.loadTask(existing.taskId);
       requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
       const comment = await store.softDeleteComment(user, req.params.commentId);
-      events.broadcast({ type: "comment.deleted", projectId: task.projectId, taskId: comment.taskId, createdAt: new Date().toISOString(), payload: { commentId: comment.id } });
+      emit({ type: "comment.deleted", projectId: task.projectId, taskId: comment.taskId, createdAt: new Date().toISOString(), payload: { commentId: comment.id } });
       res.json({ comment });
     } catch (error) {
       next(error);
@@ -651,7 +692,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
         maxBytes: options.maxAttachmentBytes
       });
       const attachment = await store.createAttachment(user, { taskId: task.id, ...stored });
-      events.broadcast({ type: "attachment.created", projectId: task.projectId, taskId: task.id, createdAt: new Date().toISOString(), payload: { attachment } });
+      emit({ type: "attachment.created", projectId: task.projectId, taskId: task.id, createdAt: new Date().toISOString(), payload: { attachment } });
       res.status(201).json({ attachment });
     } catch (error) {
       if (uploadedFile?.path) await fs.rm(uploadedFile.path, { force: true }).catch(() => undefined);
@@ -679,7 +720,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
       const deleted = await store.softDeleteAttachment(user, attachment.id);
       await removePmAttachmentFile(options.attachmentsDir, attachment);
-      events.broadcast({ type: "attachment.deleted", projectId: task.projectId, taskId: task.id, createdAt: new Date().toISOString(), payload: { attachmentId: attachment.id } });
+      emit({ type: "attachment.deleted", projectId: task.projectId, taskId: task.id, createdAt: new Date().toISOString(), payload: { attachmentId: attachment.id } });
       res.json({ attachment: deleted });
     } catch (error) {
       next(error);
@@ -872,6 +913,12 @@ function objectBody(value: unknown): Record<string, unknown> {
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${field} is required.`);
   return value.trim();
+}
+
+function requiredEmail(value: unknown): string {
+  const email = requiredString(value, "email").toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("email must be a valid email address.");
+  return email;
 }
 
 function optionalString(value: unknown): string | undefined {

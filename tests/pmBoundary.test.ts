@@ -7,8 +7,10 @@ import http from "node:http";
 import test from "node:test";
 import { resolveAttachmentPath, sanitizePmFileName, storePmTaskAttachment, validatePmAttachmentFile } from "../src/pm/attachmentService.js";
 import { assertPmCanStart, forbiddenPmEnv, loadPmConfig } from "../src/pm/config.js";
+import { buildPmInviteEmail } from "../src/pm/mailer.js";
 import { canManageProject, canViewProject, canWriteProject, requireProjectRole } from "../src/pm/permissions.js";
 import { createPmApp } from "../src/pm/server.js";
+import { signWebhookBody } from "../src/pm/webhookDispatcher.js";
 
 test("PM config defaults to a separate service port and data area", () => {
   const config = loadPmConfig({
@@ -22,6 +24,27 @@ test("PM config defaults to a separate service port and data area", () => {
   assert.equal(config.attachmentsDir, "/app/dashboard-data/attachments");
   assert.equal(config.maxAttachmentBytes, 25 * 1024 * 1024);
   assert.equal(config.databaseUrl, "postgres://pm:test@postgres/projectego");
+});
+
+test("PM config supports signed outgoing webhooks and SMTP without Dashboard secrets", () => {
+  const config = loadPmConfig({
+    NODE_ENV: "development",
+    PM_WEBHOOK_URLS: "https://n8n.example.test/webhook/pm, https://audit.example.test/pm",
+    PM_WEBHOOK_SECRET: "pm-webhook-secret",
+    PM_WEBHOOK_TIMEOUT_MS: "2500",
+    SMTP_HOST: "mail.project-ego.online",
+    SMTP_PORT: "587",
+    SMTP_FROM: "pm@project-ego.online",
+    SMTP_TLS: "false"
+  });
+
+  assert.deepEqual(config.webhooks.urls, ["https://n8n.example.test/webhook/pm", "https://audit.example.test/pm"]);
+  assert.equal(config.webhooks.secret, "pm-webhook-secret");
+  assert.equal(config.webhooks.timeoutMs, 2500);
+  assert.equal(config.smtp?.host, "mail.project-ego.online");
+  assert.equal(config.smtp?.from, "pm@project-ego.online");
+  assert.equal(config.smtp?.tls, false);
+  assert.match(signWebhookBody("{\"type\":\"task.created\"}", "secret"), /^sha256=[a-f0-9]{64}$/);
 });
 
 test("PM rejects Dashboard and agent secrets in its runtime environment", () => {
@@ -133,12 +156,31 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /task dependency management/);
   assert.equal(packageJson.scripts["pm:bootstrap"], "node dist/pm/bootstrap.js");
   assert.equal(packageJson.scripts["test:pm:postgres"], "tsx --test tests/pmPostgres.integration.test.ts");
+  assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/invites`?/);
+  assert.match(readme, /PM_WEBHOOK_URLS/);
+  assert.match(readme, /X-ProjectEGO-Signature/);
+  assert.match(readme, /SMTP_HOST/);
   assert.match(readme, /PM_BOOTSTRAP_USERNAME/);
   assert.match(readme, /PM_TEST_DATABASE_URL/);
   assert.match(readme, /TrueNAS PM first-run order/);
   assert.match(readme, /Remote-User/);
   assert.match(compose, /projectego-pm:/);
   assert.match(compose, /PM_DATABASE_URL: postgres:\/\/projectego_admin:/);
+});
+
+test("PM invite email keeps authentication in the existing identity provider", () => {
+  const mail = buildPmInviteEmail({
+    to: "member@example.test",
+    inviterName: "Tris",
+    projectName: "ProjectEGO",
+    publicBaseUrl: "https://pm.project-ego.online"
+  });
+
+  assert.equal(mail.to, "member@example.test");
+  assert.match(mail.subject, /ProjectEGO/);
+  assert.match(mail.text, /https:\/\/pm\.project-ego\.online\//);
+  assert.match(mail.text, /identity provider/);
+  assert.doesNotMatch(mail.text, /password/i);
 });
 
 test("PM attachment validation accepts supported files and rejects unsafe inputs", () => {

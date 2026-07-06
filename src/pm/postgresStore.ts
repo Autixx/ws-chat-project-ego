@@ -103,6 +103,12 @@ export class PmStore {
     return result.rows[0] ? normalizeRole(result.rows[0].role) : undefined;
   }
 
+  async loadProject(projectId: string): Promise<PmProject> {
+    const result = await this.pool.query("SELECT * FROM pm.projects WHERE id = $1 AND deleted_at IS NULL", [projectId]);
+    if (!result.rows[0]) throw new Error("Project not found.");
+    return mapProject(result.rows[0]);
+  }
+
   async createProject(user: PmUser, input: CreateProjectInput): Promise<PmProject> {
     return this.withTransaction(async (client) => {
       const project = mapProject(
