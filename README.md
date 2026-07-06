@@ -139,7 +139,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.48 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.49 \
   node dist/pm/migrate.js
 ```
 
@@ -214,6 +214,7 @@ The first PM frontend shell supports:
 - task assignee picker backed by project membership
 - project labels with edit/delete and task label assignment/removal
 - label filtering and user-scoped saved task filters with update/delete
+- saved filters automatically drop deleted label references
 - status, priority, label, and due-date filters
 - task due dates with overdue highlighting
 - task archive/delete actions

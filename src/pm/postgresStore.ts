@@ -229,7 +229,17 @@ export class PmStore {
   async deleteLabel(user: PmUser, projectId: string, labelId: string): Promise<void> {
     const result = await this.pool.query("DELETE FROM pm.labels WHERE id = $1 AND project_id = $2", [labelId, projectId]);
     if (!result.rowCount) throw new Error("Label not found.");
-    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId, eventType: "label.deleted", payload: { labelId } });
+    const filters = await this.pool.query(
+      `
+      UPDATE pm.saved_filters
+      SET filter_json = filter_json - 'labelId',
+          updated_at = now()
+      WHERE project_id = $1
+        AND filter_json->>'labelId' = $2
+      `,
+      [projectId, labelId]
+    );
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId, eventType: "label.deleted", payload: { labelId, cleanedSavedFilters: filters.rowCount ?? 0 } });
   }
 
   async listSavedFilters(projectId: string, userId: string): Promise<PmSavedFilter[]> {

@@ -124,6 +124,7 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /PATCH `?\/api\/pm\/projects\/:projectId\/filters\/:filterId`?/);
   assert.match(readme, /DELETE `?\/api\/pm\/projects\/:projectId\/filters\/:filterId`?/);
   assert.match(readme, /label filtering and user-scoped saved task filters with update\/delete/);
+  assert.match(readme, /saved filters automatically drop deleted label references/);
   assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/archive`?/);
   assert.match(readme, /DELETE `?\/api\/pm\/tasks\/:taskId`?/);
   assert.match(readme, /task due dates with overdue highlighting/);

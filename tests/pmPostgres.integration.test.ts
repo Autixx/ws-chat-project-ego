@@ -90,6 +90,18 @@ test("PM PostgreSQL store lifecycle", { skip: databaseUrl ? false : "PM_TEST_DAT
     await store.deleteSavedFilter(owner, project.id, saved.id);
     assert.equal((await store.listSavedFilters(project.id, owner.id)).length, 0);
 
+    const staleLabel = await store.createLabel(owner, { projectId: project.id, name: "Temporary", color: "#ff4d4d" });
+    const staleFilter = await store.createSavedFilter(owner, {
+      projectId: project.id,
+      userId: owner.id,
+      name: "Temporary label filter",
+      filter: { status: "todo", labelId: staleLabel.id }
+    });
+    await store.deleteLabel(owner, project.id, staleLabel.id);
+    const cleanedFilter = (await store.listSavedFilters(project.id, owner.id)).find((item) => item.id === staleFilter.id);
+    assert.ok(cleanedFilter);
+    assert.equal(cleanedFilter.filter.labelId, undefined);
+
     const archived = await store.archiveTask(owner, blockedTask.id, true);
     assert.ok(archived.archivedAt);
     assert.equal((await store.listTasks(project.id)).some((item) => item.id === blockedTask.id), false);
