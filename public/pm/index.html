@@ -57,6 +57,17 @@
             </form>
             <div id="memberList" class="list compact"></div>
           </section>
+          <section class="label-box">
+            <div class="panel-title">
+              <h2>Labels</h2>
+            </div>
+            <form id="labelForm" class="label-form">
+              <input id="labelName" maxlength="40" placeholder="Label name" />
+              <input id="labelColor" type="color" value="#6b7280" />
+              <button type="submit" disabled>Add</button>
+            </form>
+            <div id="labelList" class="list compact"></div>
+          </section>
           <div id="projectList" class="list"></div>
         </aside>
 
@@ -187,6 +198,19 @@
             <label>Description<textarea id="editTaskDescription" rows="8"></textarea></label>
             <button type="submit">Save</button>
           </form>
+
+          <section class="drawer-section">
+            <div class="drawer-section-title">
+              <h3>Labels</h3>
+            </div>
+            <form id="taskLabelForm" class="dependency-form">
+              <select id="taskLabelSelect">
+                <option value="">Select label</option>
+              </select>
+              <button type="submit">Add label</button>
+            </form>
+            <div id="taskLabelList" class="label-chip-row"></div>
+          </section>
 
           <section class="drawer-section">
             <div class="drawer-section-title">

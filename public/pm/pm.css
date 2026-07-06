@@ -178,7 +178,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .project-pane {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   gap: 10px;
   overflow: hidden;
 }
@@ -199,19 +199,29 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   grid-template-columns: minmax(0, 1fr) 130px 170px auto;
 }
 
-.team-box {
+.team-box, .label-box {
   display: grid;
   gap: 8px;
   min-height: 0;
 }
 
-.member-form {
+.member-form, .label-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 120px auto;
   gap: 7px;
 }
 
-.member-card {
+.label-form {
+  grid-template-columns: minmax(0, 1fr) 42px auto;
+}
+
+.label-form input[type="color"] {
+  width: 42px;
+  min-height: 32px;
+  padding: 2px;
+}
+
+.member-card, .label-card {
   border: 1px solid var(--line);
   background: var(--field);
   padding: 8px;
@@ -418,6 +428,31 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   text-align: center;
   color: var(--muted);
   font-size: 11px;
+}
+
+.label-chip-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--field);
+  color: var(--text);
+  padding: 3px 7px;
+  font-size: 11px;
+}
+
+.label-swatch {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--line);
+  flex: 0 0 auto;
 }
 
 .task-drawer {

@@ -172,6 +172,28 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     }
   });
 
+  router.get("/projects/:projectId/labels", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
+      res.json({ labels: await store.listLabels(req.params.projectId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects/:projectId/labels", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
+      const label = await store.createLabel(user, { ...parseCreateLabel(req.body), projectId: req.params.projectId });
+      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { label } });
+      res.status(201).json({ label });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/projects/:projectId/epics", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
@@ -409,6 +431,44 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     }
   });
 
+  router.get("/tasks/:taskId/labels", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "viewer");
+      res.json({ labels: await store.listTaskLabels(req.params.taskId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/tasks/:taskId/labels", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
+      const labelId = requiredString(req.body?.labelId, "labelId");
+      const label = await store.addTaskLabel(user, req.params.taskId, labelId);
+      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { labelAdded: label.id } });
+      res.status(201).json({ label });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/tasks/:taskId/labels/:labelId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
+      await store.removeTaskLabel(user, req.params.taskId, req.params.labelId);
+      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { labelRemoved: req.params.labelId } });
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/tasks/:taskId/comments", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
@@ -595,6 +655,14 @@ function parseCreateEpic(body: unknown): Omit<CreateEpicInput, "projectId"> {
   };
 }
 
+function parseCreateLabel(body: unknown): { name: string; color?: string } {
+  const raw = objectBody(body);
+  return {
+    name: requiredString(raw.name, "name"),
+    color: optionalHexColor(raw.color)
+  };
+}
+
 function parseCreateSprint(body: unknown): Omit<CreateSprintInput, "projectId"> {
   const raw = objectBody(body);
   return {
@@ -704,6 +772,13 @@ function optionalPriority(value: unknown): string | undefined {
   if (!priority) return undefined;
   if (!["urgent", "high", "medium", "low", "none"].includes(priority)) throw new Error("priority must be urgent, high, medium, low, or none.");
   return priority;
+}
+
+function optionalHexColor(value: unknown): string | undefined {
+  const color = optionalString(value);
+  if (!color) return undefined;
+  if (!/^#[0-9a-fA-F]{6}$/.test(color)) throw new Error("color must be a #rrggbb hex value.");
+  return color.toLowerCase();
 }
 
 function optionalSprintStatus(value: unknown): PmSprintStatus | undefined {

@@ -56,6 +56,8 @@ PM exposes:
 - `POST /api/pm/projects/:projectId/members`
 - `PUT /api/pm/projects/:projectId/members/:userId`
 - `DELETE /api/pm/projects/:projectId/members/:userId`
+- `GET /api/pm/projects/:projectId/labels`
+- `POST /api/pm/projects/:projectId/labels`
 - `GET /api/pm/projects/:projectId/epics`
 - `POST /api/pm/projects/:projectId/epics`
 - `GET /api/pm/projects/:projectId/sprints`
@@ -74,6 +76,9 @@ PM exposes:
 - `DELETE /api/pm/tasks/:taskId/dependencies/:blockingTaskId`
 - `POST /api/pm/tasks/:taskId/sprint`
 - `POST /api/pm/tasks/:taskId/assignee`
+- `GET /api/pm/tasks/:taskId/labels`
+- `POST /api/pm/tasks/:taskId/labels`
+- `DELETE /api/pm/tasks/:taskId/labels/:labelId`
 - `GET /api/pm/tasks/:taskId/comments`
 - `POST /api/pm/tasks/:taskId/comments`
 - `PATCH /api/pm/comments/:commentId`
@@ -120,7 +125,7 @@ In Docker, run the migration command in the PM image before first production use
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.43 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.44 \
   node dist/pm/migrate.js
 ```
 
@@ -170,6 +175,7 @@ The first PM frontend shell supports:
 - in-app notifications for task comments, assignee/creator updates, and `@username` mentions
 - project team management with role changes and member removal
 - task assignee picker backed by project membership
+- project labels with task label assignment/removal
 - status and priority filters
 - PM WebSocket reconnect and refresh on structured events
 

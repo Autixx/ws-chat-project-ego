@@ -2,6 +2,7 @@ const state = {
   user: null,
   projects: [],
   members: [],
+  labels: [],
   epics: [],
   sprints: [],
   tasks: [],
@@ -12,6 +13,7 @@ const state = {
   activeEpicId: null,
   activeSprintId: "__backlog",
   activeTask: null,
+  taskLabels: [],
   dependencies: { blockingTasks: [], blockedTasks: [] },
   comments: [],
   attachments: [],
@@ -44,6 +46,10 @@ const els = {
   memberIdentifier: $("memberIdentifier"),
   memberRole: $("memberRole"),
   memberList: $("memberList"),
+  labelForm: $("labelForm"),
+  labelName: $("labelName"),
+  labelColor: $("labelColor"),
+  labelList: $("labelList"),
   projectList: $("projectList"),
   activeProjectName: $("activeProjectName"),
   activeProjectMeta: $("activeProjectMeta"),
@@ -79,6 +85,9 @@ const els = {
   editTaskAssignee: $("editTaskAssignee"),
   editTaskSprint: $("editTaskSprint"),
   editTaskDescription: $("editTaskDescription"),
+  taskLabelForm: $("taskLabelForm"),
+  taskLabelSelect: $("taskLabelSelect"),
+  taskLabelList: $("taskLabelList"),
   dependencyForm: $("dependencyForm"),
   dependencyTask: $("dependencyTask"),
   dependencyList: $("dependencyList"),
@@ -151,6 +160,7 @@ async function loadProjectData() {
   els.archiveProjectBtn.disabled = !project;
   els.ensureBoardBtn.disabled = !project;
   els.memberForm.querySelector("button").disabled = !project;
+  els.labelForm.querySelector("button").disabled = !project;
   els.epicForm.querySelector("button").disabled = !project;
   els.sprintForm.querySelector("button").disabled = !project;
   els.backlogFilterBtn.disabled = !project;
@@ -158,6 +168,7 @@ async function loadProjectData() {
   els.taskForm.querySelector("button").disabled = !project;
   if (!project) {
     state.members = [];
+    state.labels = [];
     state.epics = [];
     state.sprints = [];
     state.tasks = [];
@@ -166,20 +177,23 @@ async function loadProjectData() {
     state.boardTasks = [];
     renderActiveProject();
     renderMembers();
+    renderProjectLabels();
     renderEpics();
     renderSprints();
     renderTasks();
     renderBoard();
     return;
   }
-  const [membersBody, epicsBody, sprintsBody, tasksBody, boardBody] = await Promise.all([
+  const [membersBody, labelsBody, epicsBody, sprintsBody, tasksBody, boardBody] = await Promise.all([
     api(`/api/pm/projects/${project.id}/members`),
+    api(`/api/pm/projects/${project.id}/labels`),
     api(`/api/pm/projects/${project.id}/epics`),
     api(`/api/pm/projects/${project.id}/sprints?includeCompleted=${els.includeCompletedSprints.checked ? "true" : "false"}${state.activeEpicId ? `&epicId=${encodeURIComponent(state.activeEpicId)}` : ""}`),
     api(`/api/pm/projects/${project.id}/tasks`),
     ensureDefaultBoard(project.id)
   ]);
   state.members = membersBody.members;
+  state.labels = labelsBody.labels;
   state.epics = epicsBody.epics;
   state.sprints = sprintsBody.sprints;
   if (state.activeSprintId && !["__all", "__backlog"].includes(state.activeSprintId) && !state.sprints.some((sprint) => sprint.id === state.activeSprintId)) {
@@ -191,6 +205,7 @@ async function loadProjectData() {
   await loadBoardSnapshot();
   renderActiveProject();
   renderMembers();
+  renderProjectLabels();
   renderEpics();
   renderSprints();
   renderTasks();
@@ -281,6 +296,28 @@ function renderMembers() {
       select.value = member.role;
       select.addEventListener("change", () => updateMemberRole(member, select.value).catch((error) => setError(error.message)));
       card.querySelector("button").addEventListener("click", () => removeMember(member).catch((error) => setError(error.message)));
+      return card;
+    })
+  );
+}
+
+function renderProjectLabels() {
+  if (!els.labelList) return;
+  if (state.labels.length === 0) {
+    els.labelList.innerHTML = activeProject() ? `<div class="drawer-empty">No labels yet.</div>` : `<div class="drawer-empty">No project selected.</div>`;
+    return;
+  }
+  els.labelList.replaceChildren(
+    ...state.labels.map((label) => {
+      const card = document.createElement("article");
+      card.className = "label-card";
+      card.innerHTML = `
+        <div class="label-chip">
+          <span class="label-swatch" style="background:${escapeHtml(label.color)}"></span>
+          <span>${escapeHtml(label.name)}</span>
+        </div>
+        <div class="card-meta">${escapeHtml(label.color)}</div>
+      `;
       return card;
     })
   );
@@ -510,6 +547,7 @@ function openTask(task) {
   els.editTaskSprint.value = task.sprintId || "";
   els.editTaskDescription.value = task.description || "";
   state.comments = [];
+  state.taskLabels = [];
   state.dependencies = { blockingTasks: [], blockedTasks: [] };
   state.attachments = [];
   state.activity = [];
@@ -584,6 +622,24 @@ async function removeMember(member) {
   if (!project) return;
   await api(`/api/pm/projects/${project.id}/members/${member.id}`, { method: "DELETE" });
   await loadProjectData();
+}
+
+async function createLabel(event) {
+  event.preventDefault();
+  const project = activeProject();
+  if (!project) return;
+  const { label } = await api(`/api/pm/projects/${project.id}/labels`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: els.labelName.value,
+      color: els.labelColor.value
+    })
+  });
+  els.labelForm.reset();
+  els.labelColor.value = "#6b7280";
+  state.labels = [...state.labels.filter((item) => item.id !== label.id), label].sort((a, b) => a.name.localeCompare(b.name));
+  renderProjectLabels();
+  renderTaskLabels();
 }
 
 async function createSprint(event) {
@@ -692,6 +748,27 @@ async function addDependency(event) {
   await loadTaskDrawerData(state.activeTask.id);
 }
 
+async function addTaskLabel(event) {
+  event.preventDefault();
+  if (!state.activeTask || !els.taskLabelSelect.value) return;
+  const { label } = await api(`/api/pm/tasks/${state.activeTask.id}/labels`, {
+    method: "POST",
+    body: JSON.stringify({ labelId: els.taskLabelSelect.value })
+  });
+  els.taskLabelForm.reset();
+  state.taskLabels = [...state.taskLabels.filter((item) => item.id !== label.id), label].sort((a, b) => a.name.localeCompare(b.name));
+  await reloadActivityForActiveTask();
+  renderDrawerData();
+}
+
+async function removeTaskLabel(label) {
+  if (!state.activeTask) return;
+  await api(`/api/pm/tasks/${state.activeTask.id}/labels/${encodeURIComponent(label.id)}`, { method: "DELETE" });
+  state.taskLabels = state.taskLabels.filter((item) => item.id !== label.id);
+  await reloadActivityForActiveTask();
+  renderDrawerData();
+}
+
 async function removeDependency(dependency) {
   if (!state.activeTask) return;
   await api(`/api/pm/tasks/${state.activeTask.id}/dependencies/${encodeURIComponent(dependency.blockingTaskId)}`, { method: "DELETE" });
@@ -699,13 +776,15 @@ async function removeDependency(dependency) {
 }
 
 async function loadTaskDrawerData(taskId) {
-  const [dependenciesBody, commentsBody, attachmentsBody, activityBody] = await Promise.all([
+  const [labelsBody, dependenciesBody, commentsBody, attachmentsBody, activityBody] = await Promise.all([
+    api(`/api/pm/tasks/${taskId}/labels`),
     api(`/api/pm/tasks/${taskId}/dependencies`),
     api(`/api/pm/tasks/${taskId}/comments`),
     api(`/api/pm/tasks/${taskId}/attachments`),
     api(`/api/pm/tasks/${taskId}/activity`)
   ]);
   if (!state.activeTask || state.activeTask.id !== taskId) return;
+  state.taskLabels = labelsBody.labels;
   state.dependencies = dependenciesBody;
   state.comments = commentsBody.comments;
   state.attachments = attachmentsBody.attachments;
@@ -714,10 +793,41 @@ async function loadTaskDrawerData(taskId) {
 }
 
 function renderDrawerData() {
+  renderTaskLabels();
   renderDependencies();
   renderComments();
   renderAttachments();
   renderActivity();
+}
+
+function renderTaskLabels() {
+  if (!els.taskLabelList || !els.taskLabelSelect) return;
+  const selectedIds = new Set(state.taskLabels.map((label) => label.id));
+  els.taskLabelSelect.replaceChildren(
+    optionEl("", "Select label"),
+    ...state.labels.filter((label) => !selectedIds.has(label.id)).map((label) => optionEl(label.id, label.name))
+  );
+  if (!state.activeTask) {
+    els.taskLabelList.innerHTML = `<div class="drawer-empty">No task selected.</div>`;
+    return;
+  }
+  if (state.taskLabels.length === 0) {
+    els.taskLabelList.innerHTML = `<div class="drawer-empty">No labels.</div>`;
+    return;
+  }
+  els.taskLabelList.replaceChildren(
+    ...state.taskLabels.map((label) => {
+      const chip = document.createElement("span");
+      chip.className = "label-chip";
+      chip.innerHTML = `
+        <span class="label-swatch" style="background:${escapeHtml(label.color)}"></span>
+        <span>${escapeHtml(label.name)}</span>
+        <button class="mini-button" type="button">Remove</button>
+      `;
+      chip.querySelector("button").addEventListener("click", () => removeTaskLabel(label).catch((error) => setError(error.message)));
+      return chip;
+    })
+  );
 }
 
 function renderDependencies() {
@@ -1063,10 +1173,12 @@ async function boot() {
 
 els.projectForm.addEventListener("submit", (event) => createProject(event).catch((error) => setError(error.message)));
 els.memberForm.addEventListener("submit", (event) => addMember(event).catch((error) => setError(error.message)));
+els.labelForm.addEventListener("submit", (event) => createLabel(event).catch((error) => setError(error.message)));
 els.epicForm.addEventListener("submit", (event) => createEpic(event).catch((error) => setError(error.message)));
 els.sprintForm.addEventListener("submit", (event) => createSprint(event).catch((error) => setError(error.message)));
 els.taskForm.addEventListener("submit", (event) => createTask(event).catch((error) => setError(error.message)));
 els.taskEditForm.addEventListener("submit", (event) => saveTask(event).catch((error) => setError(error.message)));
+els.taskLabelForm.addEventListener("submit", (event) => addTaskLabel(event).catch((error) => setError(error.message)));
 els.dependencyForm.addEventListener("submit", (event) => addDependency(event).catch((error) => setError(error.message)));
 els.commentForm.addEventListener("submit", (event) => createComment(event).catch((error) => setError(error.message)));
 els.attachmentForm.addEventListener("submit", (event) => uploadAttachment(event).catch((error) => setError(error.message)));

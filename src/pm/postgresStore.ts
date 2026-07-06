@@ -5,6 +5,7 @@ import type {
   CreateAttachmentInput,
   CreateCommentInput,
   CreateEpicInput,
+  CreateLabelInput,
   CreateBoardColumnInput,
   CreateProjectInput,
   CreateSprintInput,
@@ -18,6 +19,7 @@ import type {
   PmComment,
   PmEpic,
   PmEventRecord,
+  PmLabel,
   PmNotification,
   PmProject,
   PmRole,
@@ -177,6 +179,33 @@ export class PmStore {
     );
     return result.rows.map((row) => ({ ...mapUser(row), role: normalizeRole(row.role) }));
   }
+
+  async listLabels(projectId: string): Promise<PmLabel[]> {
+    const result = await this.pool.query("SELECT * FROM pm.labels WHERE project_id = $1 ORDER BY lower(name) ASC", [projectId]);
+    return result.rows.map(mapLabel);
+  }
+
+  async createLabel(user: PmUser, input: CreateLabelInput): Promise<PmLabel> {
+    const result = await this.pool.query(
+      `
+      INSERT INTO pm.labels (project_id, name, color)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (project_id, name) DO UPDATE SET color = EXCLUDED.color
+      RETURNING *
+      `,
+      [input.projectId, input.name.trim(), input.color ?? "#6b7280"]
+    );
+    const label = mapLabel(result.rows[0]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: input.projectId, eventType: "label.upserted", payload: { labelId: label.id, name: label.name, color: label.color } });
+    return label;
+  }
+
+  async loadLabel(labelId: string): Promise<PmLabel> {
+    const result = await this.pool.query("SELECT * FROM pm.labels WHERE id = $1", [labelId]);
+    if (!result.rows[0]) throw new Error("Label not found.");
+    return mapLabel(result.rows[0]);
+  }
+
 
   async findUserByIdentifier(identifier: string): Promise<PmUser> {
     const value = identifier.trim();
@@ -634,6 +663,35 @@ export class PmStore {
     const result = await this.pool.query("DELETE FROM pm.task_dependencies WHERE blocking_task_id = $1 AND blocked_task_id = $2", [blockingTaskId, blockedTaskId]);
     if (!result.rowCount) throw new Error("Task dependency not found.");
     await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: blockedTask.projectId, taskId: blockedTaskId, eventType: "task.dependency_removed", payload: { blockingTaskId } });
+  }
+
+  async listTaskLabels(taskId: string): Promise<PmLabel[]> {
+    const result = await this.pool.query(
+      `
+      SELECT l.*
+      FROM pm.task_labels tl
+      JOIN pm.labels l ON l.id = tl.label_id
+      WHERE tl.task_id = $1
+      ORDER BY lower(l.name) ASC
+      `,
+      [taskId]
+    );
+    return result.rows.map(mapLabel);
+  }
+
+  async addTaskLabel(user: PmUser, taskId: string, labelId: string): Promise<PmLabel> {
+    const [task, label] = await Promise.all([this.loadTask(taskId), this.loadLabel(labelId)]);
+    if (label.projectId !== task.projectId) throw new Error("Label must belong to the task project.");
+    await this.pool.query("INSERT INTO pm.task_labels (task_id, label_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [taskId, labelId]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: task.projectId, taskId, eventType: "task.label_added", payload: { labelId, name: label.name } });
+    return label;
+  }
+
+  async removeTaskLabel(user: PmUser, taskId: string, labelId: string): Promise<void> {
+    const task = await this.loadTask(taskId);
+    const result = await this.pool.query("DELETE FROM pm.task_labels WHERE task_id = $1 AND label_id = $2", [taskId, labelId]);
+    if (!result.rowCount) throw new Error("Task label not found.");
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: task.projectId, taskId, eventType: "task.label_removed", payload: { labelId } });
   }
 
   async listComments(taskId: string): Promise<PmComment[]> {
@@ -1100,6 +1158,15 @@ function mapNotification(row: Row): PmNotification {
     payload: parseJsonObject(row.payload),
     readAt: asIso(row.read_at),
     createdAt: asIso(row.created_at) ?? ""
+  };
+}
+
+function mapLabel(row: Row): PmLabel {
+  return {
+    id: String(row.id),
+    projectId: String(row.project_id),
+    name: String(row.name),
+    color: String(row.color ?? "#6b7280")
   };
 }
 

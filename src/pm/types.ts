@@ -118,6 +118,13 @@ export type PmNotification = {
   createdAt: string;
 };
 
+export type PmLabel = {
+  id: string;
+  projectId: string;
+  name: string;
+  color: string;
+};
+
 export type PmSprintStatus = "planned" | "active" | "completed" | "cancelled";
 
 export type PmSprint = {
@@ -239,6 +246,12 @@ export type CreateAttachmentInput = {
   mimeType?: string;
   sizeBytes: number;
   storagePath: string;
+};
+
+export type CreateLabelInput = {
+  projectId: string;
+  name: string;
+  color?: string;
 };
 
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "projectId">> & {
