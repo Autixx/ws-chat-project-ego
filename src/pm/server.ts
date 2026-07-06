@@ -9,6 +9,7 @@ import { assertPmCanStart, forbiddenPmEnv, loadPmConfig, PM_FORBIDDEN_ENV_KEYS, 
 import { PmEventHub } from "./events.js";
 import { PmWebhookDispatcher } from "./webhookDispatcher.js";
 import { PmStore } from "./postgresStore.js";
+import { createPmAutomationRouter } from "./automationRoutes.js";
 import { createPmRouter } from "./routes.js";
 
 type PmIdentityRequest = express.Request & { pmIdentity?: AuthenticatedUser };
@@ -31,6 +32,11 @@ export function createPmApp(pmConfig: PmConfig, store?: PmStore, events = new Pm
       forbiddenEnvPresent: forbidden
     });
   });
+
+  const webhooks = new PmWebhookDispatcher(pmConfig.webhooks);
+  if (store) {
+    pmApp.use("/api/pm/automation", createPmAutomationRouter(store, events, { pmConfig, webhooks }));
+  }
 
   pmApp.use("/api/pm", requirePmIdentity(pmConfig));
 
@@ -55,7 +61,6 @@ export function createPmApp(pmConfig: PmConfig, store?: PmStore, events = new Pm
   });
 
   if (store) {
-    const webhooks = new PmWebhookDispatcher(pmConfig.webhooks);
     pmApp.use("/api/pm", createPmRouter(store, events, { attachmentsDir: pmConfig.attachmentsDir, maxAttachmentBytes: pmConfig.maxAttachmentBytes, pmConfig, webhooks }));
   } else {
     pmApp.use("/api/pm", (_req, res) => {

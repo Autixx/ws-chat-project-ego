@@ -68,6 +68,7 @@ services:
       PM_PUBLIC_BASE_URL: https://pm.project-ego.online
       PM_TRUST_AUTHELIA_HEADERS: "true"
       PM_DEV_AUTH_BYPASS: "false"
+      PM_AUTOMATION_TOKEN: ""
       PM_WEBHOOK_URLS: ""
       PM_WEBHOOK_SECRET: ""
       PM_WEBHOOK_TIMEOUT_MS: "5000"

@@ -82,6 +82,23 @@ export class PmStore {
     return mapUser(result.rows[0]);
   }
 
+  async ensureAutomationUser(name: string): Promise<PmUser> {
+    const normalized = name.trim().toLowerCase().replaceAll(/[^a-z0-9_-]/g, "-").replaceAll(/-+/g, "-").replace(/^-|-$/g, "") || "automation";
+    const username = `projectego_automation_${normalized}`.slice(0, 64);
+    const displayName = `ProjectEGO automation: ${normalized}`;
+    const result = await this.pool.query(
+      `
+      INSERT INTO core.users (username, email, display_name, external_subject)
+      VALUES ($1, NULL, $2, $3)
+      ON CONFLICT (external_subject)
+      DO UPDATE SET username = EXCLUDED.username, display_name = EXCLUDED.display_name, updated_at = now()
+      RETURNING id, username, email, display_name
+      `,
+      [username, displayName, `automation:${normalized}`]
+    );
+    return mapUser(result.rows[0]);
+  }
+
   async listProjects(userId: string, includeArchived = false): Promise<PmProject[]> {
     const result = await this.pool.query(
       `
@@ -593,6 +610,37 @@ export class PmStore {
       [projectId, filters.epicId ?? null, filters.sprintId ?? null, Boolean(filters.includeArchived)]
     );
     return result.rows.map(mapTask);
+  }
+
+  async getNextAvailableTask(projectId: string, assigneeId?: string): Promise<PmTask | undefined> {
+    const result = await this.pool.query(
+      `
+      SELECT t.*, array_remove(array_agg(tl.label_id), NULL) AS label_ids
+      FROM pm.tasks t
+      LEFT JOIN pm.task_labels tl ON tl.task_id = t.id
+      WHERE t.project_id = $1
+        AND t.deleted_at IS NULL
+        AND t.archived_at IS NULL
+        AND t.status NOT IN ('done', 'closed', 'cancelled')
+        AND ($2::uuid IS NULL OR t.assignee_id = $2::uuid)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM pm.task_dependencies d
+          JOIN pm.tasks blocking ON blocking.id = d.blocking_task_id
+          WHERE d.blocked_task_id = t.id
+            AND blocking.deleted_at IS NULL
+            AND blocking.archived_at IS NULL
+            AND blocking.status NOT IN ('done', 'closed', 'cancelled')
+        )
+      GROUP BY t.id
+      ORDER BY
+        CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+        COALESCE(t.due_at, t.created_at) ASC
+      LIMIT 1
+      `,
+      [projectId, assigneeId ?? null]
+    );
+    return result.rows[0] ? mapTask(result.rows[0]) : undefined;
   }
 
   async loadTask(taskId: string): Promise<PmTask> {

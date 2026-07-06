@@ -854,6 +854,10 @@ function parseCreateTask(body: unknown): Omit<CreateTaskInput, "projectId"> {
   };
 }
 
+export function parseCreateTaskBody(body: unknown): Omit<CreateTaskInput, "projectId"> {
+  return parseCreateTask(body);
+}
+
 function parseCreateBoardColumn(body: unknown): Omit<CreateBoardColumnInput, "boardId"> {
   const raw = objectBody(body);
   return {
@@ -891,6 +895,10 @@ function parseUpdateTask(body: unknown): UpdateTaskInput {
   };
 }
 
+export function parseUpdateTaskBody(body: unknown): UpdateTaskInput {
+  return parseUpdateTask(body);
+}
+
 function parseMoveTask(taskId: string, body: unknown): MoveTaskInput {
   const raw = objectBody(body);
   return {
@@ -903,6 +911,14 @@ function parseMoveTask(taskId: string, body: unknown): MoveTaskInput {
     status: optionalString(raw.status),
     expectedVersion: optionalNumber(raw.expectedVersion)
   };
+}
+
+export function parseMoveTaskBody(taskId: string, body: unknown): MoveTaskInput {
+  return parseMoveTask(taskId, body);
+}
+
+export function requiredBodyString(body: unknown, field: string): string {
+  return requiredString(objectBody(body)[field], field);
 }
 
 function objectBody(value: unknown): Record<string, unknown> {

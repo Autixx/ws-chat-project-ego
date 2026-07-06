@@ -139,7 +139,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.50 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.51 \
   node dist/pm/migrate.js
 ```
 
@@ -221,6 +221,7 @@ The first PM frontend shell supports:
 - PM WebSocket reconnect and refresh on structured events
 - outgoing PM webhooks for task/comment/attachment/project events with `X-ProjectEGO-Signature`
 - SMTP-backed project invites through `POST /api/pm/projects/:projectId/invites`
+- token-protected PM automation API for n8n at `/api/pm/automation/*`
 
 PM outgoing webhooks are configured with:
 
@@ -248,6 +249,24 @@ SMTP_TLS=false
 ```
 
 `GET /api/pm/mail/status` reports whether host/from are configured. `POST /api/pm/projects/:projectId/invites` sends a project invite email. Invites do not create PM passwords or a second login stack; invited users still authenticate through the configured identity provider.
+
+PM automation API is configured with a PM-specific bearer token:
+
+```env
+PM_AUTOMATION_TOKEN=<separate-token-for-n8n>
+```
+
+n8n should call these routes with `Authorization: Bearer <PM_AUTOMATION_TOKEN>`:
+
+- `GET /api/pm/automation/status`
+- `POST /api/pm/automation/projects/:projectId/tasks`
+- `PATCH /api/pm/automation/tasks/:taskId`
+- `POST /api/pm/automation/tasks/:taskId/move`
+- `POST /api/pm/automation/tasks/:taskId/comments`
+- `POST /api/pm/automation/tasks/:taskId/dependencies`
+- `GET /api/pm/automation/projects/:projectId/tasks/next`
+
+The automation API goes through PM backend authorization and audit paths. n8n should use this API instead of direct PostgreSQL writes for ordinary task operations.
 
 ## UI Layout
 

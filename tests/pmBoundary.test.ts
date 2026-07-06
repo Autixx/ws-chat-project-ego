@@ -107,6 +107,54 @@ test("PM API reports project endpoints unavailable without PM_DATABASE_URL", asy
   }
 });
 
+test("PM automation API uses PM_AUTOMATION_TOKEN instead of user auth", async () => {
+  const calls: string[] = [];
+  const fakeStore = {
+    async ensureAutomationUser(name: string) {
+      calls.push(`actor:${name}`);
+      return { id: "automation-user", username: "projectego_automation_n8n", displayName: "ProjectEGO automation: n8n" };
+    },
+    async health() {
+      return { ok: true };
+    },
+    async createTask(_actor: unknown, input: Record<string, unknown>) {
+      calls.push(`create:${input.projectId}:${input.title}`);
+      return {
+        id: "task-1",
+        projectId: input.projectId,
+        title: input.title,
+        description: "",
+        status: "todo",
+        priority: "medium",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1
+      };
+    }
+  };
+  const app = createPmApp(loadPmConfig({ NODE_ENV: "development", PM_AUTOMATION_TOKEN: "pm-auto-secret", PM_DEV_AUTH_BYPASS: "false" }), fakeStore as never);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const url = `http://127.0.0.1:${address.port}/api/pm/automation/projects/project-1/tasks`;
+
+    const unauthorized = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "From n8n" }) });
+    assert.equal(unauthorized.status, 401);
+
+    const created = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer pm-auto-secret" },
+      body: JSON.stringify({ title: "From n8n" })
+    });
+    assert.equal(created.status, 201);
+    assert.deepEqual(calls, ["actor:n8n", "create:project-1:From n8n"]);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test("PM service serves browser shell separately from Dashboard", async () => {
   const app = createPmApp(loadPmConfig({ NODE_ENV: "development", PM_DEV_AUTH_BYPASS: "true" }));
   const server = http.createServer(app);
@@ -160,6 +208,9 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /PM_WEBHOOK_URLS/);
   assert.match(readme, /X-ProjectEGO-Signature/);
   assert.match(readme, /SMTP_HOST/);
+  assert.match(readme, /PM_AUTOMATION_TOKEN/);
+  assert.match(readme, /GET `?\/api\/pm\/automation\/status`?/);
+  assert.match(readme, /POST `?\/api\/pm\/automation\/projects\/:projectId\/tasks`?/);
   assert.match(readme, /PM_BOOTSTRAP_USERNAME/);
   assert.match(readme, /PM_TEST_DATABASE_URL/);
   assert.match(readme, /TrueNAS PM first-run order/);
