@@ -1,6 +1,6 @@
 {
   "name": "projectego-ws-chat",
-  "version": "0.1.47",
+  "version": "0.1.48",
   "description": "ProjectEGO Dashboard",
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     "pm:migrate": "node dist/pm/migrate.js",
     "pm:bootstrap": "node dist/pm/bootstrap.js",
     "test": "tsx --test tests/*.test.ts",
+    "test:pm:postgres": "tsx --test tests/pmPostgres.integration.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

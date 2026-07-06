@@ -139,7 +139,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.47 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.48 \
   node dist/pm/migrate.js
 ```
 
@@ -157,6 +157,14 @@ docker compose run --rm \
 ```
 
 The bootstrap command creates or updates `core.users`, creates the bootstrap project if needed, and grants the user `project_owner`. The `PM_BOOTSTRAP_USERNAME` must match the username Authelia will send to PM through `Remote-User` when `PM_TRUST_AUTHELIA_HEADERS=true`. The command is idempotent for the same username/project key.
+
+Optional PostgreSQL integration tests can validate the PM store against a real test database:
+
+```bash
+PM_TEST_DATABASE_URL=postgres://projectego_admin:...@127.0.0.1:5432/projectego npm run test:pm:postgres
+```
+
+The default `npm test` suite skips the PostgreSQL integration test unless `PM_TEST_DATABASE_URL` is set. The integration test applies PM migrations and creates unique test users/projects.
 
 PM attachment storage is filesystem-backed and separate from PostgreSQL binary data:
 

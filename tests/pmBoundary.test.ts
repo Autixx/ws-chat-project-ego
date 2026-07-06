@@ -131,7 +131,9 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /DELETE `?\/api\/pm\/tasks\/:taskId\/dependencies\/:blockingTaskId`?/);
   assert.match(readme, /task dependency management/);
   assert.equal(packageJson.scripts["pm:bootstrap"], "node dist/pm/bootstrap.js");
+  assert.equal(packageJson.scripts["test:pm:postgres"], "tsx --test tests/pmPostgres.integration.test.ts");
   assert.match(readme, /PM_BOOTSTRAP_USERNAME/);
+  assert.match(readme, /PM_TEST_DATABASE_URL/);
   assert.match(readme, /TrueNAS PM first-run order/);
   assert.match(readme, /Remote-User/);
   assert.match(compose, /projectego-pm:/);
