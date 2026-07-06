@@ -109,7 +109,12 @@ const els = {
   attachmentForm: $("attachmentForm"),
   attachmentFile: $("attachmentFile"),
   attachmentList: $("attachmentList"),
-  activityList: $("activityList")
+  activityList: $("activityList"),
+  confirmModal: $("confirmModal"),
+  confirmTitle: $("confirmTitle"),
+  confirmMessage: $("confirmMessage"),
+  confirmCancelBtn: $("confirmCancelBtn"),
+  confirmOkBtn: $("confirmOkBtn")
 };
 
 function setError(message) {
@@ -935,7 +940,10 @@ async function toggleTaskArchive() {
 
 async function deleteActiveTask() {
   if (!state.activeTask) return;
-  const confirmed = window.confirm(`Delete task permanently from active lists?\n\n${state.activeTask.title}`);
+  const confirmed = await confirmAction({
+    title: "Delete task",
+    message: `Delete this task from active lists?\n\n${state.activeTask.title}`
+  });
   if (!confirmed) return;
   await api(`/api/pm/tasks/${state.activeTask.id}`, { method: "DELETE" });
   closeTask();
@@ -1279,6 +1287,29 @@ async function uploadAttachment(event) {
   state.attachments = [attachment, ...state.attachments];
   await reloadActivityForActiveTask();
   renderDrawerData();
+}
+
+function confirmAction({ title, message }) {
+  els.confirmTitle.textContent = title;
+  els.confirmMessage.textContent = message;
+  els.confirmModal.hidden = false;
+  return new Promise((resolve) => {
+    const cleanup = (value) => {
+      els.confirmModal.hidden = true;
+      els.confirmCancelBtn.removeEventListener("click", onCancel);
+      els.confirmOkBtn.removeEventListener("click", onOk);
+      els.confirmModal.removeEventListener("click", onBackdrop);
+      resolve(value);
+    };
+    const onCancel = () => cleanup(false);
+    const onOk = () => cleanup(true);
+    const onBackdrop = (event) => {
+      if (event.target === els.confirmModal) cleanup(false);
+    };
+    els.confirmCancelBtn.addEventListener("click", onCancel);
+    els.confirmOkBtn.addEventListener("click", onOk);
+    els.confirmModal.addEventListener("click", onBackdrop);
+  });
 }
 
 async function toggleArchive() {

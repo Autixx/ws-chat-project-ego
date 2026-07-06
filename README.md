@@ -128,14 +128,35 @@ npm run build
 PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego npm run pm:migrate
 ```
 
-In Docker, run the migration command in the PM image before first production use:
+In Docker Compose, run the migration command before first production use:
+
+```bash
+docker compose run --rm projectego-pm node dist/pm/migrate.js
+```
+
+For a registry image without Compose:
 
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.46 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.47 \
   node dist/pm/migrate.js
 ```
+
+Bootstrap the first PM project owner after migrations:
+
+```bash
+docker compose run --rm \
+  -e PM_BOOTSTRAP_USERNAME=tris \
+  -e PM_BOOTSTRAP_EMAIL=tris@example.com \
+  -e PM_BOOTSTRAP_DISPLAY_NAME="Tris" \
+  -e PM_BOOTSTRAP_PROJECT_KEY=PROJECTEGO \
+  -e PM_BOOTSTRAP_PROJECT_NAME="ProjectEGO" \
+  projectego-pm \
+  node dist/pm/bootstrap.js
+```
+
+The bootstrap command creates or updates `core.users`, creates the bootstrap project if needed, and grants the user `project_owner`. The `PM_BOOTSTRAP_USERNAME` must match the username Authelia will send to PM through `Remote-User` when `PM_TRUST_AUTHELIA_HEADERS=true`. The command is idempotent for the same username/project key.
 
 PM attachment storage is filesystem-backed and separate from PostgreSQL binary data:
 
@@ -555,6 +576,44 @@ Host port: 19100
 Volume mount: /app/data
 ```
 
+For PM as a separate TrueNAS custom app, use:
+
+```text
+Image: ghcr.io/autixx/ws-chat-project-ego:latest
+Command: node dist/pm/server.js
+Pull policy: always
+Run as user/group: 568:568
+Container port: 19110
+Host port: 19110
+Volume mount: /app/data
+Required env:
+  NODE_ENV=production
+  PM_HOST=0.0.0.0
+  PM_PORT=19110
+  PM_DATA_DIR=/app/data
+  PM_ATTACHMENTS_DIR=/app/data/attachments
+  PM_DATABASE_URL=postgres://projectego_admin:<password>@<postgres-host>:5432/projectego
+  PM_PUBLIC_BASE_URL=https://pm.project-ego.online
+  PM_TRUST_AUTHELIA_HEADERS=true
+  PM_DEV_AUTH_BYPASS=false
+Forbidden env:
+  CODEX_AGENT_TOKEN
+  AGENT_ATTACHMENT_TOKEN
+  JOB_CALLBACK_TOKEN
+  N8N_WEBHOOK_TOKEN
+  PLANE_API_KEY
+  DASHBOARD_INTERNAL_BASE_URL
+```
+
+TrueNAS PM first-run order:
+
+1. Deploy PostgreSQL and confirm it is reachable from the PM container.
+2. Deploy PM with the env above.
+3. Open a shell for the PM container or use a one-shot job and run `node dist/pm/migrate.js`.
+4. Run `node dist/pm/bootstrap.js` with `PM_BOOTSTRAP_USERNAME` and optional bootstrap project env values.
+5. Put PM behind Authelia/Caddy so `Remote-User`, `Remote-Email`, and `Remote-Name` reach the PM container.
+6. Sign in through Authelia as the bootstrapped username.
+
 To update from the TrueNAS Apps UI:
 
 1. Push changes to GitHub and wait for the `Docker image` Action to finish.
@@ -628,6 +687,28 @@ chat.project-ego.online {
     }
 }
 ```
+
+ProjectEGO PM uses Authelia as the identity source when `PM_TRUST_AUTHELIA_HEADERS=true`. Caddy must forward the identity headers produced by the Authelia forward-auth snippet:
+
+```caddyfile
+pm.project-ego.online {
+    encode gzip zstd
+
+    import auth_project_ego
+
+    reverse_proxy 127.0.0.1:19110 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up Remote-User {http.request.header.Remote-User}
+        header_up Remote-Email {http.request.header.Remote-Email}
+        header_up Remote-Name {http.request.header.Remote-Name}
+    }
+}
+```
+
+The PM bootstrap username must match `Remote-User`. PM does not use Dashboard local auth cookies.
 
 ## Local Authentication
 

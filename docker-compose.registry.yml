@@ -51,7 +51,7 @@ services:
       PM_PORT: 19110
       PM_DATA_DIR: /app/data
       PM_ATTACHMENTS_DIR: /app/data/attachments
-      PM_DATABASE_URL: postgres://projectego_pm_app:change-me@projectego-postgres:5432/projectego
+      PM_DATABASE_URL: postgres://projectego_admin:change-me@projectego-postgres:5432/projectego
       PM_PUBLIC_BASE_URL: https://pm.project-ego.online
       PM_TRUST_AUTHELIA_HEADERS: "true"
       PM_DEV_AUTH_BYPASS: "false"

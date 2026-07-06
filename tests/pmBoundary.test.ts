@@ -103,6 +103,8 @@ test("PM service serves browser shell separately from Dashboard", async () => {
 
 test("PM README documents Kanban board API", () => {
   const readme = readFileSync(path.resolve("README.md"), "utf8");
+  const packageJson = JSON.parse(readFileSync(path.resolve("package.json"), "utf8"));
+  const compose = readFileSync(path.resolve("docker-compose.yml"), "utf8");
   assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/boards\/kanban\/default`?/);
   assert.match(readme, /GET `?\/api\/pm\/boards\/:boardId`?/);
   assert.match(readme, /drag-and-drop task movement/);
@@ -128,6 +130,12 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /GET `?\/api\/pm\/tasks\/:taskId\/dependencies`?/);
   assert.match(readme, /DELETE `?\/api\/pm\/tasks\/:taskId\/dependencies\/:blockingTaskId`?/);
   assert.match(readme, /task dependency management/);
+  assert.equal(packageJson.scripts["pm:bootstrap"], "node dist/pm/bootstrap.js");
+  assert.match(readme, /PM_BOOTSTRAP_USERNAME/);
+  assert.match(readme, /TrueNAS PM first-run order/);
+  assert.match(readme, /Remote-User/);
+  assert.match(compose, /projectego-pm:/);
+  assert.match(compose, /PM_DATABASE_URL: postgres:\/\/projectego_admin:/);
 });
 
 test("PM attachment validation accepts supported files and rejects unsafe inputs", () => {
