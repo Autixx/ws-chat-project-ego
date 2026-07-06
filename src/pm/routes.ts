@@ -194,6 +194,40 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     }
   });
 
+  router.get("/projects/:projectId/filters", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
+      res.json({ filters: await store.listSavedFilters(req.params.projectId, user.id) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects/:projectId/filters", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
+      const filter = await store.createSavedFilter(user, { ...parseCreateSavedFilter(req.body), projectId: req.params.projectId, userId: user.id });
+      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { filterId: filter.id } });
+      res.status(201).json({ filter });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/projects/:projectId/filters/:filterId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
+      await store.deleteSavedFilter(user, req.params.projectId, req.params.filterId);
+      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { filterId: req.params.filterId, deleted: true } });
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/projects/:projectId/epics", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
@@ -660,6 +694,16 @@ function parseCreateLabel(body: unknown): { name: string; color?: string } {
   return {
     name: requiredString(raw.name, "name"),
     color: optionalHexColor(raw.color)
+  };
+}
+
+function parseCreateSavedFilter(body: unknown): { name: string; filter: Record<string, unknown> } {
+  const raw = objectBody(body);
+  const filter = raw.filter;
+  if (!filter || typeof filter !== "object" || Array.isArray(filter)) throw new Error("filter object is required.");
+  return {
+    name: requiredString(raw.name, "name").slice(0, 80),
+    filter: filter as Record<string, unknown>
   };
 }
 

@@ -55,6 +55,7 @@ export type PmTask = {
   createdAt: string;
   updatedAt: string;
   version: number;
+  labelIds?: string[];
 };
 
 export type PmTaskDependency = {
@@ -123,6 +124,16 @@ export type PmLabel = {
   projectId: string;
   name: string;
   color: string;
+};
+
+export type PmSavedFilter = {
+  id: string;
+  projectId: string;
+  userId: string;
+  name: string;
+  filter: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type PmSprintStatus = "planned" | "active" | "completed" | "cancelled";
@@ -252,6 +263,13 @@ export type CreateLabelInput = {
   projectId: string;
   name: string;
   color?: string;
+};
+
+export type CreateSavedFilterInput = {
+  projectId: string;
+  userId: string;
+  name: string;
+  filter: Record<string, unknown>;
 };
 
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "projectId">> & {

@@ -58,6 +58,9 @@ PM exposes:
 - `DELETE /api/pm/projects/:projectId/members/:userId`
 - `GET /api/pm/projects/:projectId/labels`
 - `POST /api/pm/projects/:projectId/labels`
+- `GET /api/pm/projects/:projectId/filters`
+- `POST /api/pm/projects/:projectId/filters`
+- `DELETE /api/pm/projects/:projectId/filters/:filterId`
 - `GET /api/pm/projects/:projectId/epics`
 - `POST /api/pm/projects/:projectId/epics`
 - `GET /api/pm/projects/:projectId/sprints`
@@ -125,7 +128,7 @@ In Docker, run the migration command in the PM image before first production use
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.44 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.45 \
   node dist/pm/migrate.js
 ```
 
@@ -176,6 +179,7 @@ The first PM frontend shell supports:
 - project team management with role changes and member removal
 - task assignee picker backed by project membership
 - project labels with task label assignment/removal
+- label filtering and user-scoped saved task filters
 - status and priority filters
 - PM WebSocket reconnect and refresh on structured events
 

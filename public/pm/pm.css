@@ -296,6 +296,11 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filters select {
+  max-width: 170px;
 }
 
 .boards {
@@ -435,6 +440,10 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.card-labels {
+  margin-top: 7px;
 }
 
 .label-chip {

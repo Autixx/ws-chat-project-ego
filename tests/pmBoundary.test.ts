@@ -117,6 +117,9 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /GET `?\/api\/pm\/projects\/:projectId\/labels`?/);
   assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/labels`?/);
   assert.match(readme, /project labels with task label assignment\/removal/);
+  assert.match(readme, /GET `?\/api\/pm\/projects\/:projectId\/filters`?/);
+  assert.match(readme, /DELETE `?\/api\/pm\/projects\/:projectId\/filters\/:filterId`?/);
+  assert.match(readme, /label filtering and user-scoped saved task filters/);
   assert.match(readme, /GET `?\/api\/pm\/tasks\/:taskId\/dependencies`?/);
   assert.match(readme, /DELETE `?\/api\/pm\/tasks\/:taskId\/dependencies\/:blockingTaskId`?/);
   assert.match(readme, /task dependency management/);

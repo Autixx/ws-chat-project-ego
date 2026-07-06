@@ -8,6 +8,7 @@ import type {
   CreateLabelInput,
   CreateBoardColumnInput,
   CreateProjectInput,
+  CreateSavedFilterInput,
   CreateSprintInput,
   CreateTaskInput,
   MoveTaskInput,
@@ -23,6 +24,7 @@ import type {
   PmNotification,
   PmProject,
   PmRole,
+  PmSavedFilter,
   PmSprint,
   PmTask,
   PmTaskDependency,
@@ -204,6 +206,34 @@ export class PmStore {
     const result = await this.pool.query("SELECT * FROM pm.labels WHERE id = $1", [labelId]);
     if (!result.rows[0]) throw new Error("Label not found.");
     return mapLabel(result.rows[0]);
+  }
+
+  async listSavedFilters(projectId: string, userId: string): Promise<PmSavedFilter[]> {
+    const result = await this.pool.query(
+      "SELECT * FROM pm.saved_filters WHERE project_id = $1 AND user_id = $2 ORDER BY lower(name) ASC",
+      [projectId, userId]
+    );
+    return result.rows.map(mapSavedFilter);
+  }
+
+  async createSavedFilter(user: PmUser, input: CreateSavedFilterInput): Promise<PmSavedFilter> {
+    const result = await this.pool.query(
+      `
+      INSERT INTO pm.saved_filters (project_id, user_id, name, filter_json)
+      VALUES ($1, $2, $3, $4::jsonb)
+      RETURNING *
+      `,
+      [input.projectId, input.userId, input.name.trim(), JSON.stringify(input.filter)]
+    );
+    const filter = mapSavedFilter(result.rows[0]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: input.projectId, eventType: "filter.saved", payload: { filterId: filter.id, name: filter.name } });
+    return filter;
+  }
+
+  async deleteSavedFilter(user: PmUser, projectId: string, filterId: string): Promise<void> {
+    const result = await this.pool.query("DELETE FROM pm.saved_filters WHERE id = $1 AND project_id = $2 AND user_id = $3", [filterId, projectId, user.id]);
+    if (!result.rowCount) throw new Error("Saved filter not found.");
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId, eventType: "filter.deleted", payload: { filterId } });
   }
 
 
@@ -472,13 +502,15 @@ export class PmStore {
     const columns = await this.listBoardColumns(boardId);
     const taskResult = await this.pool.query(
       `
-      SELECT t.*, tp.column_id, tp.position AS board_position
+      SELECT t.*, tp.column_id, tp.position AS board_position, COALESCE(array_agg(tl.label_id) FILTER (WHERE tl.label_id IS NOT NULL), ARRAY[]::uuid[]) AS label_ids
       FROM pm.tasks t
       LEFT JOIN pm.task_positions tp ON tp.task_id = t.id AND tp.board_id = $1
+      LEFT JOIN pm.task_labels tl ON tl.task_id = t.id
       WHERE t.project_id = $2
         AND t.deleted_at IS NULL
         AND t.archived_at IS NULL
         AND ($3::uuid IS NULL OR t.epic_id = $3::uuid)
+      GROUP BY t.id, tp.column_id, tp.position
       ORDER BY COALESCE(tp.position, 1000000000), t.updated_at DESC
       `,
       [board.id, board.projectId, board.epicId ?? null]
@@ -489,14 +521,16 @@ export class PmStore {
   async listTasks(projectId: string, filters: { epicId?: string; sprintId?: string; includeArchived?: boolean } = {}): Promise<PmTask[]> {
     const result = await this.pool.query(
       `
-      SELECT *
-      FROM pm.tasks
-      WHERE project_id = $1
-        AND deleted_at IS NULL
-        AND ($2::uuid IS NULL OR epic_id = $2::uuid)
-        AND ($3::uuid IS NULL OR sprint_id = $3::uuid)
-        AND ($4::boolean OR archived_at IS NULL)
-      ORDER BY updated_at DESC
+      SELECT t.*, COALESCE(array_agg(tl.label_id) FILTER (WHERE tl.label_id IS NOT NULL), ARRAY[]::uuid[]) AS label_ids
+      FROM pm.tasks t
+      LEFT JOIN pm.task_labels tl ON tl.task_id = t.id
+      WHERE t.project_id = $1
+        AND t.deleted_at IS NULL
+        AND ($2::uuid IS NULL OR t.epic_id = $2::uuid)
+        AND ($3::uuid IS NULL OR t.sprint_id = $3::uuid)
+        AND ($4::boolean OR t.archived_at IS NULL)
+      GROUP BY t.id
+      ORDER BY t.updated_at DESC
       `,
       [projectId, filters.epicId ?? null, filters.sprintId ?? null, Boolean(filters.includeArchived)]
     );
@@ -1086,7 +1120,8 @@ function mapTask(row: Row): PmTask {
     deletedAt: asIso(row.deleted_at),
     createdAt: asIso(row.created_at) ?? "",
     updatedAt: asIso(row.updated_at) ?? "",
-    version: Number(row.version ?? 1)
+    version: Number(row.version ?? 1),
+    labelIds: arrayOfStrings(row.label_ids)
   };
 }
 
@@ -1170,6 +1205,18 @@ function mapLabel(row: Row): PmLabel {
   };
 }
 
+function mapSavedFilter(row: Row): PmSavedFilter {
+  return {
+    id: String(row.id),
+    projectId: String(row.project_id),
+    userId: String(row.user_id),
+    name: String(row.name),
+    filter: parseJsonObject(row.filter_json),
+    createdAt: asIso(row.created_at) ?? "",
+    updatedAt: asIso(row.updated_at) ?? ""
+  };
+}
+
 function mapBoard(row: Row): PmBoard {
   return {
     id: String(row.id),
@@ -1239,6 +1286,11 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
     }
   }
   return {};
+}
+
+function arrayOfStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => item !== null && item !== undefined).map(String);
 }
 
 function extractMentions(value: string): Set<string> {

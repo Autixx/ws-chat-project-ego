@@ -3,6 +3,7 @@ const state = {
   projects: [],
   members: [],
   labels: [],
+  savedFilters: [],
   epics: [],
   sprints: [],
   tasks: [],
@@ -74,6 +75,10 @@ const els = {
   kanbanBoard: $("kanbanBoard"),
   statusFilter: $("statusFilter"),
   priorityFilter: $("priorityFilter"),
+  labelFilter: $("labelFilter"),
+  savedFilterSelect: $("savedFilterSelect"),
+  saveFilterBtn: $("saveFilterBtn"),
+  deleteFilterBtn: $("deleteFilterBtn"),
   taskDrawer: $("taskDrawer"),
   closeDrawerBtn: $("closeDrawerBtn"),
   drawerTitle: $("drawerTitle"),
@@ -161,6 +166,8 @@ async function loadProjectData() {
   els.ensureBoardBtn.disabled = !project;
   els.memberForm.querySelector("button").disabled = !project;
   els.labelForm.querySelector("button").disabled = !project;
+  els.saveFilterBtn.disabled = !project;
+  els.deleteFilterBtn.disabled = !project || !els.savedFilterSelect.value;
   els.epicForm.querySelector("button").disabled = !project;
   els.sprintForm.querySelector("button").disabled = !project;
   els.backlogFilterBtn.disabled = !project;
@@ -169,6 +176,7 @@ async function loadProjectData() {
   if (!project) {
     state.members = [];
     state.labels = [];
+    state.savedFilters = [];
     state.epics = [];
     state.sprints = [];
     state.tasks = [];
@@ -178,15 +186,17 @@ async function loadProjectData() {
     renderActiveProject();
     renderMembers();
     renderProjectLabels();
+    renderSavedFilters();
     renderEpics();
     renderSprints();
     renderTasks();
     renderBoard();
     return;
   }
-  const [membersBody, labelsBody, epicsBody, sprintsBody, tasksBody, boardBody] = await Promise.all([
+  const [membersBody, labelsBody, filtersBody, epicsBody, sprintsBody, tasksBody, boardBody] = await Promise.all([
     api(`/api/pm/projects/${project.id}/members`),
     api(`/api/pm/projects/${project.id}/labels`),
+    api(`/api/pm/projects/${project.id}/filters`),
     api(`/api/pm/projects/${project.id}/epics`),
     api(`/api/pm/projects/${project.id}/sprints?includeCompleted=${els.includeCompletedSprints.checked ? "true" : "false"}${state.activeEpicId ? `&epicId=${encodeURIComponent(state.activeEpicId)}` : ""}`),
     api(`/api/pm/projects/${project.id}/tasks`),
@@ -194,6 +204,7 @@ async function loadProjectData() {
   ]);
   state.members = membersBody.members;
   state.labels = labelsBody.labels;
+  state.savedFilters = filtersBody.filters;
   state.epics = epicsBody.epics;
   state.sprints = sprintsBody.sprints;
   if (state.activeSprintId && !["__all", "__backlog"].includes(state.activeSprintId) && !state.sprints.some((sprint) => sprint.id === state.activeSprintId)) {
@@ -206,6 +217,7 @@ async function loadProjectData() {
   renderActiveProject();
   renderMembers();
   renderProjectLabels();
+  renderSavedFilters();
   renderEpics();
   renderSprints();
   renderTasks();
@@ -323,6 +335,24 @@ function renderProjectLabels() {
   );
 }
 
+function renderSavedFilters() {
+  if (!els.labelFilter || !els.savedFilterSelect) return;
+  const currentLabel = els.labelFilter.value;
+  els.labelFilter.replaceChildren(
+    optionEl("", "All labels"),
+    ...state.labels.map((label) => optionEl(label.id, label.name))
+  );
+  if (state.labels.some((label) => label.id === currentLabel)) els.labelFilter.value = currentLabel;
+
+  const currentFilter = els.savedFilterSelect.value;
+  els.savedFilterSelect.replaceChildren(
+    optionEl("", "Saved filters"),
+    ...state.savedFilters.map((filter) => optionEl(filter.id, filter.name))
+  );
+  if (state.savedFilters.some((filter) => filter.id === currentFilter)) els.savedFilterSelect.value = currentFilter;
+  els.deleteFilterBtn.disabled = !activeProject() || !els.savedFilterSelect.value;
+}
+
 function renderEpics() {
   els.epicList.replaceChildren(
     ...state.epics.map((epic) => {
@@ -418,12 +448,14 @@ function renderNotifications() {
 function renderTasks() {
   const statusFilter = els.statusFilter.value;
   const priorityFilter = els.priorityFilter.value;
+  const labelFilter = els.labelFilter.value;
   const tasks = state.tasks.filter((task) => {
     if (state.activeEpicId && task.epicId !== state.activeEpicId) return false;
     if (state.activeSprintId === "__backlog" && task.sprintId) return false;
     if (!["__all", "__backlog"].includes(state.activeSprintId) && task.sprintId !== state.activeSprintId) return false;
     if (statusFilter && task.status !== statusFilter) return false;
     if (priorityFilter && task.priority !== priorityFilter) return false;
+    if (labelFilter && !taskHasLabel(task, labelFilter)) return false;
     return true;
   });
   els.taskList.replaceChildren(
@@ -436,6 +468,7 @@ function renderTasks() {
           <div class="card-title">${escapeHtml(task.title)}</div>
           <div class="card-body">${escapeHtml(task.description || "")}</div>
           <div class="card-meta">${escapeHtml(task.id)} / ${escapeHtml(sprintLabel(task.sprintId))} / v${task.version}</div>
+          ${taskLabelChips(task)}
         </div>
         <div class="task-badges">
           <span class="badge">${escapeHtml(task.status)}</span>
@@ -458,6 +491,7 @@ function renderBoard() {
   els.activeBoardLine.textContent = `${state.board.name} / ${state.columns.length} columns`;
   const statusFilter = els.statusFilter.value;
   const priorityFilter = els.priorityFilter.value;
+  const labelFilter = els.labelFilter.value;
   els.kanbanBoard.replaceChildren(
     ...state.columns.map((column) => {
       const columnEl = document.createElement("section");
@@ -485,6 +519,7 @@ function renderBoard() {
         .filter((task) => ["__all", "__backlog"].includes(state.activeSprintId) || task.sprintId === state.activeSprintId)
         .filter((task) => !statusFilter || task.status === statusFilter)
         .filter((task) => !priorityFilter || task.priority === priorityFilter)
+        .filter((task) => !labelFilter || taskHasLabel(task, labelFilter))
         .sort((a, b) => (a.boardPosition ?? 1000000000) - (b.boardPosition ?? 1000000000));
       dropzone.replaceChildren(...tasks.map(renderKanbanCard));
       return columnEl;
@@ -502,6 +537,7 @@ function renderKanbanCard(task) {
     <div class="card-title">${escapeHtml(task.title)}</div>
     <div class="card-meta">${escapeHtml(task.priority)} / ${escapeHtml(assigneeLabel(task.assigneeId))} / ${escapeHtml(sprintLabel(task.sprintId))} / v${task.version}</div>
     <div class="card-body">${escapeHtml(task.description || "")}</div>
+    ${taskLabelChips(task)}
   `;
   card.addEventListener("click", () => openTask(task));
   card.addEventListener("dragstart", (event) => {
@@ -642,6 +678,71 @@ async function createLabel(event) {
   renderTaskLabels();
 }
 
+async function saveCurrentFilter() {
+  const project = activeProject();
+  if (!project) return;
+  const name = window.prompt("Saved filter name", suggestedFilterName());
+  if (!name || !name.trim()) return;
+  const { filter } = await api(`/api/pm/projects/${project.id}/filters`, {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      filter: currentFilterState()
+    })
+  });
+  state.savedFilters = [...state.savedFilters, filter].sort((a, b) => a.name.localeCompare(b.name));
+  els.savedFilterSelect.value = filter.id;
+  renderSavedFilters();
+}
+
+async function deleteSelectedFilter() {
+  const project = activeProject();
+  const filterId = els.savedFilterSelect.value;
+  if (!project || !filterId) return;
+  await api(`/api/pm/projects/${project.id}/filters/${encodeURIComponent(filterId)}`, { method: "DELETE" });
+  state.savedFilters = state.savedFilters.filter((filter) => filter.id !== filterId);
+  els.savedFilterSelect.value = "";
+  renderSavedFilters();
+}
+
+async function applySelectedFilter() {
+  const filter = state.savedFilters.find((item) => item.id === els.savedFilterSelect.value);
+  if (!filter) {
+    els.deleteFilterBtn.disabled = true;
+    return;
+  }
+  applyFilterState(filter.filter || {});
+  els.deleteFilterBtn.disabled = false;
+  await loadProjectData();
+}
+
+function currentFilterState() {
+  return {
+    status: els.statusFilter.value,
+    priority: els.priorityFilter.value,
+    labelId: els.labelFilter.value,
+    sprintScope: state.activeSprintId,
+    epicId: state.activeEpicId
+  };
+}
+
+function applyFilterState(filter) {
+  els.statusFilter.value = typeof filter.status === "string" ? filter.status : "";
+  els.priorityFilter.value = typeof filter.priority === "string" ? filter.priority : "";
+  els.labelFilter.value = typeof filter.labelId === "string" ? filter.labelId : "";
+  state.activeSprintId = typeof filter.sprintScope === "string" ? filter.sprintScope : "__all";
+  state.activeEpicId = typeof filter.epicId === "string" && filter.epicId ? filter.epicId : null;
+}
+
+function suggestedFilterName() {
+  const parts = [];
+  if (els.statusFilter.value) parts.push(els.statusFilter.value);
+  if (els.priorityFilter.value) parts.push(els.priorityFilter.value);
+  if (els.labelFilter.value) parts.push(state.labels.find((label) => label.id === els.labelFilter.value)?.name || "label");
+  if (!parts.length) parts.push("All tasks");
+  return parts.join(" / ");
+}
+
 async function createSprint(event) {
   event.preventDefault();
   const project = activeProject();
@@ -757,16 +858,22 @@ async function addTaskLabel(event) {
   });
   els.taskLabelForm.reset();
   state.taskLabels = [...state.taskLabels.filter((item) => item.id !== label.id), label].sort((a, b) => a.name.localeCompare(b.name));
+  updateLocalTaskLabels(state.activeTask.id, state.taskLabels.map((item) => item.id));
   await reloadActivityForActiveTask();
   renderDrawerData();
+  renderTasks();
+  renderBoard();
 }
 
 async function removeTaskLabel(label) {
   if (!state.activeTask) return;
   await api(`/api/pm/tasks/${state.activeTask.id}/labels/${encodeURIComponent(label.id)}`, { method: "DELETE" });
   state.taskLabels = state.taskLabels.filter((item) => item.id !== label.id);
+  updateLocalTaskLabels(state.activeTask.id, state.taskLabels.map((item) => item.id));
   await reloadActivityForActiveTask();
   renderDrawerData();
+  renderTasks();
+  renderBoard();
 }
 
 async function removeDependency(dependency) {
@@ -1149,6 +1256,27 @@ function assigneeLabel(assigneeId) {
   return member ? memberLabel(member) : "assigned";
 }
 
+function taskHasLabel(task, labelId) {
+  return Array.isArray(task.labelIds) && task.labelIds.includes(labelId);
+}
+
+function taskLabelChips(task) {
+  const labels = state.labels.filter((label) => taskHasLabel(task, label.id));
+  if (labels.length === 0) return "";
+  return `<div class="label-chip-row card-labels">${labels.map((label) => `
+    <span class="label-chip">
+      <span class="label-swatch" style="background:${escapeHtml(label.color)}"></span>
+      <span>${escapeHtml(label.name)}</span>
+    </span>
+  `).join("")}</div>`;
+}
+
+function updateLocalTaskLabels(taskId, labelIds) {
+  state.tasks = state.tasks.map((task) => (task.id === taskId ? { ...task, labelIds } : task));
+  state.boardTasks = state.boardTasks.map((task) => (task.id === taskId ? { ...task, labelIds } : task));
+  if (state.activeTask?.id === taskId) state.activeTask = { ...state.activeTask, labelIds };
+}
+
 function formatSprintDates(sprint) {
   const start = sprint.startsAt ? new Date(sprint.startsAt).toLocaleDateString() : "no start";
   const end = sprint.endsAt ? new Date(sprint.endsAt).toLocaleDateString() : "no end";
@@ -1212,5 +1340,12 @@ els.priorityFilter.addEventListener("change", () => {
   renderTasks();
   renderBoard();
 });
+els.labelFilter.addEventListener("change", () => {
+  renderTasks();
+  renderBoard();
+});
+els.savedFilterSelect.addEventListener("change", () => applySelectedFilter().catch((error) => setError(error.message)));
+els.saveFilterBtn.addEventListener("click", () => saveCurrentFilter().catch((error) => setError(error.message)));
+els.deleteFilterBtn.addEventListener("click", () => deleteSelectedFilter().catch((error) => setError(error.message)));
 
 boot();
