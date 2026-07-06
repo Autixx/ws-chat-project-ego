@@ -133,10 +133,18 @@
                   <select id="labelFilter">
                     <option value="">All labels</option>
                   </select>
+                  <select id="dueFilter">
+                    <option value="">All due</option>
+                    <option value="overdue">overdue</option>
+                    <option value="today">due today</option>
+                    <option value="none">no due date</option>
+                  </select>
                   <select id="savedFilterSelect">
                     <option value="">Saved filters</option>
                   </select>
+                  <input id="savedFilterName" maxlength="80" placeholder="Filter name" />
                   <button id="saveFilterBtn" type="button" disabled>Save filter</button>
+                  <button id="updateFilterBtn" type="button" disabled>Update filter</button>
                   <button id="deleteFilterBtn" type="button" disabled>Delete filter</button>
                 </div>
               </div>
@@ -152,6 +160,7 @@
                 <select id="taskAssignee">
                   <option value="">unassigned</option>
                 </select>
+                <input id="taskDueAt" type="date" />
                 <button type="submit" disabled>Create task</button>
               </form>
               <div class="kanban-toolbar">
@@ -203,9 +212,14 @@
                 <option value="">Backlog</option>
               </select>
             </label>
+            <label>Due date<input id="editTaskDueAt" type="date" /></label>
             <label>Description<textarea id="editTaskDescription" rows="8"></textarea></label>
             <button type="submit">Save</button>
           </form>
+          <div class="drawer-danger-actions">
+            <button id="archiveTaskBtn" type="button">Archive task</button>
+            <button id="deleteTaskBtn" type="button">Delete task</button>
+          </div>
 
           <section class="drawer-section">
             <div class="drawer-section-title">

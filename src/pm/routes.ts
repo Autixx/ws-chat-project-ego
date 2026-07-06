@@ -194,6 +194,30 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     }
   });
 
+  router.patch("/projects/:projectId/labels/:labelId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
+      const label = await store.updateLabel(user, req.params.projectId, req.params.labelId, parseUpdateLabel(req.body));
+      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { label } });
+      res.json({ label });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/projects/:projectId/labels/:labelId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
+      await store.deleteLabel(user, req.params.projectId, req.params.labelId);
+      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { labelId: req.params.labelId, deleted: true } });
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/projects/:projectId/filters", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
@@ -223,6 +247,18 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       await store.deleteSavedFilter(user, req.params.projectId, req.params.filterId);
       events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { filterId: req.params.filterId, deleted: true } });
       res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/projects/:projectId/filters/:filterId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
+      const filter = await store.updateSavedFilter(user, req.params.projectId, req.params.filterId, parseUpdateSavedFilter(req.body));
+      events.broadcast({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { filterId: filter.id } });
+      res.json({ filter });
     } catch (error) {
       next(error);
     }
@@ -372,6 +408,32 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
       const task = await store.updateTask(user, req.params.taskId, parseUpdateTask(req.body));
       events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { task } });
+      res.json({ task });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/tasks/:taskId/archive", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const existing = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
+      const task = await store.archiveTask(user, req.params.taskId, Boolean(req.body?.archived ?? true));
+      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { task } });
+      res.json({ task });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/tasks/:taskId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const existing = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
+      const task = await store.softDeleteTask(user, req.params.taskId);
+      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: task.id, version: task.version, createdAt: new Date().toISOString(), payload: { deleted: true } });
       res.json({ task });
     } catch (error) {
       next(error);
@@ -697,6 +759,14 @@ function parseCreateLabel(body: unknown): { name: string; color?: string } {
   };
 }
 
+function parseUpdateLabel(body: unknown): { name?: string; color?: string } {
+  const raw = objectBody(body);
+  return {
+    name: optionalString(raw.name),
+    color: optionalHexColor(raw.color)
+  };
+}
+
 function parseCreateSavedFilter(body: unknown): { name: string; filter: Record<string, unknown> } {
   const raw = objectBody(body);
   const filter = raw.filter;
@@ -704,6 +774,16 @@ function parseCreateSavedFilter(body: unknown): { name: string; filter: Record<s
   return {
     name: requiredString(raw.name, "name").slice(0, 80),
     filter: filter as Record<string, unknown>
+  };
+}
+
+function parseUpdateSavedFilter(body: unknown): { name?: string; filter?: Record<string, unknown> } {
+  const raw = objectBody(body);
+  const filter = raw.filter;
+  if (filter !== undefined && (!filter || typeof filter !== "object" || Array.isArray(filter))) throw new Error("filter must be an object.");
+  return {
+    name: optionalString(raw.name)?.slice(0, 80),
+    filter: filter === undefined ? undefined : (filter as Record<string, unknown>)
   };
 }
 
@@ -765,7 +845,7 @@ function parseUpdateTask(body: unknown): UpdateTaskInput {
     epicId: optionalString(raw.epicId),
     sprintId: optionalString(raw.sprintId),
     assigneeId: optionalString(raw.assigneeId),
-    dueAt: optionalString(raw.dueAt),
+    dueAt: nullableString(raw.dueAt),
     expectedVersion: optionalNumber(raw.expectedVersion)
   };
 }
@@ -796,6 +876,11 @@ function requiredString(value: unknown, field: string): string {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+function nullableString(value: unknown): string | null | undefined {
+  if (value === null || value === "") return null;
+  return optionalString(value);
 }
 
 function requiredNumber(value: unknown, field: string): number {

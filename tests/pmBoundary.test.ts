@@ -115,11 +115,16 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/assignee`?/);
   assert.match(readme, /task assignee picker/);
   assert.match(readme, /GET `?\/api\/pm\/projects\/:projectId\/labels`?/);
+  assert.match(readme, /PATCH `?\/api\/pm\/projects\/:projectId\/labels\/:labelId`?/);
   assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/labels`?/);
-  assert.match(readme, /project labels with task label assignment\/removal/);
+  assert.match(readme, /project labels with edit\/delete and task label assignment\/removal/);
   assert.match(readme, /GET `?\/api\/pm\/projects\/:projectId\/filters`?/);
+  assert.match(readme, /PATCH `?\/api\/pm\/projects\/:projectId\/filters\/:filterId`?/);
   assert.match(readme, /DELETE `?\/api\/pm\/projects\/:projectId\/filters\/:filterId`?/);
-  assert.match(readme, /label filtering and user-scoped saved task filters/);
+  assert.match(readme, /label filtering and user-scoped saved task filters with update\/delete/);
+  assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/archive`?/);
+  assert.match(readme, /DELETE `?\/api\/pm\/tasks\/:taskId`?/);
+  assert.match(readme, /task due dates with overdue highlighting/);
   assert.match(readme, /GET `?\/api\/pm\/tasks\/:taskId\/dependencies`?/);
   assert.match(readme, /DELETE `?\/api\/pm\/tasks\/:taskId\/dependencies\/:blockingTaskId`?/);
   assert.match(readme, /task dependency management/);

@@ -32,6 +32,8 @@ import type {
   PmUser,
   UpdateProjectInput,
   UpdateCommentInput,
+  UpdateLabelInput,
+  UpdateSavedFilterInput,
   UpdateSprintInput,
   UpdateTaskInput
 } from "./types.js";
@@ -208,6 +210,28 @@ export class PmStore {
     return mapLabel(result.rows[0]);
   }
 
+  async updateLabel(user: PmUser, projectId: string, labelId: string, input: UpdateLabelInput): Promise<PmLabel> {
+    const result = await this.pool.query(
+      `
+      UPDATE pm.labels
+      SET name = COALESCE($3, name), color = COALESCE($4, color)
+      WHERE id = $1 AND project_id = $2
+      RETURNING *
+      `,
+      [labelId, projectId, input.name?.trim() ?? null, input.color ?? null]
+    );
+    if (!result.rows[0]) throw new Error("Label not found.");
+    const label = mapLabel(result.rows[0]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId, eventType: "label.updated", payload: { labelId, name: label.name, color: label.color } });
+    return label;
+  }
+
+  async deleteLabel(user: PmUser, projectId: string, labelId: string): Promise<void> {
+    const result = await this.pool.query("DELETE FROM pm.labels WHERE id = $1 AND project_id = $2", [labelId, projectId]);
+    if (!result.rowCount) throw new Error("Label not found.");
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId, eventType: "label.deleted", payload: { labelId } });
+  }
+
   async listSavedFilters(projectId: string, userId: string): Promise<PmSavedFilter[]> {
     const result = await this.pool.query(
       "SELECT * FROM pm.saved_filters WHERE project_id = $1 AND user_id = $2 ORDER BY lower(name) ASC",
@@ -234,6 +258,24 @@ export class PmStore {
     const result = await this.pool.query("DELETE FROM pm.saved_filters WHERE id = $1 AND project_id = $2 AND user_id = $3", [filterId, projectId, user.id]);
     if (!result.rowCount) throw new Error("Saved filter not found.");
     await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId, eventType: "filter.deleted", payload: { filterId } });
+  }
+
+  async updateSavedFilter(user: PmUser, projectId: string, filterId: string, input: UpdateSavedFilterInput): Promise<PmSavedFilter> {
+    const result = await this.pool.query(
+      `
+      UPDATE pm.saved_filters
+      SET name = COALESCE($4, name),
+          filter_json = COALESCE($5::jsonb, filter_json),
+          updated_at = now()
+      WHERE id = $1 AND project_id = $2 AND user_id = $3
+      RETURNING *
+      `,
+      [filterId, projectId, user.id, input.name?.trim() ?? null, input.filter ? JSON.stringify(input.filter) : null]
+    );
+    if (!result.rows[0]) throw new Error("Saved filter not found.");
+    const filter = mapSavedFilter(result.rows[0]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId, eventType: "filter.updated", payload: { filterId, name: filter.name } });
+    return filter;
   }
 
 
@@ -581,12 +623,12 @@ export class PmStore {
         assignee_id = COALESCE($6, assignee_id),
         epic_id = COALESCE($7, epic_id),
         sprint_id = COALESCE($8, sprint_id),
-        due_at = COALESCE($9, due_at),
+        due_at = CASE WHEN $9::boolean THEN $10::timestamptz ELSE due_at END,
         version = version + 1,
         updated_at = now()
       WHERE id = $1
         AND deleted_at IS NULL
-        AND ($10::bigint IS NULL OR version = $10::bigint)
+        AND ($11::bigint IS NULL OR version = $11::bigint)
       RETURNING *
       `,
       [
@@ -598,6 +640,7 @@ export class PmStore {
         input.assigneeId ?? null,
         input.epicId ?? null,
         input.sprintId ?? null,
+        Object.prototype.hasOwnProperty.call(input, "dueAt"),
         input.dueAt ?? null,
         input.expectedVersion ?? null
       ]
@@ -605,6 +648,42 @@ export class PmStore {
     if (!result.rows[0]) throw new PmConflictError("Task version conflict or task not found.");
     const task = mapTask(result.rows[0]);
     await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: task.projectId, taskId, eventType: "task.updated", payload: input });
+    return task;
+  }
+
+  async archiveTask(user: PmUser, taskId: string, archived: boolean): Promise<PmTask> {
+    const result = await this.pool.query(
+      `
+      UPDATE pm.tasks
+      SET archived_at = CASE WHEN $2::boolean THEN now() ELSE NULL END,
+          version = version + 1,
+          updated_at = now()
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING *
+      `,
+      [taskId, archived]
+    );
+    if (!result.rows[0]) throw new Error("Task not found.");
+    const task = mapTask(result.rows[0]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: task.projectId, taskId, eventType: archived ? "task.archived" : "task.unarchived" });
+    return task;
+  }
+
+  async softDeleteTask(user: PmUser, taskId: string): Promise<PmTask> {
+    const result = await this.pool.query(
+      `
+      UPDATE pm.tasks
+      SET deleted_at = now(),
+          version = version + 1,
+          updated_at = now()
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING *
+      `,
+      [taskId]
+    );
+    if (!result.rows[0]) throw new Error("Task not found.");
+    const task = mapTask(result.rows[0]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: task.projectId, taskId, eventType: "task.deleted" });
     return task;
   }
 

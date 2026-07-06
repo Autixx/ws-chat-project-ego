@@ -265,6 +265,11 @@ export type CreateLabelInput = {
   color?: string;
 };
 
+export type UpdateLabelInput = {
+  name?: string;
+  color?: string;
+};
+
 export type CreateSavedFilterInput = {
   projectId: string;
   userId: string;
@@ -272,7 +277,13 @@ export type CreateSavedFilterInput = {
   filter: Record<string, unknown>;
 };
 
-export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "projectId">> & {
+export type UpdateSavedFilterInput = {
+  name?: string;
+  filter?: Record<string, unknown>;
+};
+
+export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "projectId" | "dueAt">> & {
+  dueAt?: string | null;
   expectedVersion?: number;
 };
 

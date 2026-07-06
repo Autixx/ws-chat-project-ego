@@ -69,6 +69,7 @@ const els = {
   taskTitle: $("taskTitle"),
   taskPriority: $("taskPriority"),
   taskAssignee: $("taskAssignee"),
+  taskDueAt: $("taskDueAt"),
   taskList: $("taskList"),
   activeBoardLine: $("activeBoardLine"),
   ensureBoardBtn: $("ensureBoardBtn"),
@@ -76,11 +77,16 @@ const els = {
   statusFilter: $("statusFilter"),
   priorityFilter: $("priorityFilter"),
   labelFilter: $("labelFilter"),
+  dueFilter: $("dueFilter"),
   savedFilterSelect: $("savedFilterSelect"),
+  savedFilterName: $("savedFilterName"),
   saveFilterBtn: $("saveFilterBtn"),
+  updateFilterBtn: $("updateFilterBtn"),
   deleteFilterBtn: $("deleteFilterBtn"),
   taskDrawer: $("taskDrawer"),
   closeDrawerBtn: $("closeDrawerBtn"),
+  archiveTaskBtn: $("archiveTaskBtn"),
+  deleteTaskBtn: $("deleteTaskBtn"),
   drawerTitle: $("drawerTitle"),
   drawerMeta: $("drawerMeta"),
   taskEditForm: $("taskEditForm"),
@@ -89,6 +95,7 @@ const els = {
   editTaskPriority: $("editTaskPriority"),
   editTaskAssignee: $("editTaskAssignee"),
   editTaskSprint: $("editTaskSprint"),
+  editTaskDueAt: $("editTaskDueAt"),
   editTaskDescription: $("editTaskDescription"),
   taskLabelForm: $("taskLabelForm"),
   taskLabelSelect: $("taskLabelSelect"),
@@ -167,6 +174,7 @@ async function loadProjectData() {
   els.memberForm.querySelector("button").disabled = !project;
   els.labelForm.querySelector("button").disabled = !project;
   els.saveFilterBtn.disabled = !project;
+  els.updateFilterBtn.disabled = !project || !els.savedFilterSelect.value;
   els.deleteFilterBtn.disabled = !project || !els.savedFilterSelect.value;
   els.epicForm.querySelector("button").disabled = !project;
   els.sprintForm.querySelector("button").disabled = !project;
@@ -329,7 +337,16 @@ function renderProjectLabels() {
           <span>${escapeHtml(label.name)}</span>
         </div>
         <div class="card-meta">${escapeHtml(label.color)}</div>
+        <div class="label-edit-row">
+          <input maxlength="40" value="${escapeHtml(label.name)}" />
+          <input type="color" value="${escapeHtml(label.color)}" />
+          <button class="mini-button" data-action="save" type="button">Save</button>
+          <button class="mini-button" data-action="delete" type="button">Delete</button>
+        </div>
       `;
+      const [nameInput, colorInput] = card.querySelectorAll("input");
+      card.querySelector('[data-action="save"]').addEventListener("click", () => updateLabel(label, nameInput.value, colorInput.value).catch((error) => setError(error.message)));
+      card.querySelector('[data-action="delete"]').addEventListener("click", () => deleteLabel(label).catch((error) => setError(error.message)));
       return card;
     })
   );
@@ -350,6 +367,9 @@ function renderSavedFilters() {
     ...state.savedFilters.map((filter) => optionEl(filter.id, filter.name))
   );
   if (state.savedFilters.some((filter) => filter.id === currentFilter)) els.savedFilterSelect.value = currentFilter;
+  const selected = state.savedFilters.find((filter) => filter.id === els.savedFilterSelect.value);
+  if (selected) els.savedFilterName.value = selected.name;
+  els.updateFilterBtn.disabled = !activeProject() || !els.savedFilterSelect.value;
   els.deleteFilterBtn.disabled = !activeProject() || !els.savedFilterSelect.value;
 }
 
@@ -449,6 +469,7 @@ function renderTasks() {
   const statusFilter = els.statusFilter.value;
   const priorityFilter = els.priorityFilter.value;
   const labelFilter = els.labelFilter.value;
+  const dueFilter = els.dueFilter.value;
   const tasks = state.tasks.filter((task) => {
     if (state.activeEpicId && task.epicId !== state.activeEpicId) return false;
     if (state.activeSprintId === "__backlog" && task.sprintId) return false;
@@ -456,6 +477,7 @@ function renderTasks() {
     if (statusFilter && task.status !== statusFilter) return false;
     if (priorityFilter && task.priority !== priorityFilter) return false;
     if (labelFilter && !taskHasLabel(task, labelFilter)) return false;
+    if (dueFilter && !taskMatchesDueFilter(task, dueFilter)) return false;
     return true;
   });
   els.taskList.replaceChildren(
@@ -474,6 +496,7 @@ function renderTasks() {
           <span class="badge">${escapeHtml(task.status)}</span>
           <span class="badge">${escapeHtml(task.priority)}</span>
           <span class="badge">${escapeHtml(assigneeLabel(task.assigneeId))}</span>
+          <span class="badge ${isOverdue(task) ? "overdue" : ""}">${escapeHtml(dueLabel(task))}</span>
         </div>
       `;
       button.addEventListener("click", () => openTask(task));
@@ -492,6 +515,7 @@ function renderBoard() {
   const statusFilter = els.statusFilter.value;
   const priorityFilter = els.priorityFilter.value;
   const labelFilter = els.labelFilter.value;
+  const dueFilter = els.dueFilter.value;
   els.kanbanBoard.replaceChildren(
     ...state.columns.map((column) => {
       const columnEl = document.createElement("section");
@@ -520,6 +544,7 @@ function renderBoard() {
         .filter((task) => !statusFilter || task.status === statusFilter)
         .filter((task) => !priorityFilter || task.priority === priorityFilter)
         .filter((task) => !labelFilter || taskHasLabel(task, labelFilter))
+        .filter((task) => !dueFilter || taskMatchesDueFilter(task, dueFilter))
         .sort((a, b) => (a.boardPosition ?? 1000000000) - (b.boardPosition ?? 1000000000));
       dropzone.replaceChildren(...tasks.map(renderKanbanCard));
       return columnEl;
@@ -535,7 +560,7 @@ function renderKanbanCard(task) {
   card.dataset.taskId = task.id;
   card.innerHTML = `
     <div class="card-title">${escapeHtml(task.title)}</div>
-    <div class="card-meta">${escapeHtml(task.priority)} / ${escapeHtml(assigneeLabel(task.assigneeId))} / ${escapeHtml(sprintLabel(task.sprintId))} / v${task.version}</div>
+    <div class="card-meta">${escapeHtml(task.priority)} / ${escapeHtml(assigneeLabel(task.assigneeId))} / ${escapeHtml(dueLabel(task))} / ${escapeHtml(sprintLabel(task.sprintId))} / v${task.version}</div>
     <div class="card-body">${escapeHtml(task.description || "")}</div>
     ${taskLabelChips(task)}
   `;
@@ -581,7 +606,9 @@ function openTask(task) {
   els.editTaskPriority.value = task.priority;
   els.editTaskAssignee.value = task.assigneeId || "";
   els.editTaskSprint.value = task.sprintId || "";
+  els.editTaskDueAt.value = dateInputValue(task.dueAt);
   els.editTaskDescription.value = task.description || "";
+  els.archiveTaskBtn.textContent = task.archivedAt ? "Unarchive task" : "Archive task";
   state.comments = [];
   state.taskLabels = [];
   state.dependencies = { blockingTasks: [], blockedTasks: [] };
@@ -678,10 +705,42 @@ async function createLabel(event) {
   renderTaskLabels();
 }
 
+async function updateLabel(label, name, color) {
+  const project = activeProject();
+  if (!project) return;
+  const { label: updated } = await api(`/api/pm/projects/${project.id}/labels/${label.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name, color })
+  });
+  state.labels = state.labels.map((item) => (item.id === updated.id ? updated : item)).sort((a, b) => a.name.localeCompare(b.name));
+  state.taskLabels = state.taskLabels.map((item) => (item.id === updated.id ? updated : item));
+  renderProjectLabels();
+  renderSavedFilters();
+  renderDrawerData();
+  renderTasks();
+  renderBoard();
+}
+
+async function deleteLabel(label) {
+  const project = activeProject();
+  if (!project) return;
+  await api(`/api/pm/projects/${project.id}/labels/${label.id}`, { method: "DELETE" });
+  state.labels = state.labels.filter((item) => item.id !== label.id);
+  state.taskLabels = state.taskLabels.filter((item) => item.id !== label.id);
+  state.tasks = state.tasks.map((task) => ({ ...task, labelIds: (task.labelIds || []).filter((id) => id !== label.id) }));
+  state.boardTasks = state.boardTasks.map((task) => ({ ...task, labelIds: (task.labelIds || []).filter((id) => id !== label.id) }));
+  if (state.activeTask) state.activeTask = { ...state.activeTask, labelIds: (state.activeTask.labelIds || []).filter((id) => id !== label.id) };
+  renderProjectLabels();
+  renderSavedFilters();
+  renderDrawerData();
+  renderTasks();
+  renderBoard();
+}
+
 async function saveCurrentFilter() {
   const project = activeProject();
   if (!project) return;
-  const name = window.prompt("Saved filter name", suggestedFilterName());
+  const name = els.savedFilterName.value.trim() || suggestedFilterName();
   if (!name || !name.trim()) return;
   const { filter } = await api(`/api/pm/projects/${project.id}/filters`, {
     method: "POST",
@@ -691,6 +750,22 @@ async function saveCurrentFilter() {
     })
   });
   state.savedFilters = [...state.savedFilters, filter].sort((a, b) => a.name.localeCompare(b.name));
+  els.savedFilterSelect.value = filter.id;
+  renderSavedFilters();
+}
+
+async function updateSelectedFilter() {
+  const project = activeProject();
+  const filterId = els.savedFilterSelect.value;
+  if (!project || !filterId) return;
+  const { filter } = await api(`/api/pm/projects/${project.id}/filters/${encodeURIComponent(filterId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: els.savedFilterName.value.trim() || suggestedFilterName(),
+      filter: currentFilterState()
+    })
+  });
+  state.savedFilters = state.savedFilters.map((item) => (item.id === filter.id ? filter : item)).sort((a, b) => a.name.localeCompare(b.name));
   els.savedFilterSelect.value = filter.id;
   renderSavedFilters();
 }
@@ -721,6 +796,7 @@ function currentFilterState() {
     status: els.statusFilter.value,
     priority: els.priorityFilter.value,
     labelId: els.labelFilter.value,
+    due: els.dueFilter.value,
     sprintScope: state.activeSprintId,
     epicId: state.activeEpicId
   };
@@ -730,6 +806,7 @@ function applyFilterState(filter) {
   els.statusFilter.value = typeof filter.status === "string" ? filter.status : "";
   els.priorityFilter.value = typeof filter.priority === "string" ? filter.priority : "";
   els.labelFilter.value = typeof filter.labelId === "string" ? filter.labelId : "";
+  els.dueFilter.value = typeof filter.due === "string" ? filter.due : "";
   state.activeSprintId = typeof filter.sprintScope === "string" ? filter.sprintScope : "__all";
   state.activeEpicId = typeof filter.epicId === "string" && filter.epicId ? filter.epicId : null;
 }
@@ -739,6 +816,7 @@ function suggestedFilterName() {
   if (els.statusFilter.value) parts.push(els.statusFilter.value);
   if (els.priorityFilter.value) parts.push(els.priorityFilter.value);
   if (els.labelFilter.value) parts.push(state.labels.find((label) => label.id === els.labelFilter.value)?.name || "label");
+  if (els.dueFilter.value) parts.push(els.dueFilter.value);
   if (!parts.length) parts.push("All tasks");
   return parts.join(" / ");
 }
@@ -779,12 +857,14 @@ async function createTask(event) {
       priority: els.taskPriority.value,
       assigneeId: els.taskAssignee.value || undefined,
       epicId: state.activeEpicId || undefined,
-      sprintId: selectedSprintIdForNewTask()
+      sprintId: selectedSprintIdForNewTask(),
+      dueAt: els.taskDueAt.value || undefined
     })
   });
   els.taskForm.reset();
   els.taskPriority.value = "medium";
   els.taskAssignee.value = "";
+  els.taskDueAt.value = "";
   if (state.board) {
     const todoColumn = state.columns.find((column) => column.statusKey === "todo") || state.columns[0];
     if (todoColumn) {
@@ -817,6 +897,7 @@ async function saveTask(event) {
       status: els.editTaskStatus.value,
       priority: els.editTaskPriority.value,
       description: els.editTaskDescription.value,
+      dueAt: els.editTaskDueAt.value || null,
       expectedVersion: state.activeTask.version
     })
   });
@@ -836,6 +917,29 @@ async function saveTask(event) {
   }
   await loadProjectData();
   openTask(task);
+}
+
+async function toggleTaskArchive() {
+  if (!state.activeTask) return;
+  const { task } = await api(`/api/pm/tasks/${state.activeTask.id}/archive`, {
+    method: "POST",
+    body: JSON.stringify({ archived: !state.activeTask.archivedAt })
+  });
+  await loadProjectData();
+  if (task.archivedAt) {
+    closeTask();
+  } else {
+    openTask(task);
+  }
+}
+
+async function deleteActiveTask() {
+  if (!state.activeTask) return;
+  const confirmed = window.confirm(`Delete task permanently from active lists?\n\n${state.activeTask.title}`);
+  if (!confirmed) return;
+  await api(`/api/pm/tasks/${state.activeTask.id}`, { method: "DELETE" });
+  closeTask();
+  await loadProjectData();
 }
 
 async function addDependency(event) {
@@ -1256,6 +1360,48 @@ function assigneeLabel(assigneeId) {
   return member ? memberLabel(member) : "assigned";
 }
 
+function taskMatchesDueFilter(task, filter) {
+  if (filter === "none") return !task.dueAt;
+  if (filter === "overdue") return isOverdue(task);
+  if (filter === "today") return isDueToday(task);
+  return true;
+}
+
+function isOverdue(task) {
+  if (!task.dueAt || task.status === "done") return false;
+  return endOfLocalDay(task.dueAt).getTime() < startOfToday().getTime();
+}
+
+function isDueToday(task) {
+  if (!task.dueAt) return false;
+  const due = endOfLocalDay(task.dueAt);
+  const today = startOfToday();
+  return due >= today && due < new Date(today.getTime() + 24 * 60 * 60 * 1000);
+}
+
+function dueLabel(task) {
+  if (!task.dueAt) return "no due";
+  const value = dateInputValue(task.dueAt);
+  return isOverdue(task) ? `overdue ${value}` : `due ${value}`;
+}
+
+function dateInputValue(value) {
+  if (!value) return "";
+  return String(value).slice(0, 10);
+}
+
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function endOfLocalDay(value) {
+  const text = dateInputValue(value);
+  if (!text) return new Date(0);
+  const [year, month, day] = text.split("-").map(Number);
+  return new Date(year, month - 1, day, 23, 59, 59, 999);
+}
+
 function taskHasLabel(task, labelId) {
   return Array.isArray(task.labelIds) && task.labelIds.includes(labelId);
 }
@@ -1332,6 +1478,8 @@ els.refreshBtn.addEventListener("click", () => loadProjects().catch((error) => s
 els.archiveProjectBtn.addEventListener("click", () => toggleArchive().catch((error) => setError(error.message)));
 els.ensureBoardBtn.addEventListener("click", () => loadProjectData().catch((error) => setError(error.message)));
 els.closeDrawerBtn.addEventListener("click", closeTask);
+els.archiveTaskBtn.addEventListener("click", () => toggleTaskArchive().catch((error) => setError(error.message)));
+els.deleteTaskBtn.addEventListener("click", () => deleteActiveTask().catch((error) => setError(error.message)));
 els.statusFilter.addEventListener("change", () => {
   renderTasks();
   renderBoard();
@@ -1344,8 +1492,13 @@ els.labelFilter.addEventListener("change", () => {
   renderTasks();
   renderBoard();
 });
+els.dueFilter.addEventListener("change", () => {
+  renderTasks();
+  renderBoard();
+});
 els.savedFilterSelect.addEventListener("change", () => applySelectedFilter().catch((error) => setError(error.message)));
 els.saveFilterBtn.addEventListener("click", () => saveCurrentFilter().catch((error) => setError(error.message)));
+els.updateFilterBtn.addEventListener("click", () => updateSelectedFilter().catch((error) => setError(error.message)));
 els.deleteFilterBtn.addEventListener("click", () => deleteSelectedFilter().catch((error) => setError(error.message)));
 
 boot();
