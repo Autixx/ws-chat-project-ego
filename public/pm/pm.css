@@ -501,16 +501,23 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   font-size: 12px;
 }
 
-.comment-form, .attachment-form {
+.comment-form, .attachment-form, .dependency-form {
   display: grid;
   gap: 7px;
 }
 
-.attachment-form {
+.attachment-form, .dependency-form {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.comment-card, .attachment-card, .activity-card {
+.drawer-subtitle {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  padding-top: 2px;
+}
+
+.comment-card, .attachment-card, .activity-card, .dependency-card {
   border: 1px solid var(--line);
   background: var(--field);
   padding: 8px;

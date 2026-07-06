@@ -343,6 +343,17 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     }
   });
 
+  router.get("/tasks/:taskId/dependencies", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "viewer");
+      res.json(await store.listDependencies(req.params.taskId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/tasks/:taskId/dependencies", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
@@ -350,8 +361,21 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
       const blockingTaskId = requiredString(req.body?.blockingTaskId, "blockingTaskId");
       await store.addDependency(user, blockingTaskId, req.params.taskId);
-      events.broadcast({ type: "task.updated", taskId: req.params.taskId, createdAt: new Date().toISOString(), payload: { dependencyAdded: blockingTaskId } });
+      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: req.params.taskId, createdAt: new Date().toISOString(), payload: { dependencyAdded: blockingTaskId } });
       res.status(201).json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/tasks/:taskId/dependencies/:blockingTaskId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const task = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, task.projectId), "member");
+      await store.removeDependency(user, req.params.blockingTaskId, req.params.taskId);
+      events.broadcast({ type: "task.updated", projectId: task.projectId, taskId: req.params.taskId, createdAt: new Date().toISOString(), payload: { dependencyRemoved: req.params.blockingTaskId } });
+      res.json({ ok: true });
     } catch (error) {
       next(error);
     }

@@ -23,6 +23,7 @@ import type {
   PmRole,
   PmSprint,
   PmTask,
+  PmTaskDependency,
   PmTaskPosition,
   PmUser,
   UpdateProjectInput,
@@ -589,12 +590,50 @@ export class PmStore {
     });
   }
 
+  async listDependencies(taskId: string): Promise<{ blockingTasks: PmTaskDependency[]; blockedTasks: PmTaskDependency[] }> {
+    const blocking = await this.pool.query(
+      `
+      SELECT d.blocking_task_id, d.blocked_task_id, d.created_by, d.created_at AS dependency_created_at, t.*
+      FROM pm.task_dependencies d
+      JOIN pm.tasks t ON t.id = d.blocking_task_id
+      WHERE d.blocked_task_id = $1
+        AND t.deleted_at IS NULL
+      ORDER BY d.created_at DESC
+      `,
+      [taskId]
+    );
+    const blocked = await this.pool.query(
+      `
+      SELECT d.blocking_task_id, d.blocked_task_id, d.created_by, d.created_at AS dependency_created_at, t.*
+      FROM pm.task_dependencies d
+      JOIN pm.tasks t ON t.id = d.blocked_task_id
+      WHERE d.blocking_task_id = $1
+        AND t.deleted_at IS NULL
+      ORDER BY d.created_at DESC
+      `,
+      [taskId]
+    );
+    return {
+      blockingTasks: blocking.rows.map((row) => mapTaskDependency(row)),
+      blockedTasks: blocked.rows.map((row) => mapTaskDependency(row))
+    };
+  }
+
   async addDependency(user: PmUser, blockingTaskId: string, blockedTaskId: string): Promise<void> {
+    const [blockingTask, blockedTask] = await Promise.all([this.loadTask(blockingTaskId), this.loadTask(blockedTaskId)]);
+    if (blockingTask.projectId !== blockedTask.projectId) throw new Error("Dependency task must belong to the same project.");
     await this.pool.query(
       "INSERT INTO pm.task_dependencies (blocking_task_id, blocked_task_id, created_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
       [blockingTaskId, blockedTaskId, user.id]
     );
-    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, taskId: blockedTaskId, eventType: "task.dependency_added", payload: { blockingTaskId } });
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: blockedTask.projectId, taskId: blockedTaskId, eventType: "task.dependency_added", payload: { blockingTaskId } });
+  }
+
+  async removeDependency(user: PmUser, blockingTaskId: string, blockedTaskId: string): Promise<void> {
+    const blockedTask = await this.loadTask(blockedTaskId);
+    const result = await this.pool.query("DELETE FROM pm.task_dependencies WHERE blocking_task_id = $1 AND blocked_task_id = $2", [blockingTaskId, blockedTaskId]);
+    if (!result.rowCount) throw new Error("Task dependency not found.");
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: blockedTask.projectId, taskId: blockedTaskId, eventType: "task.dependency_removed", payload: { blockingTaskId } });
   }
 
   async listComments(taskId: string): Promise<PmComment[]> {
@@ -930,7 +969,7 @@ function mapProject(row: Row): PmProject {
     archivedAt: asIso(row.archived_at),
     deletedAt: asIso(row.deleted_at),
     createdBy: row.created_by ? String(row.created_by) : undefined,
-    createdAt: asIso(row.created_at) ?? "",
+    createdAt: asIso(row.dependency_created_at) ?? asIso(row.created_at) ?? "",
     updatedAt: asIso(row.updated_at) ?? "",
     version: Number(row.version ?? 1),
     role: row.role ? normalizeRole(row.role) : undefined
@@ -990,6 +1029,16 @@ function mapTask(row: Row): PmTask {
     createdAt: asIso(row.created_at) ?? "",
     updatedAt: asIso(row.updated_at) ?? "",
     version: Number(row.version ?? 1)
+  };
+}
+
+function mapTaskDependency(row: Row): PmTaskDependency {
+  return {
+    blockingTaskId: String(row.blocking_task_id),
+    blockedTaskId: String(row.blocked_task_id),
+    createdBy: row.created_by ? String(row.created_by) : undefined,
+    createdAt: asIso(row.created_at) ?? "",
+    task: mapTask(row)
   };
 }
 

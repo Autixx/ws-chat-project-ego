@@ -12,6 +12,7 @@ const state = {
   activeEpicId: null,
   activeSprintId: "__backlog",
   activeTask: null,
+  dependencies: { blockingTasks: [], blockedTasks: [] },
   comments: [],
   attachments: [],
   activity: [],
@@ -78,6 +79,9 @@ const els = {
   editTaskAssignee: $("editTaskAssignee"),
   editTaskSprint: $("editTaskSprint"),
   editTaskDescription: $("editTaskDescription"),
+  dependencyForm: $("dependencyForm"),
+  dependencyTask: $("dependencyTask"),
+  dependencyList: $("dependencyList"),
   commentList: $("commentList"),
   commentForm: $("commentForm"),
   commentBody: $("commentBody"),
@@ -506,6 +510,7 @@ function openTask(task) {
   els.editTaskSprint.value = task.sprintId || "";
   els.editTaskDescription.value = task.description || "";
   state.comments = [];
+  state.dependencies = { blockingTasks: [], blockedTasks: [] };
   state.attachments = [];
   state.activity = [];
   renderDrawerData();
@@ -676,13 +681,32 @@ async function saveTask(event) {
   openTask(task);
 }
 
+async function addDependency(event) {
+  event.preventDefault();
+  if (!state.activeTask || !els.dependencyTask.value) return;
+  await api(`/api/pm/tasks/${state.activeTask.id}/dependencies`, {
+    method: "POST",
+    body: JSON.stringify({ blockingTaskId: els.dependencyTask.value })
+  });
+  els.dependencyForm.reset();
+  await loadTaskDrawerData(state.activeTask.id);
+}
+
+async function removeDependency(dependency) {
+  if (!state.activeTask) return;
+  await api(`/api/pm/tasks/${state.activeTask.id}/dependencies/${encodeURIComponent(dependency.blockingTaskId)}`, { method: "DELETE" });
+  await loadTaskDrawerData(state.activeTask.id);
+}
+
 async function loadTaskDrawerData(taskId) {
-  const [commentsBody, attachmentsBody, activityBody] = await Promise.all([
+  const [dependenciesBody, commentsBody, attachmentsBody, activityBody] = await Promise.all([
+    api(`/api/pm/tasks/${taskId}/dependencies`),
     api(`/api/pm/tasks/${taskId}/comments`),
     api(`/api/pm/tasks/${taskId}/attachments`),
     api(`/api/pm/tasks/${taskId}/activity`)
   ]);
   if (!state.activeTask || state.activeTask.id !== taskId) return;
+  state.dependencies = dependenciesBody;
   state.comments = commentsBody.comments;
   state.attachments = attachmentsBody.attachments;
   state.activity = activityBody.activity;
@@ -690,9 +714,77 @@ async function loadTaskDrawerData(taskId) {
 }
 
 function renderDrawerData() {
+  renderDependencies();
   renderComments();
   renderAttachments();
   renderActivity();
+}
+
+function renderDependencies() {
+  if (!els.dependencyList || !els.dependencyTask) return;
+  const activeTaskId = state.activeTask?.id;
+  const blockingIds = new Set((state.dependencies.blockingTasks || []).map((item) => item.blockingTaskId));
+  const options = [
+    optionEl("", "Select blocking task"),
+    ...state.tasks
+      .filter((task) => task.id !== activeTaskId && !blockingIds.has(task.id))
+      .map((task) => optionEl(task.id, `${task.title} / ${task.status}`))
+  ];
+  els.dependencyTask.replaceChildren(...options);
+  if (!state.activeTask) {
+    els.dependencyList.innerHTML = `<div class="drawer-empty">No task selected.</div>`;
+    return;
+  }
+  const blockingTasks = state.dependencies.blockingTasks || [];
+  const blockedTasks = state.dependencies.blockedTasks || [];
+  if (blockingTasks.length === 0 && blockedTasks.length === 0) {
+    els.dependencyList.innerHTML = `<div class="drawer-empty">No dependencies.</div>`;
+    return;
+  }
+  const nodes = [];
+  if (blockingTasks.length > 0) {
+    nodes.push(sectionLabel("Blocked by"));
+    nodes.push(...blockingTasks.map((dependency) => renderDependencyCard(dependency, "blocking")));
+  }
+  if (blockedTasks.length > 0) {
+    nodes.push(sectionLabel("Blocks"));
+    nodes.push(...blockedTasks.map((dependency) => renderDependencyCard(dependency, "blocked")));
+  }
+  els.dependencyList.replaceChildren(...nodes);
+}
+
+function sectionLabel(label) {
+  const element = document.createElement("div");
+  element.className = "drawer-subtitle";
+  element.textContent = label;
+  return element;
+}
+
+function renderDependencyCard(dependency, direction) {
+  const card = document.createElement("article");
+  card.className = "dependency-card";
+  const task = dependency.task || {};
+  const removable = direction === "blocking";
+  card.innerHTML = `
+    <div class="attachment-head">
+      <span>${escapeHtml(task.title || "Task")}</span>
+      <span>${escapeHtml(task.status || "")}</span>
+    </div>
+    <div class="card-meta">${escapeHtml(task.id || "")} / ${escapeHtml(task.priority || "medium")} / ${escapeHtml(assigneeLabel(task.assigneeId))}</div>
+    ${task.description ? `<div class="card-body">${escapeHtml(task.description)}</div>` : ""}
+    <div class="attachment-actions">
+      <button class="mini-button" data-action="open" type="button">Open</button>
+      ${removable ? `<button class="mini-button" data-action="remove" type="button">Remove</button>` : ""}
+    </div>
+  `;
+  card.querySelector('[data-action="open"]').addEventListener("click", () => {
+    const localTask = state.tasks.find((item) => item.id === task.id) || task;
+    openTask(localTask);
+  });
+  if (removable) {
+    card.querySelector('[data-action="remove"]').addEventListener("click", () => removeDependency(dependency).catch((error) => setError(error.message)));
+  }
+  return card;
 }
 
 function renderComments() {
@@ -975,6 +1067,7 @@ els.epicForm.addEventListener("submit", (event) => createEpic(event).catch((erro
 els.sprintForm.addEventListener("submit", (event) => createSprint(event).catch((error) => setError(error.message)));
 els.taskForm.addEventListener("submit", (event) => createTask(event).catch((error) => setError(error.message)));
 els.taskEditForm.addEventListener("submit", (event) => saveTask(event).catch((error) => setError(error.message)));
+els.dependencyForm.addEventListener("submit", (event) => addDependency(event).catch((error) => setError(error.message)));
 els.commentForm.addEventListener("submit", (event) => createComment(event).catch((error) => setError(error.message)));
 els.attachmentForm.addEventListener("submit", (event) => uploadAttachment(event).catch((error) => setError(error.message)));
 els.notificationToggle.addEventListener("click", () => {

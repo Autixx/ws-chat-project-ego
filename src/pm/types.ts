@@ -57,6 +57,14 @@ export type PmTask = {
   version: number;
 };
 
+export type PmTaskDependency = {
+  blockingTaskId: string;
+  blockedTaskId: string;
+  createdBy?: string;
+  createdAt: string;
+  task: PmTask;
+};
+
 export type PmComment = {
   id: string;
   taskId: string;

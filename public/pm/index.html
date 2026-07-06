@@ -190,6 +190,19 @@
 
           <section class="drawer-section">
             <div class="drawer-section-title">
+              <h3>Dependencies</h3>
+            </div>
+            <form id="dependencyForm" class="dependency-form">
+              <select id="dependencyTask">
+                <option value="">Select blocking task</option>
+              </select>
+              <button type="submit">Add blocker</button>
+            </form>
+            <div id="dependencyList" class="drawer-list"></div>
+          </section>
+
+          <section class="drawer-section">
+            <div class="drawer-section-title">
               <h3>Comments</h3>
             </div>
             <div id="commentList" class="drawer-list"></div>
