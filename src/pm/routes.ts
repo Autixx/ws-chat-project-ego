@@ -422,7 +422,8 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
         tasks: await store.listTasks(req.params.projectId, {
           epicId: stringQuery(req.query.epicId),
           sprintId: stringQuery(req.query.sprintId),
-          includeArchived: req.query.includeArchived === "true"
+          includeArchived: req.query.includeArchived === "true",
+          search: stringQuery(req.query.search)
         })
       });
     } catch (error) {

@@ -139,7 +139,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.51 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.52 \
   node dist/pm/migrate.js
 ```
 
@@ -216,6 +216,7 @@ The first PM frontend shell supports:
 - label filtering and user-scoped saved task filters with update/delete
 - saved filters automatically drop deleted label references
 - status, priority, label, and due-date filters
+- database-backed task search across ID, title, and description
 - task due dates with overdue highlighting
 - task archive/delete actions
 - PM WebSocket reconnect and refresh on structured events
@@ -940,7 +941,6 @@ CODEX_AGENT_HEALTH_URL=http://192.168.1.237:19090/healthz
 - Plane work-item creation is out of scope for Dashboard; route execution through n8n.
 - `CodexProvider` is non-streaming unless the configured backend streams or returns incremental events.
 - SQLite is intended for single-node deployment.
-- No database-backed full-text search yet.
 - Password reset, email verification, and login rate limiting are not implemented yet.
 - No Telegram integration.
 - Roles exist in the schema, but there is no admin UI or advanced permission system yet.

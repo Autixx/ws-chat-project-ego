@@ -113,6 +113,14 @@ CREATE TABLE IF NOT EXISTS pm.tasks (
   version BIGINT NOT NULL DEFAULT 1
 );
 
+ALTER TABLE pm.tasks
+  ADD COLUMN IF NOT EXISTS search_document tsvector GENERATED ALWAYS AS (
+    setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
+    setweight(to_tsvector('simple', coalesce(description, '')), 'B') ||
+    setweight(to_tsvector('simple', coalesce(status, '')), 'C') ||
+    setweight(to_tsvector('simple', coalesce(priority, '')), 'C')
+  ) STORED;
+
 CREATE TABLE IF NOT EXISTS pm.task_positions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id UUID NOT NULL REFERENCES pm.tasks(id) ON DELETE CASCADE,
@@ -215,6 +223,7 @@ CREATE TABLE IF NOT EXISTS audit.events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pm_tasks_project_updated ON pm.tasks(project_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pm_tasks_search_document ON pm.tasks USING GIN(search_document);
 CREATE INDEX IF NOT EXISTS idx_pm_tasks_assignee ON pm.tasks(assignee_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_pm_task_positions_column ON pm.task_positions(column_id, position);
 CREATE INDEX IF NOT EXISTS idx_pm_comments_task_created ON pm.comments(task_id, created_at);

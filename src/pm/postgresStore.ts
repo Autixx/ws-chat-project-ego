@@ -593,7 +593,8 @@ export class PmStore {
     return { board, columns, tasks: taskResult.rows.map(mapBoardTask) };
   }
 
-  async listTasks(projectId: string, filters: { epicId?: string; sprintId?: string; includeArchived?: boolean } = {}): Promise<PmTask[]> {
+  async listTasks(projectId: string, filters: { epicId?: string; sprintId?: string; includeArchived?: boolean; search?: string } = {}): Promise<PmTask[]> {
+    const search = normalizeSearch(filters.search);
     const result = await this.pool.query(
       `
       SELECT t.*, COALESCE(array_agg(tl.label_id) FILTER (WHERE tl.label_id IS NOT NULL), ARRAY[]::uuid[]) AS label_ids
@@ -604,10 +605,17 @@ export class PmStore {
         AND ($2::uuid IS NULL OR t.epic_id = $2::uuid)
         AND ($3::uuid IS NULL OR t.sprint_id = $3::uuid)
         AND ($4::boolean OR t.archived_at IS NULL)
+        AND (
+          $5::text IS NULL
+          OR t.id::text ILIKE '%' || $5::text || '%'
+          OR t.title ILIKE '%' || $5::text || '%'
+          OR t.description ILIKE '%' || $5::text || '%'
+          OR t.search_document @@ plainto_tsquery('simple', $5::text)
+        )
       GROUP BY t.id
       ORDER BY t.updated_at DESC
       `,
-      [projectId, filters.epicId ?? null, filters.sprintId ?? null, Boolean(filters.includeArchived)]
+      [projectId, filters.epicId ?? null, filters.sprintId ?? null, Boolean(filters.includeArchived), search]
     );
     return result.rows.map(mapTask);
   }
@@ -1184,6 +1192,11 @@ function normalizeKey(value: string): string {
   const key = value.trim().toUpperCase();
   if (!/^[A-Z][A-Z0-9_-]{1,31}$/.test(key)) throw new Error("Project key must be 2-32 characters: A-Z, 0-9, underscore, dash.");
   return key;
+}
+
+function normalizeSearch(value: string | undefined): string | null {
+  const search = value?.trim().replaceAll(/\s+/g, " ").slice(0, 120);
+  return search || null;
 }
 
 function mapUser(row: Row): PmUser {

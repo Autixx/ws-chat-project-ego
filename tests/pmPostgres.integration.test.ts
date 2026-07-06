@@ -48,6 +48,7 @@ test("PM PostgreSQL store lifecycle", { skip: databaseUrl ? false : "PM_TEST_DAT
     const blockingTask = await store.createTask(owner, {
       projectId: project.id,
       title: "Prepare API",
+      description: "External analytics webhook endpoint",
       priority: "high",
       dueAt: "2026-07-07"
     });
@@ -67,6 +68,10 @@ test("PM PostgreSQL store lifecycle", { skip: databaseUrl ? false : "PM_TEST_DAT
     const listedBlocked = tasks.find((item) => item.id === blockedTask.id);
     assert.ok(listedBlocked);
     assert.ok(listedBlocked.labelIds?.includes(label.id));
+    const searchResults = await store.listTasks(project.id, { search: "external analytics" });
+    assert.equal(searchResults.length, 1);
+    assert.equal(searchResults[0].id, blockingTask.id);
+    assert.equal((await store.listTasks(project.id, { search: "missing-query-value" })).length, 0);
 
     await store.addDependency(owner, blockingTask.id, blockedTask.id);
     const dependencies = await store.listDependencies(blockedTask.id);

@@ -25,6 +25,7 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+let taskSearchReloadTimer = 0;
 
 const els = {
   identityLine: $("identityLine"),
@@ -78,6 +79,7 @@ const els = {
   priorityFilter: $("priorityFilter"),
   labelFilter: $("labelFilter"),
   dueFilter: $("dueFilter"),
+  taskSearch: $("taskSearch"),
   savedFilterSelect: $("savedFilterSelect"),
   savedFilterName: $("savedFilterName"),
   saveFilterBtn: $("saveFilterBtn"),
@@ -212,7 +214,7 @@ async function loadProjectData() {
     api(`/api/pm/projects/${project.id}/filters`),
     api(`/api/pm/projects/${project.id}/epics`),
     api(`/api/pm/projects/${project.id}/sprints?includeCompleted=${els.includeCompletedSprints.checked ? "true" : "false"}${state.activeEpicId ? `&epicId=${encodeURIComponent(state.activeEpicId)}` : ""}`),
-    api(`/api/pm/projects/${project.id}/tasks`),
+    api(`/api/pm/projects/${project.id}/tasks${taskSearchQuery()}`),
     ensureDefaultBoard(project.id)
   ]);
   state.members = membersBody.members;
@@ -257,6 +259,11 @@ async function loadBoardSnapshot() {
 
 function activeProject() {
   return state.projects.find((project) => project.id === state.activeProjectId) || null;
+}
+
+function taskSearchQuery() {
+  const search = els.taskSearch.value.trim();
+  return search ? `?search=${encodeURIComponent(search)}` : "";
 }
 
 function renderProjects() {
@@ -475,6 +482,7 @@ function renderTasks() {
   const priorityFilter = els.priorityFilter.value;
   const labelFilter = els.labelFilter.value;
   const dueFilter = els.dueFilter.value;
+  const search = els.taskSearch.value.trim();
   const tasks = state.tasks.filter((task) => {
     if (state.activeEpicId && task.epicId !== state.activeEpicId) return false;
     if (state.activeSprintId === "__backlog" && task.sprintId) return false;
@@ -483,6 +491,7 @@ function renderTasks() {
     if (priorityFilter && task.priority !== priorityFilter) return false;
     if (labelFilter && !taskHasLabel(task, labelFilter)) return false;
     if (dueFilter && !taskMatchesDueFilter(task, dueFilter)) return false;
+    if (search && !taskMatchesSearch(task, search)) return false;
     return true;
   });
   els.taskList.replaceChildren(
@@ -521,6 +530,7 @@ function renderBoard() {
   const priorityFilter = els.priorityFilter.value;
   const labelFilter = els.labelFilter.value;
   const dueFilter = els.dueFilter.value;
+  const search = els.taskSearch.value.trim();
   els.kanbanBoard.replaceChildren(
     ...state.columns.map((column) => {
       const columnEl = document.createElement("section");
@@ -550,6 +560,7 @@ function renderBoard() {
         .filter((task) => !priorityFilter || task.priority === priorityFilter)
         .filter((task) => !labelFilter || taskHasLabel(task, labelFilter))
         .filter((task) => !dueFilter || taskMatchesDueFilter(task, dueFilter))
+        .filter((task) => !search || taskMatchesSearch(task, search))
         .sort((a, b) => (a.boardPosition ?? 1000000000) - (b.boardPosition ?? 1000000000));
       dropzone.replaceChildren(...tasks.map(renderKanbanCard));
       return columnEl;
@@ -802,6 +813,7 @@ function currentFilterState() {
     priority: els.priorityFilter.value,
     labelId: els.labelFilter.value,
     due: els.dueFilter.value,
+    search: els.taskSearch.value.trim(),
     sprintScope: state.activeSprintId,
     epicId: state.activeEpicId
   };
@@ -812,6 +824,7 @@ function applyFilterState(filter) {
   els.priorityFilter.value = typeof filter.priority === "string" ? filter.priority : "";
   els.labelFilter.value = typeof filter.labelId === "string" ? filter.labelId : "";
   els.dueFilter.value = typeof filter.due === "string" ? filter.due : "";
+  els.taskSearch.value = typeof filter.search === "string" ? filter.search : "";
   state.activeSprintId = typeof filter.sprintScope === "string" ? filter.sprintScope : "__all";
   state.activeEpicId = typeof filter.epicId === "string" && filter.epicId ? filter.epicId : null;
 }
@@ -822,6 +835,7 @@ function suggestedFilterName() {
   if (els.priorityFilter.value) parts.push(els.priorityFilter.value);
   if (els.labelFilter.value) parts.push(state.labels.find((label) => label.id === els.labelFilter.value)?.name || "label");
   if (els.dueFilter.value) parts.push(els.dueFilter.value);
+  if (els.taskSearch.value.trim()) parts.push(`search ${els.taskSearch.value.trim()}`);
   if (!parts.length) parts.push("All tasks");
   return parts.join(" / ");
 }
@@ -1398,6 +1412,11 @@ function taskMatchesDueFilter(task, filter) {
   return true;
 }
 
+function taskMatchesSearch(task, search) {
+  const haystack = [task.id, task.title, task.description, task.status, task.priority].join(" ").toLowerCase();
+  return haystack.includes(search.toLowerCase());
+}
+
 function isOverdue(task) {
   if (!task.dueAt || task.status === "done") return false;
   return endOfLocalDay(task.dueAt).getTime() < startOfToday().getTime();
@@ -1526,6 +1545,12 @@ els.labelFilter.addEventListener("change", () => {
 els.dueFilter.addEventListener("change", () => {
   renderTasks();
   renderBoard();
+});
+els.taskSearch.addEventListener("input", () => {
+  renderTasks();
+  renderBoard();
+  clearTimeout(taskSearchReloadTimer);
+  taskSearchReloadTimer = setTimeout(() => loadProjectData().catch((error) => setError(error.message)), 350);
 });
 els.savedFilterSelect.addEventListener("change", () => applySelectedFilter().catch((error) => setError(error.message)));
 els.saveFilterBtn.addEventListener("click", () => saveCurrentFilter().catch((error) => setError(error.message)));

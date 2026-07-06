@@ -80,6 +80,8 @@ test("PM PostgreSQL schema defines required logical boundaries", () => {
   assert.match(schema, /actor_type TEXT NOT NULL CHECK \(actor_type IN \('user', 'system', 'n8n', 'agent'\)\)/);
   assert.match(schema, /storage_path TEXT NOT NULL/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS pm\.board_columns/);
+  assert.match(schema, /search_document tsvector GENERATED ALWAYS AS/);
+  assert.match(schema, /CREATE INDEX IF NOT EXISTS idx_pm_tasks_search_document ON pm\.tasks USING GIN\(search_document\)/);
   assert.match(schema, /CREATE INDEX IF NOT EXISTS idx_pm_task_positions_column/);
 });
 
@@ -196,6 +198,8 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /DELETE `?\/api\/pm\/projects\/:projectId\/filters\/:filterId`?/);
   assert.match(readme, /label filtering and user-scoped saved task filters with update\/delete/);
   assert.match(readme, /saved filters automatically drop deleted label references/);
+  assert.match(readme, /database-backed task search across ID, title, and description/);
+  assert.doesNotMatch(readme, /No database-backed full-text search yet/);
   assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/archive`?/);
   assert.match(readme, /DELETE `?\/api\/pm\/tasks\/:taskId`?/);
   assert.match(readme, /task due dates with overdue highlighting/);
