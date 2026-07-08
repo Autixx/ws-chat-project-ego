@@ -370,6 +370,58 @@ test("PM API lists webhook deliveries and retries one delivery", async () => {
   }
 });
 
+test("PM operator status reports database schema and integration configuration", async () => {
+  const fakeStore = {
+    async ensureUser() {
+      return { id: "pm-user-1", username: "operator", displayName: "Operator" };
+    },
+    async health() {
+      return { ok: true, message: "ok" };
+    },
+    async listSchemaMigrations() {
+      return ["001_pm_initial_schema"];
+    },
+    async summarizeWebhookDeliveries() {
+      return { pending: 1, retrying: 2, delivered: 3, dead: 4 };
+    }
+  };
+  const app = createPmApp(
+    loadPmConfig({
+      NODE_ENV: "development",
+      PM_DEV_AUTH_BYPASS: "true",
+      PM_DATABASE_URL: "postgres://pm:test@postgres/projectego",
+      PM_WEBHOOK_URLS: "https://n8n.example.test/webhook/pm",
+      PM_AUTOMATION_TOKEN: "pm-auto-secret",
+      SMTP_HOST: "mail.project-ego.online",
+      SMTP_FROM: "pm@project-ego.online"
+    }),
+    fakeStore as never
+  );
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/pm/operator/status`);
+    assert.equal(response.status, 200);
+    const body = await response.json() as {
+      database: { reachable: boolean; schemaApplied: boolean; schemaMigrations: string[] };
+      webhooks: { configured: boolean; summary: Record<string, number> };
+      smtp: { configured: boolean };
+      automation: { configured: boolean };
+    };
+    assert.equal(body.database.reachable, true);
+    assert.equal(body.database.schemaApplied, true);
+    assert.deepEqual(body.database.schemaMigrations, ["001_pm_initial_schema"]);
+    assert.equal(body.webhooks.configured, true);
+    assert.equal(body.webhooks.summary.dead, 4);
+    assert.equal(body.smtp.configured, true);
+    assert.equal(body.automation.configured, true);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test("PM service serves browser shell separately from Dashboard", async () => {
   const app = createPmApp(loadPmConfig({ NODE_ENV: "development", PM_DEV_AUTH_BYPASS: "true" }));
   const server = http.createServer(app);
@@ -400,6 +452,7 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /GET `?\/api\/pm\/notifications`?/);
   assert.match(readme, /GET `?\/api\/pm\/webhook-deliveries`?/);
   assert.match(readme, /POST `?\/api\/pm\/webhook-deliveries\/:deliveryId\/retry`?/);
+  assert.match(readme, /GET `?\/api\/pm\/operator\/status`?/);
   assert.match(readme, /@username/);
   assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/members`?/);
   assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/assignee`?/);
@@ -428,6 +481,7 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /X-ProjectEGO-Signature/);
   assert.match(readme, /pm\.webhook_deliveries/);
   assert.match(readme, /Webhooks operator panel/);
+  assert.match(readme, /PM shell Ops panel/);
   assert.match(readme, /PM_WEBHOOK_MAX_ATTEMPTS/);
   assert.match(readme, /SMTP_HOST/);
   assert.match(readme, /PM_AUTOMATION_TOKEN/);

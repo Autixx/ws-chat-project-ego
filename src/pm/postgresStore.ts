@@ -1212,6 +1212,13 @@ export class PmStore {
     return mapWebhookDelivery(result.rows[0]);
   }
 
+  async listSchemaMigrations(): Promise<string[]> {
+    const exists = await this.pool.query("SELECT to_regclass('pm.schema_migrations') AS table_name");
+    if (!exists.rows[0]?.table_name) return [];
+    const result = await this.pool.query("SELECT name FROM pm.schema_migrations ORDER BY applied_at ASC, name ASC");
+    return result.rows.map((row) => String(row.name));
+  }
+
   private async createNotification(input: {
     userId: string;
     actorId?: string;

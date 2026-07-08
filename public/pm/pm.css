@@ -123,6 +123,10 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   width: min(720px, calc(100vw - 28px));
 }
 
+.ops-panel {
+  width: min(620px, calc(100vw - 28px));
+}
+
 .webhook-toolbar {
   display: flex;
   align-items: center;
@@ -182,6 +186,33 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.ops-status-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding-top: 8px;
+}
+
+.ops-card {
+  border: 1px solid var(--line);
+  background: var(--field);
+  padding: 8px;
+}
+
+.ops-card.ok {
+  border-color: var(--green);
+}
+
+.ops-card.warn {
+  border-color: var(--yellow);
+}
+
+.ops-card.error {
+  border-color: var(--red);
 }
 
 .pm-modal-backdrop {

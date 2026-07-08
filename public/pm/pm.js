@@ -22,6 +22,7 @@ const state = {
   notifications: [],
   webhookDeliveries: [],
   webhookSummary: { pending: 0, retrying: 0, delivered: 0, dead: 0 },
+  opsStatus: null,
   ws: null,
   shouldReconnect: true
 };
@@ -43,11 +44,16 @@ const els = {
   markAllNotificationsReadBtn: $("markAllNotificationsReadBtn"),
   webhookToggle: $("webhookToggle"),
   webhookDeadCount: $("webhookDeadCount"),
+  opsToggle: $("opsToggle"),
+  opsProblemCount: $("opsProblemCount"),
   webhookPanel: $("webhookPanel"),
   webhookStatusFilter: $("webhookStatusFilter"),
   refreshWebhooksBtn: $("refreshWebhooksBtn"),
   webhookSummary: $("webhookSummary"),
   webhookDeliveryList: $("webhookDeliveryList"),
+  opsPanel: $("opsPanel"),
+  refreshOpsBtn: $("refreshOpsBtn"),
+  opsStatusList: $("opsStatusList"),
   includeArchived: $("includeArchived"),
   projectForm: $("projectForm"),
   projectKey: $("projectKey"),
@@ -179,6 +185,11 @@ async function loadWebhookDeliveries() {
   state.webhookDeliveries = deliveries;
   state.webhookSummary = summary;
   renderWebhookDeliveries();
+}
+
+async function loadOpsStatus() {
+  state.opsStatus = await api("/api/pm/operator/status");
+  renderOpsStatus();
 }
 
 async function loadProjects() {
@@ -538,6 +549,62 @@ function webhookSummaryChip(label, count) {
   const element = document.createElement("span");
   element.textContent = `${label}: ${count}`;
   return element;
+}
+
+function renderOpsStatus() {
+  const status = state.opsStatus;
+  if (!status) {
+    els.opsProblemCount.textContent = "0";
+    els.opsStatusList.innerHTML = `<div class="drawer-empty">No operator status loaded.</div>`;
+    return;
+  }
+  const problems = [
+    !status.database?.reachable,
+    !status.database?.schemaApplied,
+    status.webhooks?.summary?.dead > 0,
+    status.webhooks?.summary?.retrying > 0,
+    !status.smtp?.configured,
+    !status.automation?.configured
+  ].filter(Boolean).length;
+  els.opsProblemCount.textContent = String(problems);
+  els.opsStatusList.replaceChildren(
+    opsCard("Database", status.database?.reachable && status.database?.schemaApplied ? "ok" : "error", [
+      `configured: ${yesNo(status.database?.configured)}`,
+      `reachable: ${yesNo(status.database?.reachable)}`,
+      `schema applied: ${yesNo(status.database?.schemaApplied)}`,
+      `migrations: ${(status.database?.schemaMigrations || []).join(", ") || "none"}`,
+      status.database?.message ? `message: ${status.database.message}` : ""
+    ]),
+    opsCard("Webhooks", status.webhooks?.summary?.dead || status.webhooks?.summary?.retrying ? "warn" : "ok", [
+      `configured: ${yesNo(status.webhooks?.configured)}`,
+      `urls: ${status.webhooks?.urls || 0}`,
+      `max attempts: ${status.webhooks?.maxAttempts || 0}`,
+      `retry interval: ${status.webhooks?.retryIntervalMs || 0} ms`,
+      `pending/retrying/dead: ${status.webhooks?.summary?.pending || 0}/${status.webhooks?.summary?.retrying || 0}/${status.webhooks?.summary?.dead || 0}`
+    ]),
+    opsCard("SMTP", status.smtp?.configured ? "ok" : "warn", [
+      `configured: ${yesNo(status.smtp?.configured)}`,
+      `host: ${yesNo(status.smtp?.hostConfigured)}`,
+      `from: ${yesNo(status.smtp?.fromConfigured)}`
+    ]),
+    opsCard("Automation", status.automation?.configured ? "ok" : "warn", [
+      `PM_AUTOMATION_TOKEN configured: ${yesNo(status.automation?.configured)}`
+    ])
+  );
+}
+
+function opsCard(title, level, lines) {
+  const card = document.createElement("article");
+  card.className = `ops-card ${level}`;
+  card.innerHTML = `
+    <div class="card-title">${escapeHtml(title)}</div>
+    <div class="card-body">${lines.filter(Boolean).map((line) => escapeHtml(line)).join("<br />")}</div>
+  `;
+  return card;
+}
+
+function yesNo(value) {
+  return value ? "yes" : "no";
 }
 
 function renderTasks() {
@@ -1557,6 +1624,7 @@ async function boot() {
     await refreshHealth();
     await loadIdentity();
     await loadWebhookDeliveries();
+    await loadOpsStatus();
     await loadProjects();
     connectWs();
     setInterval(refreshHealth, 15000);
@@ -1583,9 +1651,14 @@ els.webhookToggle.addEventListener("click", () => {
   els.webhookPanel.hidden = !els.webhookPanel.hidden;
   if (!els.webhookPanel.hidden) loadWebhookDeliveries().catch((error) => setError(error.message));
 });
+els.opsToggle.addEventListener("click", () => {
+  els.opsPanel.hidden = !els.opsPanel.hidden;
+  if (!els.opsPanel.hidden) loadOpsStatus().catch((error) => setError(error.message));
+});
 els.markAllNotificationsReadBtn.addEventListener("click", () => markAllNotificationsRead().catch((error) => setError(error.message)));
 els.refreshWebhooksBtn.addEventListener("click", () => loadWebhookDeliveries().catch((error) => setError(error.message)));
 els.webhookStatusFilter.addEventListener("change", () => loadWebhookDeliveries().catch((error) => setError(error.message)));
+els.refreshOpsBtn.addEventListener("click", () => loadOpsStatus().catch((error) => setError(error.message)));
 els.includeArchived.addEventListener("change", () => loadProjects().catch((error) => setError(error.message)));
 els.includeCompletedSprints.addEventListener("change", () => loadProjectData().catch((error) => setError(error.message)));
 els.backlogFilterBtn.addEventListener("click", () => {

@@ -16,6 +16,7 @@
         <div class="pm-status">
           <button id="notificationToggle" type="button" class="notification-toggle">Notifications <span id="notificationCount">0</span></button>
           <button id="webhookToggle" type="button" class="notification-toggle">Webhooks <span id="webhookDeadCount">0</span></button>
+          <button id="opsToggle" type="button" class="notification-toggle">Ops <span id="opsProblemCount">0</span></button>
           <span id="healthDot" class="dot gray"></span><span id="healthText">health unknown</span>
           <span id="wsDot" class="dot gray"></span><span id="wsText">ws disconnected</span>
         </div>
@@ -45,6 +46,14 @@
         </div>
         <div id="webhookSummary" class="webhook-summary"></div>
         <div id="webhookDeliveryList" class="notification-list"></div>
+      </section>
+
+      <section id="opsPanel" class="notification-panel ops-panel" hidden>
+        <div class="panel-title">
+          <h2>PM operations</h2>
+          <button id="refreshOpsBtn" type="button">Refresh</button>
+        </div>
+        <div id="opsStatusList" class="ops-status-list"></div>
       </section>
 
       <section id="errorBanner" class="error-banner" hidden></section>

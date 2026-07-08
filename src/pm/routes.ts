@@ -57,6 +57,44 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     });
   });
 
+  router.get("/operator/status", async (req: PmAuthedRequest, res, next) => {
+    try {
+      requirePmUser(req);
+      const [database, schemaMigrations, webhookSummary] = await Promise.all([
+        store.health(),
+        store.listSchemaMigrations(),
+        store.summarizeWebhookDeliveries()
+      ]);
+      res.json({
+        service: "projectego-pm",
+        database: {
+          configured: Boolean(options.pmConfig.databaseUrl),
+          reachable: database.ok,
+          message: database.message,
+          schemaMigrations,
+          schemaApplied: schemaMigrations.length > 0
+        },
+        webhooks: {
+          configured: options.webhooks?.enabled ?? false,
+          urls: options.pmConfig.webhooks.urls.length,
+          maxAttempts: options.pmConfig.webhooks.maxAttempts,
+          retryIntervalMs: options.pmConfig.webhooks.retryIntervalMs,
+          summary: webhookSummary
+        },
+        smtp: {
+          configured: Boolean(options.pmConfig.smtp?.host && options.pmConfig.smtp.from),
+          hostConfigured: Boolean(options.pmConfig.smtp?.host),
+          fromConfigured: Boolean(options.pmConfig.smtp?.from)
+        },
+        automation: {
+          configured: Boolean(options.pmConfig.automationToken)
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/webhook-deliveries", async (req: PmAuthedRequest, res, next) => {
     try {
       requirePmUser(req);
