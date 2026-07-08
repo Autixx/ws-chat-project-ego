@@ -30,6 +30,7 @@ import type {
   PmTaskDependency,
   PmTaskPosition,
   PmUser,
+  PmWebhookDeliveryRecord,
   UpdateProjectInput,
   UpdateCommentInput,
   UpdateLabelInput,
@@ -1122,6 +1123,63 @@ export class PmStore {
     return { updated: result.rowCount ?? 0 };
   }
 
+  async createWebhookDelivery(input: {
+    deliveryId: string;
+    url: string;
+    eventType: string;
+    event: Record<string, unknown>;
+    payload: Record<string, unknown>;
+  }): Promise<PmWebhookDeliveryRecord> {
+    const result = await this.pool.query(
+      `
+      INSERT INTO pm.webhook_deliveries (delivery_id, url, event_type, event_json, payload_json, next_attempt_at)
+      VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, now())
+      RETURNING *
+      `,
+      [input.deliveryId, input.url, input.eventType, JSON.stringify(input.event), JSON.stringify(input.payload)]
+    );
+    return mapWebhookDelivery(result.rows[0]);
+  }
+
+  async markWebhookDeliveryAttempt(
+    id: string,
+    input: { delivered: boolean; attempts: number; maxAttempts: number; responseStatus?: number; error?: string; nextAttemptAt?: Date }
+  ): Promise<PmWebhookDeliveryRecord> {
+    const status = input.delivered ? "delivered" : input.attempts >= input.maxAttempts ? "dead" : "retrying";
+    const result = await this.pool.query(
+      `
+      UPDATE pm.webhook_deliveries
+      SET status = $2,
+          attempts = $3,
+          response_status = $4,
+          error = $5,
+          next_attempt_at = $6,
+          delivered_at = CASE WHEN $2 = 'delivered' THEN now() ELSE delivered_at END,
+          updated_at = now()
+      WHERE id = $1
+      RETURNING *
+      `,
+      [id, status, input.attempts, input.responseStatus ?? null, input.error?.slice(0, 1000) ?? null, input.delivered || status === "dead" ? null : input.nextAttemptAt ?? new Date()]
+    );
+    if (!result.rows[0]) throw new Error("Webhook delivery not found.");
+    return mapWebhookDelivery(result.rows[0]);
+  }
+
+  async listDueWebhookDeliveries(limit = 25): Promise<PmWebhookDeliveryRecord[]> {
+    const result = await this.pool.query(
+      `
+      SELECT *
+      FROM pm.webhook_deliveries
+      WHERE status IN ('pending', 'retrying')
+        AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+      ORDER BY created_at ASC
+      LIMIT $1
+      `,
+      [limit]
+    );
+    return result.rows.map(mapWebhookDelivery);
+  }
+
   private async createNotification(input: {
     userId: string;
     actorId?: string;
@@ -1349,6 +1407,26 @@ function mapNotification(row: Row): PmNotification {
     payload: parseJsonObject(row.payload),
     readAt: asIso(row.read_at),
     createdAt: asIso(row.created_at) ?? ""
+  };
+}
+
+function mapWebhookDelivery(row: Row): PmWebhookDeliveryRecord {
+  const status = String(row.status);
+  return {
+    id: String(row.id),
+    deliveryId: String(row.delivery_id),
+    url: String(row.url),
+    eventType: String(row.event_type),
+    event: parseJsonObject(row.event_json),
+    payload: parseJsonObject(row.payload_json),
+    status: ["pending", "delivered", "retrying", "dead"].includes(status) ? (status as PmWebhookDeliveryRecord["status"]) : "pending",
+    attempts: Number(row.attempts ?? 0),
+    responseStatus: row.response_status === null || row.response_status === undefined ? undefined : Number(row.response_status),
+    error: row.error ? String(row.error) : undefined,
+    nextAttemptAt: asIso(row.next_attempt_at),
+    deliveredAt: asIso(row.delivered_at),
+    createdAt: asIso(row.created_at) ?? "",
+    updatedAt: asIso(row.updated_at) ?? ""
   };
 }
 

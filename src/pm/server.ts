@@ -33,7 +33,7 @@ export function createPmApp(pmConfig: PmConfig, store?: PmStore, events = new Pm
     });
   });
 
-  const webhooks = new PmWebhookDispatcher(pmConfig.webhooks);
+  const webhooks = new PmWebhookDispatcher(pmConfig.webhooks, store);
   if (store) {
     pmApp.use("/api/pm/automation", createPmAutomationRouter(store, events, { pmConfig, webhooks }));
   }
@@ -86,6 +86,18 @@ export async function startPmServer(pmConfig = loadPmConfig()): Promise<void> {
   const app = createPmApp(pmConfig, store, eventHub);
   const server = createServer(app);
   const wsServer = new WebSocketServer({ noServer: true });
+  const webhooks = new PmWebhookDispatcher(pmConfig.webhooks, store);
+  const webhookRetryTimer =
+    store && webhooks.enabled
+      ? setInterval(() => {
+          void webhooks.retryDue().then((deliveries) => {
+            for (const delivery of deliveries) {
+              if (!delivery.ok) console.warn("PM webhook retry failed", delivery);
+            }
+          });
+        }, pmConfig.webhooks.retryIntervalMs)
+      : undefined;
+  webhookRetryTimer?.unref();
 
   server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url ?? "/", "http://localhost");

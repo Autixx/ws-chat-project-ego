@@ -119,6 +119,23 @@ export type PmNotification = {
   createdAt: string;
 };
 
+export type PmWebhookDeliveryRecord = {
+  id: string;
+  deliveryId: string;
+  url: string;
+  eventType: string;
+  event: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  status: "pending" | "delivered" | "retrying" | "dead";
+  attempts: number;
+  responseStatus?: number;
+  error?: string;
+  nextAttemptAt?: string;
+  deliveredAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type PmLabel = {
   id: string;
   projectId: string;

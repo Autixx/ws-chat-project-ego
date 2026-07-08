@@ -193,6 +193,23 @@ CREATE TABLE IF NOT EXISTS pm.notifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS pm.webhook_deliveries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  delivery_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  event_json JSONB NOT NULL,
+  payload_json JSONB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'retrying', 'dead')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  response_status INTEGER,
+  error TEXT,
+  next_attempt_at TIMESTAMPTZ,
+  delivered_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS pm.saved_filters (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES pm.projects(id) ON DELETE CASCADE,
@@ -228,6 +245,8 @@ CREATE INDEX IF NOT EXISTS idx_pm_tasks_assignee ON pm.tasks(assignee_id) WHERE 
 CREATE INDEX IF NOT EXISTS idx_pm_task_positions_column ON pm.task_positions(column_id, position);
 CREATE INDEX IF NOT EXISTS idx_pm_comments_task_created ON pm.comments(task_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_pm_notifications_user_unread ON pm.notifications(user_id, created_at DESC) WHERE read_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_pm_webhook_deliveries_due ON pm.webhook_deliveries(next_attempt_at, created_at) WHERE status IN ('pending', 'retrying');
+CREATE INDEX IF NOT EXISTS idx_pm_webhook_deliveries_status ON pm.webhook_deliveries(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_project_created ON audit.events(project_id, created_at DESC);
 
 -- Runtime grant sketch:

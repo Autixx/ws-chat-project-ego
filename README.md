@@ -139,7 +139,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.52 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.53 \
   node dist/pm/migrate.js
 ```
 
@@ -230,6 +230,9 @@ PM outgoing webhooks are configured with:
 PM_WEBHOOK_URLS=https://n8n.example/webhook/projectego/pm-events
 PM_WEBHOOK_SECRET=<shared-secret>
 PM_WEBHOOK_TIMEOUT_MS=5000
+PM_WEBHOOK_MAX_ATTEMPTS=6
+PM_WEBHOOK_RETRY_BASE_MS=30000
+PM_WEBHOOK_RETRY_INTERVAL_MS=15000
 ```
 
 Each PM event is posted as JSON with:
@@ -237,6 +240,8 @@ Each PM event is posted as JSON with:
 - `X-ProjectEGO-Event`
 - `X-ProjectEGO-Delivery`
 - `X-ProjectEGO-Signature: sha256=<hmac>` when `PM_WEBHOOK_SECRET` is set
+
+Webhook delivery attempts are persisted in PostgreSQL in `pm.webhook_deliveries`. Failed deliveries are retried with exponential backoff until `PM_WEBHOOK_MAX_ATTEMPTS`, then marked `dead` for operator inspection instead of being silently lost.
 
 PM SMTP mail is configured with:
 

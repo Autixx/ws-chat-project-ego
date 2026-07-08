@@ -10,7 +10,8 @@ import { assertPmCanStart, forbiddenPmEnv, loadPmConfig } from "../src/pm/config
 import { buildPmInviteEmail } from "../src/pm/mailer.js";
 import { canManageProject, canViewProject, canWriteProject, requireProjectRole } from "../src/pm/permissions.js";
 import { createPmApp } from "../src/pm/server.js";
-import { signWebhookBody } from "../src/pm/webhookDispatcher.js";
+import { PmWebhookDispatcher, signWebhookBody, type PmWebhookPersistence } from "../src/pm/webhookDispatcher.js";
+import type { PmWebhookDeliveryRecord } from "../src/pm/types.js";
 
 test("PM config defaults to a separate service port and data area", () => {
   const config = loadPmConfig({
@@ -32,6 +33,9 @@ test("PM config supports signed outgoing webhooks and SMTP without Dashboard sec
     PM_WEBHOOK_URLS: "https://n8n.example.test/webhook/pm, https://audit.example.test/pm",
     PM_WEBHOOK_SECRET: "pm-webhook-secret",
     PM_WEBHOOK_TIMEOUT_MS: "2500",
+    PM_WEBHOOK_MAX_ATTEMPTS: "4",
+    PM_WEBHOOK_RETRY_BASE_MS: "1000",
+    PM_WEBHOOK_RETRY_INTERVAL_MS: "750",
     SMTP_HOST: "mail.project-ego.online",
     SMTP_PORT: "587",
     SMTP_FROM: "pm@project-ego.online",
@@ -41,10 +45,76 @@ test("PM config supports signed outgoing webhooks and SMTP without Dashboard sec
   assert.deepEqual(config.webhooks.urls, ["https://n8n.example.test/webhook/pm", "https://audit.example.test/pm"]);
   assert.equal(config.webhooks.secret, "pm-webhook-secret");
   assert.equal(config.webhooks.timeoutMs, 2500);
+  assert.equal(config.webhooks.maxAttempts, 4);
+  assert.equal(config.webhooks.retryBaseMs, 1000);
+  assert.equal(config.webhooks.retryIntervalMs, 750);
   assert.equal(config.smtp?.host, "mail.project-ego.online");
   assert.equal(config.smtp?.from, "pm@project-ego.online");
   assert.equal(config.smtp?.tls, false);
   assert.match(signWebhookBody("{\"type\":\"task.created\"}", "secret"), /^sha256=[a-f0-9]{64}$/);
+});
+
+test("PM webhook dispatcher persists failed delivery and retries it", async () => {
+  let attempts = 0;
+  const server = http.createServer((_req, res) => {
+    attempts += 1;
+    res.statusCode = attempts === 1 ? 503 : 204;
+    res.end(attempts === 1 ? "temporary outage" : "");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const records: PmWebhookDeliveryRecord[] = [];
+    const persistence: PmWebhookPersistence = {
+      async createWebhookDelivery(input) {
+        const record: PmWebhookDeliveryRecord = {
+          id: `row-${records.length + 1}`,
+          deliveryId: input.deliveryId,
+          url: input.url,
+          eventType: input.eventType,
+          event: input.event,
+          payload: input.payload,
+          status: "pending",
+          attempts: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        records.push(record);
+        return record;
+      },
+      async markWebhookDeliveryAttempt(id, input) {
+        const record = records.find((item) => item.id === id);
+        assert.ok(record);
+        record.attempts = input.attempts;
+        record.responseStatus = input.responseStatus;
+        record.error = input.error;
+        record.status = input.delivered ? "delivered" : input.attempts >= input.maxAttempts ? "dead" : "retrying";
+        record.nextAttemptAt = input.nextAttemptAt?.toISOString();
+        record.updatedAt = new Date().toISOString();
+        return record;
+      },
+      async listDueWebhookDeliveries() {
+        return records.filter((record) => record.status === "pending" || record.status === "retrying");
+      }
+    };
+    const dispatcher = new PmWebhookDispatcher(
+      { urls: [`http://127.0.0.1:${address.port}/hook`], timeoutMs: 1000, maxAttempts: 3, retryBaseMs: 1000, retryIntervalMs: 1000 },
+      persistence
+    );
+
+    const [failed] = await dispatcher.dispatch({ type: "task.created", createdAt: new Date().toISOString(), payload: { taskId: "task-1" } });
+    assert.equal(failed.ok, false);
+    assert.equal(records[0].status, "retrying");
+    assert.equal(records[0].attempts, 1);
+
+    const [retried] = await dispatcher.retryDue();
+    assert.equal(retried.ok, true);
+    assert.equal(records[0].status, "delivered");
+    assert.equal(records[0].attempts, 2);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
 });
 
 test("PM rejects Dashboard and agent secrets in its runtime environment", () => {
@@ -73,7 +143,7 @@ test("PM PostgreSQL schema defines required logical boundaries", () => {
     assert.match(schema, new RegExp(`CREATE SCHEMA IF NOT EXISTS ${schemaName}`));
   }
 
-  for (const table of ["pm.projects", "pm.epics", "pm.boards", "pm.sprints", "pm.tasks", "pm.task_dependencies", "pm.comments", "pm.attachments", "pm.notifications", "audit.events"]) {
+  for (const table of ["pm.projects", "pm.epics", "pm.boards", "pm.sprints", "pm.tasks", "pm.task_dependencies", "pm.comments", "pm.attachments", "pm.notifications", "pm.webhook_deliveries", "audit.events"]) {
     assert.match(schema, new RegExp(`CREATE TABLE IF NOT EXISTS ${table.replace(".", "\\.")}`));
   }
 
@@ -82,6 +152,7 @@ test("PM PostgreSQL schema defines required logical boundaries", () => {
   assert.match(schema, /CREATE TABLE IF NOT EXISTS pm\.board_columns/);
   assert.match(schema, /search_document tsvector GENERATED ALWAYS AS/);
   assert.match(schema, /CREATE INDEX IF NOT EXISTS idx_pm_tasks_search_document ON pm\.tasks USING GIN\(search_document\)/);
+  assert.match(schema, /CREATE INDEX IF NOT EXISTS idx_pm_webhook_deliveries_due/);
   assert.match(schema, /CREATE INDEX IF NOT EXISTS idx_pm_task_positions_column/);
 });
 
@@ -211,6 +282,8 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/invites`?/);
   assert.match(readme, /PM_WEBHOOK_URLS/);
   assert.match(readme, /X-ProjectEGO-Signature/);
+  assert.match(readme, /pm\.webhook_deliveries/);
+  assert.match(readme, /PM_WEBHOOK_MAX_ATTEMPTS/);
   assert.match(readme, /SMTP_HOST/);
   assert.match(readme, /PM_AUTOMATION_TOKEN/);
   assert.match(readme, /GET `?\/api\/pm\/automation\/status`?/);

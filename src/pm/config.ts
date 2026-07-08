@@ -13,6 +13,9 @@ export type PmConfig = {
     urls: string[];
     secret?: string;
     timeoutMs: number;
+    maxAttempts: number;
+    retryBaseMs: number;
+    retryIntervalMs: number;
   };
   smtp?: {
     host?: string;
@@ -63,7 +66,10 @@ export function loadPmConfig(env: NodeJS.ProcessEnv = process.env): PmConfig {
     webhooks: {
       urls: csvFromEnv(env.PM_WEBHOOK_URLS),
       secret: env.PM_WEBHOOK_SECRET,
-      timeoutMs: numberFromEnv(env.PM_WEBHOOK_TIMEOUT_MS, 5000)
+      timeoutMs: numberFromEnv(env.PM_WEBHOOK_TIMEOUT_MS, 5000),
+      maxAttempts: numberFromEnv(env.PM_WEBHOOK_MAX_ATTEMPTS, 6),
+      retryBaseMs: numberFromEnv(env.PM_WEBHOOK_RETRY_BASE_MS, 30000),
+      retryIntervalMs: numberFromEnv(env.PM_WEBHOOK_RETRY_INTERVAL_MS, 15000)
     },
     smtp: {
       host: env.SMTP_HOST,
