@@ -121,14 +121,20 @@ PM uses PostgreSQL as its planned source of truth through `PM_DATABASE_URL`. The
 src/pm/postgres-schema.sql
 ```
 
-Apply the PM schema after build with:
+The PM container applies this schema automatically on startup when `PM_DATABASE_URL` is configured. This is enabled by default through:
+
+```env
+PM_AUTO_MIGRATE=true
+```
+
+Set `PM_AUTO_MIGRATE=false` only if you want to run schema changes manually. For manual local runs:
 
 ```bash
 npm run build
 PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego npm run pm:migrate
 ```
 
-In Docker Compose, run the migration command before first production use:
+For a one-off manual Docker Compose migration:
 
 ```bash
 docker compose run --rm projectego-pm node dist/pm/migrate.js
@@ -139,7 +145,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.53 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.54 \
   node dist/pm/migrate.js
 ```
 

@@ -11,6 +11,7 @@ import { PmWebhookDispatcher } from "./webhookDispatcher.js";
 import { PmStore } from "./postgresStore.js";
 import { createPmAutomationRouter } from "./automationRoutes.js";
 import { createPmRouter } from "./routes.js";
+import { runPmMigrations } from "./migrate.js";
 
 type PmIdentityRequest = express.Request & { pmIdentity?: AuthenticatedUser };
 
@@ -80,6 +81,10 @@ export async function startPmServer(pmConfig = loadPmConfig()): Promise<void> {
   assertPmCanStart(pmConfig);
   await fs.mkdir(pmConfig.attachmentsDir, { recursive: true });
   await fs.mkdir(path.join(pmConfig.attachmentsDir, "tmp"), { recursive: true });
+  if (pmConfig.databaseUrl && pmConfig.autoMigrate) {
+    await runPmMigrations(pmConfig.databaseUrl, process.env.PM_SCHEMA_PATH);
+    console.log("ProjectEGO PM migrations applied.");
+  }
 
   const eventHub = new PmEventHub();
   const store = pmConfig.databaseUrl ? new PmStore(pmConfig.databaseUrl) : undefined;

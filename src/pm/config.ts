@@ -6,6 +6,7 @@ export type PmConfig = {
   dataDir: string;
   attachmentsDir: string;
   maxAttachmentBytes: number;
+  autoMigrate: boolean;
   devAuthBypass: boolean;
   trustAutheliaHeaders: boolean;
   automationToken?: string;
@@ -60,6 +61,7 @@ export function loadPmConfig(env: NodeJS.ProcessEnv = process.env): PmConfig {
     dataDir,
     attachmentsDir: env.PM_ATTACHMENTS_DIR ?? `${dataDir}/attachments`,
     maxAttachmentBytes: numberFromEnv(env.PM_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024),
+    autoMigrate: boolFromEnv(env.PM_AUTO_MIGRATE, true),
     devAuthBypass: boolFromEnv(env.PM_DEV_AUTH_BYPASS, env.NODE_ENV !== "production"),
     trustAutheliaHeaders: boolFromEnv(env.PM_TRUST_AUTHELIA_HEADERS ?? env.TRUST_AUTHELIA_HEADERS, false),
     automationToken: env.PM_AUTOMATION_TOKEN,

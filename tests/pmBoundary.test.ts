@@ -24,6 +24,7 @@ test("PM config defaults to a separate service port and data area", () => {
   assert.equal(config.dataDir, "/app/dashboard-data");
   assert.equal(config.attachmentsDir, "/app/dashboard-data/attachments");
   assert.equal(config.maxAttachmentBytes, 25 * 1024 * 1024);
+  assert.equal(config.autoMigrate, true);
   assert.equal(config.databaseUrl, "postgres://pm:test@postgres/projectego");
 });
 
@@ -289,6 +290,8 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /GET `?\/api\/pm\/automation\/status`?/);
   assert.match(readme, /POST `?\/api\/pm\/automation\/projects\/:projectId\/tasks`?/);
   assert.match(readme, /PM_BOOTSTRAP_USERNAME/);
+  assert.match(readme, /PM_AUTO_MIGRATE=true/);
+  assert.match(compose, /PM_AUTO_MIGRATE: "true"/);
   assert.match(readme, /PM_TEST_DATABASE_URL/);
   assert.match(readme, /TrueNAS PM first-run order/);
   assert.match(readme, /Remote-User/);
