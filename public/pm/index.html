@@ -15,6 +15,7 @@
         </div>
         <div class="pm-status">
           <button id="notificationToggle" type="button" class="notification-toggle">Notifications <span id="notificationCount">0</span></button>
+          <button id="webhookToggle" type="button" class="notification-toggle">Webhooks <span id="webhookDeadCount">0</span></button>
           <span id="healthDot" class="dot gray"></span><span id="healthText">health unknown</span>
           <span id="wsDot" class="dot gray"></span><span id="wsText">ws disconnected</span>
         </div>
@@ -26,6 +27,24 @@
           <button id="markAllNotificationsReadBtn" type="button">Mark all read</button>
         </div>
         <div id="notificationList" class="notification-list"></div>
+      </section>
+
+      <section id="webhookPanel" class="notification-panel webhook-panel" hidden>
+        <div class="panel-title">
+          <h2>Webhook deliveries</h2>
+          <div class="webhook-toolbar">
+            <select id="webhookStatusFilter">
+              <option value="">All</option>
+              <option value="dead">Dead</option>
+              <option value="retrying">Retrying</option>
+              <option value="pending">Pending</option>
+              <option value="delivered">Delivered</option>
+            </select>
+            <button id="refreshWebhooksBtn" type="button">Refresh</button>
+          </div>
+        </div>
+        <div id="webhookSummary" class="webhook-summary"></div>
+        <div id="webhookDeliveryList" class="notification-list"></div>
       </section>
 
       <section id="errorBanner" class="error-banner" hidden></section>

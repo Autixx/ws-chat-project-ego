@@ -57,6 +57,30 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     });
   });
 
+  router.get("/webhook-deliveries", async (req: PmAuthedRequest, res, next) => {
+    try {
+      requirePmUser(req);
+      const status = optionalWebhookStatus(req.query.status);
+      const limit = optionalNumber(req.query.limit) ?? 100;
+      const [deliveries, summary] = await Promise.all([store.listWebhookDeliveries({ status, limit }), store.summarizeWebhookDeliveries()]);
+      res.json({ deliveries, summary });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/webhook-deliveries/:deliveryId/retry", async (req: PmAuthedRequest, res, next) => {
+    try {
+      requirePmUser(req);
+      if (!options.webhooks?.enabled) throw new Error("PM webhooks are not configured.");
+      const result = await options.webhooks.retryDelivery(req.params.deliveryId);
+      const delivery = await store.getWebhookDelivery(req.params.deliveryId);
+      res.status(result.ok ? 202 : 502).json({ delivery, result });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/notifications", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
@@ -965,6 +989,13 @@ function optionalPriority(value: unknown): string | undefined {
   if (!priority) return undefined;
   if (!["urgent", "high", "medium", "low", "none"].includes(priority)) throw new Error("priority must be urgent, high, medium, low, or none.");
   return priority;
+}
+
+function optionalWebhookStatus(value: unknown): "pending" | "retrying" | "delivered" | "dead" | undefined {
+  const status = optionalString(value);
+  if (!status) return undefined;
+  if (!["pending", "retrying", "delivered", "dead"].includes(status)) throw new Error("status must be pending, retrying, delivered, or dead.");
+  return status as "pending" | "retrying" | "delivered" | "dead";
 }
 
 function optionalHexColor(value: unknown): string | undefined {

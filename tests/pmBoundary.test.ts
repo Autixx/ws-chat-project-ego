@@ -97,6 +97,11 @@ test("PM webhook dispatcher persists failed delivery and retries it", async () =
       },
       async listDueWebhookDeliveries() {
         return records.filter((record) => record.status === "pending" || record.status === "retrying");
+      },
+      async getWebhookDelivery(id) {
+        const record = records.find((item) => item.id === id);
+        assert.ok(record);
+        return record;
       }
     };
     const dispatcher = new PmWebhookDispatcher(
@@ -113,6 +118,60 @@ test("PM webhook dispatcher persists failed delivery and retries it", async () =
     assert.equal(retried.ok, true);
     assert.equal(records[0].status, "delivered");
     assert.equal(records[0].attempts, 2);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test("PM webhook dispatcher retries one persisted delivery by id", async () => {
+  let calls = 0;
+  const server = http.createServer((_req, res) => {
+    calls += 1;
+    res.statusCode = 204;
+    res.end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const record: PmWebhookDeliveryRecord = {
+      id: "delivery-row-1",
+      deliveryId: "delivery-public-1",
+      url: `http://127.0.0.1:${address.port}/hook`,
+      eventType: "task.created",
+      event: { type: "task.created" },
+      payload: { type: "task.created", deliveryId: "delivery-public-1", service: "projectego-pm", createdAt: new Date().toISOString(), payload: { taskId: "task-1" } },
+      status: "dead",
+      attempts: 6,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const persistence: PmWebhookPersistence = {
+      async createWebhookDelivery() {
+        return record;
+      },
+      async markWebhookDeliveryAttempt(id, input) {
+        assert.equal(id, record.id);
+        record.status = input.delivered ? "delivered" : "dead";
+        record.attempts = input.attempts;
+        record.responseStatus = input.responseStatus;
+        return record;
+      },
+      async listDueWebhookDeliveries() {
+        return [];
+      },
+      async getWebhookDelivery(id) {
+        assert.equal(id, record.id);
+        return record;
+      }
+    };
+    const dispatcher = new PmWebhookDispatcher({ urls: [record.url], timeoutMs: 1000, maxAttempts: 8, retryBaseMs: 1000, retryIntervalMs: 1000 }, persistence);
+
+    const result = await dispatcher.retryDelivery(record.id);
+    assert.equal(result.ok, true);
+    assert.equal(record.status, "delivered");
+    assert.equal(record.attempts, 7);
+    assert.equal(calls, 1);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
@@ -229,6 +288,88 @@ test("PM automation API uses PM_AUTOMATION_TOKEN instead of user auth", async ()
   }
 });
 
+test("PM API lists webhook deliveries and retries one delivery", async () => {
+  let webhookCalls = 0;
+  const webhookServer = http.createServer((_req, res) => {
+    webhookCalls += 1;
+    res.statusCode = 204;
+    res.end();
+  });
+  await new Promise<void>((resolve) => webhookServer.listen(0, "127.0.0.1", resolve));
+  const webhookAddress = webhookServer.address();
+  assert.ok(webhookAddress && typeof webhookAddress === "object");
+  const delivery: PmWebhookDeliveryRecord = {
+    id: "delivery-row-1",
+    deliveryId: "delivery-public-1",
+    url: `http://127.0.0.1:${webhookAddress.port}/hook`,
+    eventType: "task.created",
+    event: { type: "task.created" },
+    payload: { type: "task.created", deliveryId: "delivery-public-1", service: "projectego-pm", createdAt: new Date().toISOString(), payload: { taskId: "task-1" } },
+    status: "dead",
+    attempts: 6,
+    error: "workflow disabled",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  const calls: string[] = [];
+  const fakeStore = {
+    async ensureUser() {
+      return { id: "pm-user-1", username: "operator", displayName: "Operator" };
+    },
+    async health() {
+      return { ok: true };
+    },
+    async listWebhookDeliveries(filters: { status?: string }) {
+      calls.push(`list:${filters.status || "all"}`);
+      return filters.status && filters.status !== delivery.status ? [] : [delivery];
+    },
+    async summarizeWebhookDeliveries() {
+      return { pending: 0, retrying: 0, delivered: 2, dead: 1 };
+    },
+    async getWebhookDelivery(id: string) {
+      assert.equal(id, delivery.id);
+      return delivery;
+    },
+    async markWebhookDeliveryAttempt(id: string, input: { delivered: boolean; attempts: number; responseStatus?: number; error?: string }) {
+      assert.equal(id, delivery.id);
+      delivery.status = input.delivered ? "delivered" : "retrying";
+      delivery.attempts = input.attempts;
+      delivery.responseStatus = input.responseStatus;
+      delivery.error = input.error;
+      return delivery;
+    }
+  };
+  const app = createPmApp(
+    loadPmConfig({ NODE_ENV: "development", PM_DEV_AUTH_BYPASS: "true", PM_WEBHOOK_URLS: delivery.url }),
+    fakeStore as never
+  );
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const listResponse = await fetch(`${baseUrl}/api/pm/webhook-deliveries?status=dead`);
+    assert.equal(listResponse.status, 200);
+    const listBody = await listResponse.json() as { deliveries: PmWebhookDeliveryRecord[]; summary: Record<string, number> };
+    assert.equal(listBody.deliveries[0].id, delivery.id);
+    assert.equal(listBody.summary.dead, 1);
+    assert.deepEqual(calls, ["list:dead"]);
+
+    const retryResponse = await fetch(`${baseUrl}/api/pm/webhook-deliveries/${delivery.id}/retry`, { method: "POST" });
+    assert.equal(retryResponse.status, 202);
+    const retryBody = await retryResponse.json() as { delivery: PmWebhookDeliveryRecord; result: { ok: boolean; status: number } };
+    assert.equal(retryBody.result.ok, true);
+    assert.equal(retryBody.delivery.status, "delivered");
+    assert.equal(retryBody.delivery.attempts, 7);
+    assert.equal(webhookCalls, 1);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    await new Promise<void>((resolve, reject) => webhookServer.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test("PM service serves browser shell separately from Dashboard", async () => {
   const app = createPmApp(loadPmConfig({ NODE_ENV: "development", PM_DEV_AUTH_BYPASS: "true" }));
   const server = http.createServer(app);
@@ -257,6 +398,8 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/sprint`?/);
   assert.match(readme, /backlog and sprint planning/);
   assert.match(readme, /GET `?\/api\/pm\/notifications`?/);
+  assert.match(readme, /GET `?\/api\/pm\/webhook-deliveries`?/);
+  assert.match(readme, /POST `?\/api\/pm\/webhook-deliveries\/:deliveryId\/retry`?/);
   assert.match(readme, /@username/);
   assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/members`?/);
   assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/assignee`?/);
@@ -284,6 +427,7 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /PM_WEBHOOK_URLS/);
   assert.match(readme, /X-ProjectEGO-Signature/);
   assert.match(readme, /pm\.webhook_deliveries/);
+  assert.match(readme, /Webhooks operator panel/);
   assert.match(readme, /PM_WEBHOOK_MAX_ATTEMPTS/);
   assert.match(readme, /SMTP_HOST/);
   assert.match(readme, /PM_AUTOMATION_TOKEN/);

@@ -30,6 +30,7 @@ export type PmWebhookPersistence = {
     input: { delivered: boolean; attempts: number; maxAttempts: number; responseStatus?: number; error?: string; nextAttemptAt?: Date }
   ): Promise<PmWebhookDeliveryRecord>;
   listDueWebhookDeliveries(limit?: number): Promise<PmWebhookDeliveryRecord[]>;
+  getWebhookDelivery(id: string): Promise<PmWebhookDeliveryRecord>;
 };
 
 export function signWebhookBody(body: string, secret: string): string {
@@ -65,6 +66,13 @@ export class PmWebhookDispatcher {
     if (!this.persistence) return [];
     const records = await this.persistence.listDueWebhookDeliveries(limit);
     return Promise.all(records.map((record) => this.deliverRecord(record)));
+  }
+
+  async retryDelivery(id: string): Promise<PmWebhookDelivery> {
+    if (!this.persistence) return { url: "", ok: false, error: "PM webhook persistence is not configured." };
+    const record = await this.persistence.getWebhookDelivery(id);
+    if (record.status === "delivered") return { url: record.url, ok: true, status: record.responseStatus };
+    return this.deliverRecord(record);
   }
 
   private async deliverRecord(record: PmWebhookDeliveryRecord): Promise<PmWebhookDelivery> {

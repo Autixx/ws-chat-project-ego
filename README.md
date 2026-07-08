@@ -45,6 +45,8 @@ PM exposes:
 - `GET /api/pm/notifications`
 - `POST /api/pm/notifications/:notificationId/read`
 - `POST /api/pm/notifications/read-all`
+- `GET /api/pm/webhook-deliveries`
+- `POST /api/pm/webhook-deliveries/:deliveryId/retry`
 - `GET /api/pm/security-boundary`
 - `GET /api/pm/architecture`
 - `GET /api/pm/projects`
@@ -145,7 +147,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.54 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.55 \
   node dist/pm/migrate.js
 ```
 
@@ -247,7 +249,7 @@ Each PM event is posted as JSON with:
 - `X-ProjectEGO-Delivery`
 - `X-ProjectEGO-Signature: sha256=<hmac>` when `PM_WEBHOOK_SECRET` is set
 
-Webhook delivery attempts are persisted in PostgreSQL in `pm.webhook_deliveries`. Failed deliveries are retried with exponential backoff until `PM_WEBHOOK_MAX_ATTEMPTS`, then marked `dead` for operator inspection instead of being silently lost.
+Webhook delivery attempts are persisted in PostgreSQL in `pm.webhook_deliveries`. Failed deliveries are retried with exponential backoff until `PM_WEBHOOK_MAX_ATTEMPTS`, then marked `dead` for operator inspection instead of being silently lost. The PM browser shell includes a Webhooks operator panel for delivery status, and authenticated PM users can inspect/retry deliveries through `GET /api/pm/webhook-deliveries` and `POST /api/pm/webhook-deliveries/:deliveryId/retry`.
 
 PM SMTP mail is configured with:
 

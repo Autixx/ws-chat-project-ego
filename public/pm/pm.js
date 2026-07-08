@@ -20,6 +20,8 @@ const state = {
   attachments: [],
   activity: [],
   notifications: [],
+  webhookDeliveries: [],
+  webhookSummary: { pending: 0, retrying: 0, delivered: 0, dead: 0 },
   ws: null,
   shouldReconnect: true
 };
@@ -39,6 +41,13 @@ const els = {
   notificationPanel: $("notificationPanel"),
   notificationList: $("notificationList"),
   markAllNotificationsReadBtn: $("markAllNotificationsReadBtn"),
+  webhookToggle: $("webhookToggle"),
+  webhookDeadCount: $("webhookDeadCount"),
+  webhookPanel: $("webhookPanel"),
+  webhookStatusFilter: $("webhookStatusFilter"),
+  refreshWebhooksBtn: $("refreshWebhooksBtn"),
+  webhookSummary: $("webhookSummary"),
+  webhookDeliveryList: $("webhookDeliveryList"),
   includeArchived: $("includeArchived"),
   projectForm: $("projectForm"),
   projectKey: $("projectKey"),
@@ -161,6 +170,15 @@ async function loadNotifications() {
   const { notifications } = await api("/api/pm/notifications");
   state.notifications = notifications;
   renderNotifications();
+}
+
+async function loadWebhookDeliveries() {
+  const status = els.webhookStatusFilter.value;
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const { deliveries, summary } = await api(`/api/pm/webhook-deliveries${query}`);
+  state.webhookDeliveries = deliveries;
+  state.webhookSummary = summary;
+  renderWebhookDeliveries();
 }
 
 async function loadProjects() {
@@ -475,6 +493,51 @@ function renderNotifications() {
       return card;
     })
   );
+}
+
+function renderWebhookDeliveries() {
+  const summary = state.webhookSummary || {};
+  els.webhookDeadCount.textContent = String((summary.dead || 0) + (summary.retrying || 0));
+  els.webhookSummary.replaceChildren(
+    webhookSummaryChip("pending", summary.pending || 0),
+    webhookSummaryChip("retrying", summary.retrying || 0),
+    webhookSummaryChip("delivered", summary.delivered || 0),
+    webhookSummaryChip("dead", summary.dead || 0)
+  );
+  if (state.webhookDeliveries.length === 0) {
+    els.webhookDeliveryList.innerHTML = `<div class="drawer-empty">No webhook deliveries.</div>`;
+    return;
+  }
+  els.webhookDeliveryList.replaceChildren(
+    ...state.webhookDeliveries.map((delivery) => {
+      const card = document.createElement("article");
+      card.className = `webhook-card ${delivery.status}`;
+      const canRetry = delivery.status !== "delivered";
+      card.innerHTML = `
+        <div class="webhook-head">
+          <div>
+            <div class="webhook-url">${escapeHtml(delivery.url)}</div>
+            <div class="card-meta">${escapeHtml(delivery.eventType)} / ${escapeHtml(delivery.deliveryId)}</div>
+          </div>
+          <span class="badge">${escapeHtml(delivery.status)}</span>
+        </div>
+        <div class="card-meta">attempts: ${escapeHtml(delivery.attempts)} / HTTP: ${escapeHtml(delivery.responseStatus || "-")} / created: ${formatDate(delivery.createdAt)}</div>
+        <div class="card-meta">next: ${escapeHtml(delivery.nextAttemptAt ? formatDate(delivery.nextAttemptAt) : "-")} / delivered: ${escapeHtml(delivery.deliveredAt ? formatDate(delivery.deliveredAt) : "-")}</div>
+        ${delivery.error ? `<div class="webhook-error">${escapeHtml(delivery.error)}</div>` : ""}
+        <div class="attachment-actions">
+          <button class="mini-button" type="button" ${canRetry ? "" : "disabled"}>Retry</button>
+        </div>
+      `;
+      card.querySelector("button").addEventListener("click", () => retryWebhookDelivery(delivery).catch((error) => setError(error.message)));
+      return card;
+    })
+  );
+}
+
+function webhookSummaryChip(label, count) {
+  const element = document.createElement("span");
+  element.textContent = `${label}: ${count}`;
+  return element;
 }
 
 function renderTasks() {
@@ -1273,6 +1336,12 @@ async function markAllNotificationsRead() {
   renderNotifications();
 }
 
+async function retryWebhookDelivery(delivery) {
+  const body = await api(`/api/pm/webhook-deliveries/${encodeURIComponent(delivery.id)}/retry`, { method: "POST" });
+  state.webhookDeliveries = state.webhookDeliveries.map((item) => (item.id === body.delivery.id ? body.delivery : item));
+  await loadWebhookDeliveries();
+}
+
 async function createComment(event) {
   event.preventDefault();
   if (!state.activeTask) return;
@@ -1487,6 +1556,7 @@ async function boot() {
   try {
     await refreshHealth();
     await loadIdentity();
+    await loadWebhookDeliveries();
     await loadProjects();
     connectWs();
     setInterval(refreshHealth, 15000);
@@ -1509,7 +1579,13 @@ els.attachmentForm.addEventListener("submit", (event) => uploadAttachment(event)
 els.notificationToggle.addEventListener("click", () => {
   els.notificationPanel.hidden = !els.notificationPanel.hidden;
 });
+els.webhookToggle.addEventListener("click", () => {
+  els.webhookPanel.hidden = !els.webhookPanel.hidden;
+  if (!els.webhookPanel.hidden) loadWebhookDeliveries().catch((error) => setError(error.message));
+});
 els.markAllNotificationsReadBtn.addEventListener("click", () => markAllNotificationsRead().catch((error) => setError(error.message)));
+els.refreshWebhooksBtn.addEventListener("click", () => loadWebhookDeliveries().catch((error) => setError(error.message)));
+els.webhookStatusFilter.addEventListener("change", () => loadWebhookDeliveries().catch((error) => setError(error.message)));
 els.includeArchived.addEventListener("change", () => loadProjects().catch((error) => setError(error.message)));
 els.includeCompletedSprints.addEventListener("change", () => loadProjectData().catch((error) => setError(error.message)));
 els.backlogFilterBtn.addEventListener("click", () => {

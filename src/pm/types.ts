@@ -136,6 +136,13 @@ export type PmWebhookDeliveryRecord = {
   updatedAt: string;
 };
 
+export type PmWebhookDeliverySummary = {
+  pending: number;
+  retrying: number;
+  delivered: number;
+  dead: number;
+};
+
 export type PmLabel = {
   id: string;
   projectId: string;

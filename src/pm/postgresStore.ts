@@ -31,6 +31,7 @@ import type {
   PmTaskPosition,
   PmUser,
   PmWebhookDeliveryRecord,
+  PmWebhookDeliverySummary,
   UpdateProjectInput,
   UpdateCommentInput,
   UpdateLabelInput,
@@ -1180,6 +1181,37 @@ export class PmStore {
     return result.rows.map(mapWebhookDelivery);
   }
 
+  async listWebhookDeliveries(filters: { status?: PmWebhookDeliveryRecord["status"]; limit?: number } = {}): Promise<PmWebhookDeliveryRecord[]> {
+    const limit = clampLimit(filters.limit, 100);
+    const result = await this.pool.query(
+      `
+      SELECT *
+      FROM pm.webhook_deliveries
+      WHERE ($1::text IS NULL OR status = $1)
+      ORDER BY created_at DESC
+      LIMIT $2
+      `,
+      [filters.status ?? null, limit]
+    );
+    return result.rows.map(mapWebhookDelivery);
+  }
+
+  async summarizeWebhookDeliveries(): Promise<PmWebhookDeliverySummary> {
+    const result = await this.pool.query("SELECT status, count(*)::int AS count FROM pm.webhook_deliveries GROUP BY status");
+    const summary: PmWebhookDeliverySummary = { pending: 0, retrying: 0, delivered: 0, dead: 0 };
+    for (const row of result.rows) {
+      const status = String(row.status);
+      if (status in summary) summary[status as keyof PmWebhookDeliverySummary] = Number(row.count ?? 0);
+    }
+    return summary;
+  }
+
+  async getWebhookDelivery(id: string): Promise<PmWebhookDeliveryRecord> {
+    const result = await this.pool.query("SELECT * FROM pm.webhook_deliveries WHERE id = $1", [id]);
+    if (!result.rows[0]) throw new Error("Webhook delivery not found.");
+    return mapWebhookDelivery(result.rows[0]);
+  }
+
   private async createNotification(input: {
     userId: string;
     actorId?: string;
@@ -1525,6 +1557,12 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
 function arrayOfStrings(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item) => item !== null && item !== undefined).map(String);
+}
+
+function clampLimit(value: number | undefined, fallback: number): number {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(250, Math.floor(parsed)));
 }
 
 function extractMentions(value: string): Set<string> {
