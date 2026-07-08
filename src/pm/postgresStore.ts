@@ -17,6 +17,8 @@ import type {
   PmBoard,
   PmBoardColumn,
   PmBoardTask,
+  PmBootstrapInput,
+  PmBootstrapStatus,
   PmComment,
   PmEpic,
   PmEventRecord,
@@ -120,6 +122,56 @@ export class PmStore {
   async getProjectRole(userId: string, projectId: string): Promise<PmRole | undefined> {
     const result = await this.pool.query("SELECT role FROM pm.project_members WHERE user_id = $1 AND project_id = $2", [userId, projectId]);
     return result.rows[0] ? normalizeRole(result.rows[0].role) : undefined;
+  }
+
+  async getBootstrapStatus(): Promise<PmBootstrapStatus> {
+    const result = await this.pool.query(
+      `
+      SELECT
+        (SELECT count(*)::int FROM pm.project_members WHERE role = 'project_owner') AS owner_count,
+        (SELECT count(*)::int FROM pm.projects WHERE deleted_at IS NULL) AS project_count,
+        (SELECT count(*)::int FROM core.users WHERE disabled = false) AS user_count
+      `
+    );
+    const row = result.rows[0] ?? {};
+    const ownerCount = Number(row.owner_count ?? 0);
+    return {
+      bootstrapped: ownerCount > 0,
+      ownerCount,
+      projectCount: Number(row.project_count ?? 0),
+      userCount: Number(row.user_count ?? 0)
+    };
+  }
+
+  async bootstrapInitialOwner(user: PmUser, input: PmBootstrapInput): Promise<{ status: PmBootstrapStatus; project: PmProject; user: PmUser; role: PmRole }> {
+    return this.withTransaction(async (client) => {
+      const status = await this.getBootstrapStatusWithClient(client);
+      if (status.bootstrapped) throw new Error("ProjectEGO PM is already bootstrapped.");
+      const project = mapProject(
+        (
+          await client.query(
+            `
+            INSERT INTO pm.projects (key, name, description, created_by)
+            VALUES ($1, $2, $3, $4)
+            RETURNING *
+            `,
+            [normalizeKey(input.projectKey), input.projectName.trim(), input.projectDescription?.trim() ?? "", user.id]
+          )
+        ).rows[0]
+      );
+      await client.query(
+        "INSERT INTO pm.project_members (project_id, user_id, role) VALUES ($1, $2, 'project_owner')",
+        [project.id, user.id]
+      );
+      await this.insertAudit(client, {
+        actorType: "system",
+        actorId: user.id,
+        projectId: project.id,
+        eventType: "pm.bootstrap",
+        payload: { username: user.username, projectKey: project.key, source: "api" }
+      });
+      return { status: await this.getBootstrapStatusWithClient(client), project: { ...project, role: "project_owner" }, user, role: "project_owner" };
+    });
   }
 
   async loadProject(projectId: string): Promise<PmProject> {
@@ -1243,6 +1295,25 @@ export class PmStore {
   private async countProjectOwners(projectId: string): Promise<number> {
     const result = await this.pool.query("SELECT COUNT(*) AS count FROM pm.project_members WHERE project_id = $1 AND role = 'project_owner'", [projectId]);
     return Number(result.rows[0]?.count ?? 0);
+  }
+
+  private async getBootstrapStatusWithClient(client: PoolClient): Promise<PmBootstrapStatus> {
+    const result = await client.query(
+      `
+      SELECT
+        (SELECT count(*)::int FROM pm.project_members WHERE role = 'project_owner') AS owner_count,
+        (SELECT count(*)::int FROM pm.projects WHERE deleted_at IS NULL) AS project_count,
+        (SELECT count(*)::int FROM core.users WHERE disabled = false) AS user_count
+      `
+    );
+    const row = result.rows[0] ?? {};
+    const ownerCount = Number(row.owner_count ?? 0);
+    return {
+      bootstrapped: ownerCount > 0,
+      ownerCount,
+      projectCount: Number(row.project_count ?? 0),
+      userCount: Number(row.user_count ?? 0)
+    };
   }
 
   private async withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {

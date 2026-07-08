@@ -10,6 +10,15 @@ export type PmConfig = {
   devAuthBypass: boolean;
   trustAutheliaHeaders: boolean;
   automationToken?: string;
+  bootstrapToken?: string;
+  bootstrap: {
+    username?: string;
+    email?: string;
+    displayName?: string;
+    projectKey: string;
+    projectName: string;
+    projectDescription: string;
+  };
   webhooks: {
     urls: string[];
     secret?: string;
@@ -65,6 +74,15 @@ export function loadPmConfig(env: NodeJS.ProcessEnv = process.env): PmConfig {
     devAuthBypass: boolFromEnv(env.PM_DEV_AUTH_BYPASS, env.NODE_ENV !== "production"),
     trustAutheliaHeaders: boolFromEnv(env.PM_TRUST_AUTHELIA_HEADERS ?? env.TRUST_AUTHELIA_HEADERS, false),
     automationToken: env.PM_AUTOMATION_TOKEN,
+    bootstrapToken: env.PM_BOOTSTRAP_TOKEN,
+    bootstrap: {
+      username: env.PM_BOOTSTRAP_USERNAME,
+      email: env.PM_BOOTSTRAP_EMAIL,
+      displayName: env.PM_BOOTSTRAP_DISPLAY_NAME,
+      projectKey: env.PM_BOOTSTRAP_PROJECT_KEY ?? "PROJECTEGO",
+      projectName: env.PM_BOOTSTRAP_PROJECT_NAME ?? "ProjectEGO",
+      projectDescription: env.PM_BOOTSTRAP_PROJECT_DESCRIPTION ?? "Bootstrap ProjectEGO PM project."
+    },
     webhooks: {
       urls: csvFromEnv(env.PM_WEBHOOK_URLS),
       secret: env.PM_WEBHOOK_SECRET,

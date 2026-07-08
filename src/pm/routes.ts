@@ -1,4 +1,5 @@
 import express from "express";
+import { timingSafeEqual } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import multer from "multer";
@@ -57,16 +58,59 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     });
   });
 
+  router.get("/bootstrap/status", async (req: PmAuthedRequest, res, next) => {
+    try {
+      requirePmUser(req);
+      const status = await store.getBootstrapStatus();
+      res.json({
+        ...status,
+        tokenConfigured: Boolean(options.pmConfig.bootstrapToken),
+        expectedUsername: options.pmConfig.bootstrap.username
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/bootstrap", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireBootstrapToken(req, options.pmConfig.bootstrapToken);
+      const expectedUsername = options.pmConfig.bootstrap.username?.trim();
+      if (expectedUsername && user.username.toLowerCase() !== expectedUsername.toLowerCase()) {
+        throw new PmPermissionError(403, "Authenticated PM user does not match PM_BOOTSTRAP_USERNAME.");
+      }
+      const existing = await store.getBootstrapStatus();
+      if (existing.bootstrapped) throw new PmPermissionError(409, "ProjectEGO PM is already bootstrapped.");
+      const body = objectBody(req.body);
+      const result = await store.bootstrapInitialOwner(user, {
+        projectKey: optionalString(body.projectKey) ?? options.pmConfig.bootstrap.projectKey,
+        projectName: optionalString(body.projectName) ?? options.pmConfig.bootstrap.projectName,
+        projectDescription: optionalString(body.projectDescription) ?? options.pmConfig.bootstrap.projectDescription
+      });
+      emit({ type: "project.created", projectId: result.project.id, version: result.project.version, createdAt: new Date().toISOString(), payload: { project: result.project, bootstrap: true } });
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/operator/status", async (req: PmAuthedRequest, res, next) => {
     try {
       requirePmUser(req);
-      const [database, schemaMigrations, webhookSummary] = await Promise.all([
+      const [database, schemaMigrations, webhookSummary, bootstrap] = await Promise.all([
         store.health(),
         store.listSchemaMigrations(),
-        store.summarizeWebhookDeliveries()
+        store.summarizeWebhookDeliveries(),
+        store.getBootstrapStatus()
       ]);
       res.json({
         service: "projectego-pm",
+        bootstrap: {
+          ...bootstrap,
+          tokenConfigured: Boolean(options.pmConfig.bootstrapToken),
+          expectedUsername: options.pmConfig.bootstrap.username
+        },
         database: {
           configured: Boolean(options.pmConfig.databaseUrl),
           reachable: database.ok,
@@ -812,6 +856,18 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
 function requirePmUser(req: PmAuthedRequest): PmUser {
   if (!req.pmUser) throw new PmPermissionError(401, "Authentication required.");
   return req.pmUser;
+}
+
+function requireBootstrapToken(req: express.Request, expectedToken: string | undefined): void {
+  if (!expectedToken) throw new PmPermissionError(503, "PM_BOOTSTRAP_TOKEN is not configured.");
+  const header = req.header("authorization") ?? "";
+  const prefix = "Bearer ";
+  if (!header.startsWith(prefix)) throw new PmPermissionError(401, "Bootstrap bearer token required.");
+  const actual = Buffer.from(header.slice(prefix.length));
+  const expected = Buffer.from(expectedToken);
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new PmPermissionError(401, "Bootstrap bearer token required.");
+  }
 }
 
 function statusForError(error: unknown): number {

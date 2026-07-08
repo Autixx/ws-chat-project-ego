@@ -143,6 +143,19 @@ export type PmWebhookDeliverySummary = {
   dead: number;
 };
 
+export type PmBootstrapStatus = {
+  bootstrapped: boolean;
+  ownerCount: number;
+  projectCount: number;
+  userCount: number;
+};
+
+export type PmBootstrapInput = {
+  projectKey: string;
+  projectName: string;
+  projectDescription?: string;
+};
+
 export type PmLabel = {
   id: string;
   projectId: string;

@@ -381,6 +381,9 @@ test("PM operator status reports database schema and integration configuration",
     async listSchemaMigrations() {
       return ["001_pm_initial_schema"];
     },
+    async getBootstrapStatus() {
+      return { bootstrapped: true, ownerCount: 1, projectCount: 1, userCount: 2 };
+    },
     async summarizeWebhookDeliveries() {
       return { pending: 1, retrying: 2, delivered: 3, dead: 4 };
     }
@@ -405,18 +408,94 @@ test("PM operator status reports database schema and integration configuration",
     const response = await fetch(`http://127.0.0.1:${address.port}/api/pm/operator/status`);
     assert.equal(response.status, 200);
     const body = await response.json() as {
+      bootstrap: { bootstrapped: boolean; tokenConfigured: boolean };
       database: { reachable: boolean; schemaApplied: boolean; schemaMigrations: string[] };
       webhooks: { configured: boolean; summary: Record<string, number> };
       smtp: { configured: boolean };
       automation: { configured: boolean };
     };
     assert.equal(body.database.reachable, true);
+    assert.equal(body.bootstrap.bootstrapped, true);
+    assert.equal(body.bootstrap.tokenConfigured, false);
     assert.equal(body.database.schemaApplied, true);
     assert.deepEqual(body.database.schemaMigrations, ["001_pm_initial_schema"]);
     assert.equal(body.webhooks.configured, true);
     assert.equal(body.webhooks.summary.dead, 4);
     assert.equal(body.smtp.configured, true);
     assert.equal(body.automation.configured, true);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test("PM bootstrap API requires token and creates first owner once", async () => {
+  let bootstrapped = false;
+  const calls: string[] = [];
+  const fakeStore = {
+    async ensureUser() {
+      return { id: "pm-user-1", username: "tris", displayName: "Tris" };
+    },
+    async health() {
+      return { ok: true };
+    },
+    async getBootstrapStatus() {
+      return { bootstrapped, ownerCount: bootstrapped ? 1 : 0, projectCount: bootstrapped ? 1 : 0, userCount: 1 };
+    },
+    async bootstrapInitialOwner(user: { id: string; username: string }, input: { projectKey: string; projectName: string }) {
+      calls.push(`${user.username}:${input.projectKey}:${input.projectName}`);
+      bootstrapped = true;
+      return {
+        status: { bootstrapped: true, ownerCount: 1, projectCount: 1, userCount: 1 },
+        user,
+        role: "project_owner",
+        project: { id: "project-1", key: input.projectKey, name: input.projectName, description: "", role: "project_owner", version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      };
+    }
+  };
+  const app = createPmApp(
+    loadPmConfig({
+      NODE_ENV: "development",
+      PM_DEV_AUTH_BYPASS: "true",
+      PM_BOOTSTRAP_TOKEN: "bootstrap-secret",
+      PM_BOOTSTRAP_USERNAME: "tris",
+      PM_BOOTSTRAP_PROJECT_KEY: "EGO",
+      PM_BOOTSTRAP_PROJECT_NAME: "ProjectEGO"
+    }),
+    fakeStore as never
+  );
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const statusResponse = await fetch(`${baseUrl}/api/pm/bootstrap/status`);
+    assert.equal(statusResponse.status, 200);
+    const statusBody = await statusResponse.json() as { bootstrapped: boolean; tokenConfigured: boolean; expectedUsername: string };
+    assert.equal(statusBody.bootstrapped, false);
+    assert.equal(statusBody.tokenConfigured, true);
+    assert.equal(statusBody.expectedUsername, "tris");
+
+    const unauthorized = await fetch(`${baseUrl}/api/pm/bootstrap`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
+    assert.equal(unauthorized.status, 401);
+
+    const created = await fetch(`${baseUrl}/api/pm/bootstrap`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer bootstrap-secret" },
+      body: JSON.stringify({})
+    });
+    assert.equal(created.status, 201);
+    const createdBody = await created.json() as { project: { key: string }; status: { bootstrapped: boolean } };
+    assert.equal(createdBody.status.bootstrapped, true);
+    assert.equal(createdBody.project.key, "EGO");
+    assert.deepEqual(calls, ["tris:EGO:ProjectEGO"]);
+
+    const repeated = await fetch(`${baseUrl}/api/pm/bootstrap`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer bootstrap-secret" },
+      body: JSON.stringify({})
+    });
+    assert.equal(repeated.status, 409);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
@@ -452,6 +531,8 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /GET `?\/api\/pm\/notifications`?/);
   assert.match(readme, /GET `?\/api\/pm\/webhook-deliveries`?/);
   assert.match(readme, /POST `?\/api\/pm\/webhook-deliveries\/:deliveryId\/retry`?/);
+  assert.match(readme, /GET `?\/api\/pm\/bootstrap\/status`?/);
+  assert.match(readme, /POST `?\/api\/pm\/bootstrap`?/);
   assert.match(readme, /GET `?\/api\/pm\/operator\/status`?/);
   assert.match(readme, /@username/);
   assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/members`?/);
@@ -488,8 +569,10 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /GET `?\/api\/pm\/automation\/status`?/);
   assert.match(readme, /POST `?\/api\/pm\/automation\/projects\/:projectId\/tasks`?/);
   assert.match(readme, /PM_BOOTSTRAP_USERNAME/);
+  assert.match(readme, /PM_BOOTSTRAP_TOKEN/);
   assert.match(readme, /PM_AUTO_MIGRATE=true/);
   assert.match(compose, /PM_AUTO_MIGRATE: "true"/);
+  assert.match(compose, /PM_BOOTSTRAP_TOKEN:/);
   assert.match(readme, /PM_TEST_DATABASE_URL/);
   assert.match(readme, /TrueNAS PM first-run order/);
   assert.match(readme, /Remote-User/);

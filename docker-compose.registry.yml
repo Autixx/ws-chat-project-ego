@@ -53,6 +53,10 @@ services:
       PM_ATTACHMENTS_DIR: /app/data/attachments
       PM_DATABASE_URL: postgres://projectego_admin:change-me@projectego-postgres:5432/projectego
       PM_AUTO_MIGRATE: "true"
+      PM_BOOTSTRAP_TOKEN: change-me-bootstrap-token
+      PM_BOOTSTRAP_USERNAME: tris
+      PM_BOOTSTRAP_PROJECT_KEY: PROJECTEGO
+      PM_BOOTSTRAP_PROJECT_NAME: ProjectEGO
       PM_PUBLIC_BASE_URL: https://pm.project-ego.online
       PM_TRUST_AUTHELIA_HEADERS: "true"
       PM_DEV_AUTH_BYPASS: "false"

@@ -47,6 +47,8 @@ PM exposes:
 - `POST /api/pm/notifications/read-all`
 - `GET /api/pm/webhook-deliveries`
 - `POST /api/pm/webhook-deliveries/:deliveryId/retry`
+- `GET /api/pm/bootstrap/status`
+- `POST /api/pm/bootstrap`
 - `GET /api/pm/operator/status`
 - `GET /api/pm/security-boundary`
 - `GET /api/pm/architecture`
@@ -148,11 +150,22 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.56 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.57 \
   node dist/pm/migrate.js
 ```
 
-Bootstrap the first PM project owner after migrations:
+Bootstrap the first PM project owner from a running container with the one-time API:
+
+```bash
+curl -X POST https://pm.project-ego.online/api/pm/bootstrap \
+  -H "Authorization: Bearer <PM_BOOTSTRAP_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+`GET /api/pm/bootstrap/status` reports whether PM already has a project owner and whether `PM_BOOTSTRAP_TOKEN` is configured. `POST /api/pm/bootstrap` works only before the first project owner exists. It uses the authenticated PM identity as the first owner; if `PM_BOOTSTRAP_USERNAME` is set, the authenticated username must match it. The endpoint creates the bootstrap project from `PM_BOOTSTRAP_PROJECT_KEY` / `PM_BOOTSTRAP_PROJECT_NAME` and then refuses further bootstrap writes.
+
+The older one-shot CLI remains available for manual administration:
 
 ```bash
 docker compose run --rm \
@@ -165,7 +178,7 @@ docker compose run --rm \
   node dist/pm/bootstrap.js
 ```
 
-The bootstrap command creates or updates `core.users`, creates the bootstrap project if needed, and grants the user `project_owner`. The `PM_BOOTSTRAP_USERNAME` must match the username Authelia will send to PM through `Remote-User` when `PM_TRUST_AUTHELIA_HEADERS=true`. The command is idempotent for the same username/project key.
+The bootstrap username must match the username Authelia will send to PM through `Remote-User` when `PM_TRUST_AUTHELIA_HEADERS=true`.
 
 Optional PostgreSQL integration tests can validate the PM store against a real test database:
 
@@ -683,10 +696,10 @@ TrueNAS PM first-run order:
 
 1. Deploy PostgreSQL and confirm it is reachable from the PM container.
 2. Deploy PM with the env above.
-3. Open a shell for the PM container or use a one-shot job and run `node dist/pm/migrate.js`.
-4. Run `node dist/pm/bootstrap.js` with `PM_BOOTSTRAP_USERNAME` and optional bootstrap project env values.
-5. Put PM behind Authelia/Caddy so `Remote-User`, `Remote-Email`, and `Remote-Name` reach the PM container.
-6. Sign in through Authelia as the bootstrapped username.
+3. PM migrations apply automatically at container startup when `PM_AUTO_MIGRATE=true`.
+4. Put PM behind Authelia/Caddy so `Remote-User`, `Remote-Email`, and `Remote-Name` reach the PM container.
+5. Sign in through Authelia as the intended bootstrap username.
+6. Call `POST /api/pm/bootstrap` with `Authorization: Bearer <PM_BOOTSTRAP_TOKEN>` once, or use the Ops panel to confirm PM is still unbootstrapped before calling it.
 
 To update from the TrueNAS Apps UI:
 

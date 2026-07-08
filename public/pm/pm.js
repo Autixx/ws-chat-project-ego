@@ -559,6 +559,8 @@ function renderOpsStatus() {
     return;
   }
   const problems = [
+    !status.bootstrap?.bootstrapped,
+    !status.bootstrap?.tokenConfigured && !status.bootstrap?.bootstrapped,
     !status.database?.reachable,
     !status.database?.schemaApplied,
     status.webhooks?.summary?.dead > 0,
@@ -568,6 +570,13 @@ function renderOpsStatus() {
   ].filter(Boolean).length;
   els.opsProblemCount.textContent = String(problems);
   els.opsStatusList.replaceChildren(
+    opsCard("Bootstrap", status.bootstrap?.bootstrapped ? "ok" : "warn", [
+      `bootstrapped: ${yesNo(status.bootstrap?.bootstrapped)}`,
+      `bootstrap token configured: ${yesNo(status.bootstrap?.tokenConfigured)}`,
+      `expected user: ${status.bootstrap?.expectedUsername || "current authenticated user"}`,
+      `owners/projects/users: ${status.bootstrap?.ownerCount || 0}/${status.bootstrap?.projectCount || 0}/${status.bootstrap?.userCount || 0}`,
+      status.bootstrap?.bootstrapped ? "" : "POST /api/pm/bootstrap with PM_BOOTSTRAP_TOKEN to initialize the first owner."
+    ]),
     opsCard("Database", status.database?.reachable && status.database?.schemaApplied ? "ok" : "error", [
       `configured: ${yesNo(status.database?.configured)}`,
       `reachable: ${yesNo(status.database?.reachable)}`,
