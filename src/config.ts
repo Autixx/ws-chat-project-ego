@@ -13,7 +13,8 @@ export type AppConfig = {
   dashboardInternalBaseUrl?: string;
   devAuthBypass: boolean;
   trustAutheliaHeaders: boolean;
-  authMode: "local";
+  authMode: "local" | "core";
+  coreDatabaseUrl?: string;
   sessionSecret?: string;
   registrationEnabled: boolean;
   registrationInviteCode?: string;
@@ -59,7 +60,8 @@ export const config: AppConfig = {
   dashboardInternalBaseUrl: process.env.DASHBOARD_INTERNAL_BASE_URL,
   devAuthBypass: boolFromEnv(process.env.DEV_AUTH_BYPASS, process.env.NODE_ENV !== "production"),
   trustAutheliaHeaders: boolFromEnv(process.env.TRUST_AUTHELIA_HEADERS, false),
-  authMode: "local",
+  authMode: process.env.AUTH_MODE === "core" ? "core" : "local",
+  coreDatabaseUrl: process.env.CORE_DATABASE_URL ?? process.env.PM_DATABASE_URL,
   sessionSecret: process.env.SESSION_SECRET,
   registrationEnabled: boolFromEnv(process.env.REGISTRATION_ENABLED, true),
   registrationInviteCode: process.env.REGISTRATION_INVITE_CODE,

@@ -1,14 +1,16 @@
 {
   "name": "projectego-ws-chat",
-  "version": "0.1.58",
+  "version": "0.1.59",
   "description": "ProjectEGO Dashboard",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:pm": "tsx watch src/pm/server.ts",
+    "dev:admin": "tsx watch src/admin/server.ts",
     "build": "tsc && node scripts/copy-pm-assets.mjs",
     "start": "node dist/server.js",
     "start:pm": "node dist/pm/server.js",
+    "start:admin": "node dist/admin/server.js",
     "pm:migrate": "node dist/pm/migrate.js",
     "pm:bootstrap": "node dist/pm/bootstrap.js",
     "test": "tsx --test tests/*.test.ts",

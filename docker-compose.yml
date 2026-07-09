@@ -22,10 +22,11 @@ services:
       AGENT_ATTACHMENT_TOKEN: ""
       DASHBOARD_INTERNAL_BASE_URL: ""
       DEV_AUTH_BYPASS: "false"
-      TRUST_AUTHELIA_HEADERS: "true"
-      AUTH_MODE: local
+      TRUST_AUTHELIA_HEADERS: "false"
+      AUTH_MODE: core
+      CORE_DATABASE_URL: postgres://projectego_admin:change-me@projectego-postgres:5432/projectego
       SESSION_SECRET: change-me-to-a-long-random-secret
-      REGISTRATION_ENABLED: "true"
+      REGISTRATION_ENABLED: "false"
       REGISTRATION_INVITE_CODE: change-me
       COOKIE_SECURE: "false"
       LLM_PROVIDER: mock
@@ -46,6 +47,33 @@ services:
       COMPONENT_STATUS_TIMEOUT_MS: "2000"
     volumes:
       - projectego-chat-data:/app/data
+    depends_on:
+      - projectego-postgres
+
+  projectego-admin:
+    build:
+      context: https://github.com/Autixx/ws-chat-project-ego.git#main
+      dockerfile: Dockerfile
+    image: projectego-ws-chat:local
+    container_name: projectego-admin
+    command: ["node", "dist/admin/server.js"]
+    restart: unless-stopped
+    user: "568:568"
+    ports:
+      - "19120:19120"
+    environment:
+      NODE_ENV: production
+      ADMIN_HOST: 0.0.0.0
+      ADMIN_PORT: 19120
+      ADMIN_DATABASE_URL: postgres://projectego_admin:change-me@projectego-postgres:5432/projectego
+      ADMIN_SESSION_SECRET: change-me-to-a-long-random-secret
+      ADMIN_COOKIE_SECURE: "false"
+      ADMIN_BOOTSTRAP_USERNAME: admin
+      ADMIN_BOOTSTRAP_PASSWORD: change-me-admin-password
+      ADMIN_BOOTSTRAP_EMAIL: admin@example.local
+      ADMIN_BOOTSTRAP_DISPLAY_NAME: ProjectEGO Admin
+    depends_on:
+      - projectego-postgres
 
   projectego-pm:
     build:

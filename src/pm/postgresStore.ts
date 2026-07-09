@@ -73,16 +73,38 @@ export class PmStore {
     const email = identity.email?.trim() || null;
     const displayName = identity.name?.trim() || username;
     const externalSubject = email ?? username;
-    const result = await this.pool.query(
+    const existing = await this.pool.query(
       `
-      INSERT INTO core.users (username, email, display_name, external_subject)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (external_subject)
-      DO UPDATE SET username = EXCLUDED.username, email = EXCLUDED.email, display_name = EXCLUDED.display_name, updated_at = now()
-      RETURNING id, username, email, display_name
+      SELECT id
+      FROM core.users
+      WHERE lower(username) = lower($1)
+         OR ($2::text IS NOT NULL AND lower(email) = lower($2))
+         OR external_subject = $3
+      LIMIT 1
       `,
-      [username, email, displayName, externalSubject]
+      [username, email, externalSubject]
     );
+    const result = existing.rows[0]
+      ? await this.pool.query(
+          `
+          UPDATE core.users
+          SET username = $2, email = $3, display_name = $4, external_subject = COALESCE(external_subject, $5), updated_at = now()
+          WHERE id = $1
+          RETURNING id, username, email, display_name, pm_access, global_role, disabled
+          `,
+          [existing.rows[0].id, username, email, displayName, externalSubject]
+        )
+      : await this.pool.query(
+          `
+          INSERT INTO core.users (username, email, display_name, external_subject)
+          VALUES ($1, $2, $3, $4)
+          RETURNING id, username, email, display_name, pm_access, global_role, disabled
+          `,
+          [username, email, displayName, externalSubject]
+    );
+    const row = result.rows[0];
+    if (row.disabled) throw new Error("PM access is disabled for this user.");
+    if (!row.pm_access && !["admin", "super_admin"].includes(String(row.global_role))) throw new Error("PM access is not granted for this user.");
     return mapUser(result.rows[0]);
   }
 

@@ -203,10 +203,12 @@ test("PM PostgreSQL schema defines required logical boundaries", () => {
     assert.match(schema, new RegExp(`CREATE SCHEMA IF NOT EXISTS ${schemaName}`));
   }
 
-  for (const table of ["pm.projects", "pm.epics", "pm.boards", "pm.sprints", "pm.tasks", "pm.task_dependencies", "pm.comments", "pm.attachments", "pm.notifications", "pm.webhook_deliveries", "audit.events"]) {
+  for (const table of ["core.users", "core.sessions", "pm.projects", "pm.epics", "pm.boards", "pm.sprints", "pm.tasks", "pm.task_dependencies", "pm.comments", "pm.attachments", "pm.notifications", "pm.webhook_deliveries", "audit.events"]) {
     assert.match(schema, new RegExp(`CREATE TABLE IF NOT EXISTS ${table.replace(".", "\\.")}`));
   }
 
+  assert.match(schema, /dashboard_access BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(schema, /pm_access BOOLEAN NOT NULL DEFAULT FALSE/);
   assert.match(schema, /actor_type TEXT NOT NULL CHECK \(actor_type IN \('user', 'system', 'n8n', 'agent'\)\)/);
   assert.match(schema, /storage_path TEXT NOT NULL/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS pm\.board_columns/);
@@ -580,7 +582,14 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /PM_TEST_DATABASE_URL/);
   assert.match(readme, /TrueNAS PM first-run order/);
   assert.match(readme, /Remote-User/);
+  assert.match(readme, /ProjectEGO Admin/);
+  assert.match(readme, /AUTH_MODE=core/);
+  assert.match(readme, /CORE_DATABASE_URL/);
+  assert.match(readme, /ADMIN_BOOTSTRAP_USERNAME/);
   assert.match(compose, /projectego-pm:/);
+  assert.match(compose, /projectego-admin:/);
+  assert.match(compose, /AUTH_MODE: core/);
+  assert.match(compose, /CORE_DATABASE_URL: postgres:\/\/projectego_admin:/);
   assert.match(compose, /PM_DATABASE_URL: postgres:\/\/projectego_admin:/);
 });
 

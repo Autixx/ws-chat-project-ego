@@ -16,9 +16,29 @@ CREATE TABLE IF NOT EXISTS core.users (
   email TEXT UNIQUE,
   display_name TEXT,
   external_subject TEXT UNIQUE,
+  password_hash TEXT,
+  global_role TEXT NOT NULL DEFAULT 'user' CHECK (global_role IN ('super_admin', 'admin', 'user')),
+  dashboard_access BOOLEAN NOT NULL DEFAULT FALSE,
+  pm_access BOOLEAN NOT NULL DEFAULT FALSE,
   disabled BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE core.users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE core.users ADD COLUMN IF NOT EXISTS global_role TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE core.users ADD COLUMN IF NOT EXISTS dashboard_access BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE core.users ADD COLUMN IF NOT EXISTS pm_access BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS core.sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES core.users(id) ON DELETE CASCADE,
+  session_hash TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  user_agent TEXT,
+  ip_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS pm.projects (

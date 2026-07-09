@@ -2,6 +2,7 @@ import type { Router } from "express";
 import express from "express";
 import type { AppConfig } from "../config.js";
 import type { AppDatabase } from "../db/database.js";
+import { CoreAuth } from "./coreAuth.js";
 import { LocalAuth } from "./localAuth.js";
 import { getCookie, requireUserMiddleware } from "./requireUser.js";
 import { localUserToAuthenticatedUser } from "./sessionStore.js";
@@ -10,11 +11,13 @@ import type { AuthContext } from "./requireUser.js";
 
 export function createAuthRouter(config: AppConfig, database: AppDatabase): Router {
   const router = express.Router();
-  const localAuth = new LocalAuth(database, config);
+  const auth = config.authMode === "core" ? new CoreAuth(config) : new LocalAuth(database, config);
   router.use(express.json({ limit: "32kb" }));
 
   router.post("/api/auth/register", async (req, res) => {
     try {
+      if (config.authMode !== "local") throw new Error("Registration is disabled in shared core auth mode.");
+      const localAuth = auth as LocalAuth;
       const result = await localAuth.registerUser({
         username: String(req.body?.username ?? ""),
         email: typeof req.body?.email === "string" ? req.body.email : undefined,
@@ -32,7 +35,7 @@ export function createAuthRouter(config: AppConfig, database: AppDatabase): Rout
 
   router.post("/api/auth/login", async (req, res) => {
     try {
-      const result = await localAuth.loginUser({
+      const result = await auth.loginUser({
         usernameOrEmail: String(req.body?.usernameOrEmail ?? ""),
         password: String(req.body?.password ?? ""),
         req
@@ -46,7 +49,7 @@ export function createAuthRouter(config: AppConfig, database: AppDatabase): Rout
 
   router.post("/api/auth/logout", async (req, res) => {
     const token = getCookie(req.headers.cookie, SESSION_COOKIE_NAME);
-    if (token) await localAuth.logoutSession(token);
+    if (token) await auth.logoutSession(token);
     clearSessionCookie(res, config);
     res.json({ ok: true });
   });

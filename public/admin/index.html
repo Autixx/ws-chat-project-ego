@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProjectEGO Admin</title>
+    <link rel="stylesheet" href="/admin.css" />
+  </head>
+  <body>
+    <main class="admin-shell">
+      <header class="admin-topbar">
+        <div>
+          <h1>ProjectEGO Admin</h1>
+          <p id="identityLine">Checking identity...</p>
+        </div>
+        <button id="logoutBtn" type="button" hidden>Logout</button>
+      </header>
+
+      <section id="loginPanel" class="auth-box">
+        <h2>Admin login</h2>
+        <p id="authMessage"></p>
+        <form id="loginForm">
+          <input id="loginName" autocomplete="username" placeholder="Username or email" />
+          <input id="loginPassword" autocomplete="current-password" type="password" placeholder="Password" />
+          <button type="submit">Login</button>
+        </form>
+      </section>
+
+      <section id="adminPanel" class="admin-grid" hidden>
+        <section class="panel">
+          <div class="panel-title">
+            <h2>Create user</h2>
+          </div>
+          <form id="userForm" class="user-form">
+            <input id="newUsername" placeholder="username" />
+            <input id="newEmail" placeholder="email optional" />
+            <input id="newDisplayName" placeholder="display name optional" />
+            <input id="newPassword" type="password" autocomplete="new-password" placeholder="password" />
+            <select id="newGlobalRole">
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+              <option value="super_admin">super admin</option>
+            </select>
+            <label><input id="newDashboardAccess" type="checkbox" /> Dashboard</label>
+            <label><input id="newPmAccess" type="checkbox" /> PM</label>
+            <button type="submit">Create</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">
+            <h2>Users</h2>
+            <button id="refreshBtn" type="button">Refresh</button>
+          </div>
+          <div id="userList" class="user-list"></div>
+        </section>
+      </section>
+    </main>
+    <script src="/admin.js" defer></script>
+  </body>
+</html>

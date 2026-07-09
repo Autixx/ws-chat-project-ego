@@ -120,7 +120,7 @@ PM must not receive Dashboard/agent secrets. Keep these variables out of the `pr
 
 The PM runtime validates this boundary on startup. If any of those variables are present, the PM service refuses to start.
 
-PM uses PostgreSQL as its planned source of truth through `PM_DATABASE_URL`. The initial schema contract is in:
+ProjectEGO uses PostgreSQL `core.users` as the shared identity and privilege source for Admin, Dashboard shared-auth mode, and PM. PM still uses `PM_DATABASE_URL` for its project-management data, but the same database also owns shared users, sessions, and access flags. The schema contract is in:
 
 ```text
 src/pm/postgres-schema.sql
@@ -150,7 +150,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.58 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.59 \
   node dist/pm/migrate.js
 ```
 
@@ -205,9 +205,9 @@ The schema separates logical areas:
 - `automation`
 - `audit`
 
-Dashboard may later receive read-only PM database access if needed. PM must not receive direct access to Dashboard chat history, prompts, agent sessions, Codex APIs, or automation secrets.
+Dashboard can use the shared users by running with `AUTH_MODE=core` and `CORE_DATABASE_URL`. PM does not receive direct access to Dashboard chat history, prompts, agent sessions, Codex APIs, or automation secrets.
 
-PM authorization is enforced server-side. Authelia identifies the user; the PM backend checks project membership and role before returning or mutating project data. The first API layer supports these roles:
+PM authorization is enforced server-side. Authelia can identify the user at the outer perimeter; the PM backend then resolves that identity against `core.users` and requires `pm_access=true` or a global admin role before returning or mutating project data. The first project API layer supports these project roles:
 
 - `admin`
 - `project_owner`
@@ -245,6 +245,50 @@ The first PM frontend shell supports:
 - outgoing PM webhooks for task/comment/attachment/project events with `X-ProjectEGO-Signature`
 - SMTP-backed project invites through `POST /api/pm/projects/:projectId/invites`
 - token-protected PM automation API for n8n at `/api/pm/automation/*`
+
+## ProjectEGO Admin
+
+Admin is the third service for shared user and privilege management. It should run on its own internal port and usually behind its own subdomain:
+
+```text
+https://admin.project-ego.online/
+```
+
+Admin uses the same PostgreSQL database as PM and stores users in `core.users`. It is the intended place to create users, reset passwords, disable users, and control access flags:
+
+- `dashboard_access`: user may sign in to Dashboard when Dashboard uses `AUTH_MODE=core`.
+- `pm_access`: user may enter PM after PM resolves the incoming identity.
+- `global_role`: `super_admin`, `admin`, or `user`.
+
+The first superuser is created automatically from environment variables on Admin startup:
+
+```env
+ADMIN_BOOTSTRAP_USERNAME=admin
+ADMIN_BOOTSTRAP_PASSWORD=<long-random-password>
+ADMIN_BOOTSTRAP_EMAIL=admin@example.local
+ADMIN_BOOTSTRAP_DISPLAY_NAME=ProjectEGO Admin
+```
+
+Admin runtime:
+
+```bash
+npm run build
+ADMIN_HOST=127.0.0.1 \
+ADMIN_PORT=19120 \
+ADMIN_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
+ADMIN_SESSION_SECRET=<long-random-secret> \
+npm run start:admin
+```
+
+Dashboard can use the same users by switching from local SQLite auth to shared core auth:
+
+```env
+AUTH_MODE=core
+CORE_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego
+REGISTRATION_ENABLED=false
+```
+
+In this mode Dashboard still keeps chat/runtime data in SQLite, but users and sessions come from PostgreSQL `core.users` / `core.sessions`. Registration is intentionally disabled; create users in Admin instead.
 
 PM outgoing webhooks are configured with:
 
@@ -569,6 +613,14 @@ COOKIE_SECURE=false
 LLM_PROVIDER=mock
 ```
 
+For local shared-auth testing, run PostgreSQL/PM migrations first and use:
+
+```env
+AUTH_MODE=core
+CORE_DATABASE_URL=postgres://projectego_admin:...@127.0.0.1:5432/projectego
+REGISTRATION_ENABLED=false
+```
+
 ## Production Without Docker
 
 ```bash
@@ -579,10 +631,10 @@ HOST=127.0.0.1 \
 PORT=19100 \
 DATA_DIR=/var/lib/projectego-ws-chat \
 SQLITE_PATH=/var/lib/projectego-ws-chat/projectego-chat.sqlite \
-AUTH_MODE=local \
+AUTH_MODE=core \
+CORE_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
 SESSION_SECRET=<long-random-secret> \
-REGISTRATION_ENABLED=true \
-REGISTRATION_INVITE_CODE=<invite-code> \
+REGISTRATION_ENABLED=false \
 COOKIE_SECURE=true \
 npm start
 ```
@@ -604,10 +656,10 @@ docker run --rm \
   -e PORT=19100 \
   -e DATA_DIR=/app/data \
   -e SQLITE_PATH=/app/data/projectego-chat.sqlite \
-  -e AUTH_MODE=local \
+  -e AUTH_MODE=core \
+  -e CORE_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
   -e SESSION_SECRET=dev-session-secret \
-  -e REGISTRATION_ENABLED=true \
-  -e REGISTRATION_INVITE_CODE=dev-invite \
+  -e REGISTRATION_ENABLED=false \
   -e COOKIE_SECURE=false \
   -v projectego-chat-data:/app/data \
   projectego-ws-chat:local
@@ -694,14 +746,38 @@ Forbidden env:
   DASHBOARD_INTERNAL_BASE_URL
 ```
 
+For Admin as a separate TrueNAS custom app, use:
+
+```text
+Image: ghcr.io/autixx/ws-chat-project-ego:latest
+Command: node dist/admin/server.js
+Pull policy: always
+Run as user/group: 568:568
+Container port: 19120
+Host port: 19120
+Required env:
+  NODE_ENV=production
+  ADMIN_HOST=0.0.0.0
+  ADMIN_PORT=19120
+  ADMIN_DATABASE_URL=postgres://projectego_admin:<password>@<postgres-host>:5432/projectego
+  ADMIN_SESSION_SECRET=<long-random-secret>
+  ADMIN_COOKIE_SECURE=true
+  ADMIN_BOOTSTRAP_USERNAME=admin
+  ADMIN_BOOTSTRAP_PASSWORD=<long-random-password>
+  ADMIN_BOOTSTRAP_EMAIL=admin@example.local
+  ADMIN_BOOTSTRAP_DISPLAY_NAME=ProjectEGO Admin
+```
+
 TrueNAS PM first-run order:
 
 1. Deploy PostgreSQL and confirm it is reachable from the PM container.
-2. Deploy PM with the env above.
-3. PM migrations apply automatically at container startup when `PM_AUTO_MIGRATE=true`.
-4. Put PM behind Authelia/Caddy so `Remote-User`, `Remote-Email`, and `Remote-Name` reach the PM container.
-5. Sign in through Authelia as the intended bootstrap username.
-6. Call `POST /api/pm/bootstrap` with `Authorization: Bearer <PM_BOOTSTRAP_TOKEN>` once, or use the Ops panel to confirm PM is still unbootstrapped before calling it.
+2. Deploy PM with the env above. PM migrations apply automatically at container startup when `PM_AUTO_MIGRATE=true`.
+3. Deploy Admin and sign in as `ADMIN_BOOTSTRAP_USERNAME`.
+4. Create or enable users in Admin and grant `dashboard_access` / `pm_access`.
+5. Deploy Dashboard with `AUTH_MODE=core` and the same PostgreSQL URL in `CORE_DATABASE_URL`.
+6. Put PM behind Authelia/Caddy so `Remote-User`, `Remote-Email`, and `Remote-Name` reach the PM container.
+7. Sign in through Authelia as a user that exists in Admin and has `pm_access=true`.
+8. Call `POST /api/pm/bootstrap` with `Authorization: Bearer <PM_BOOTSTRAP_TOKEN>` once, or use the Ops panel to confirm PM is still unbootstrapped before calling it.
 
 To update from the TrueNAS Apps UI:
 
@@ -758,7 +834,7 @@ Component status polling runs in the background. `LLM_PROVIDER=codex` requires `
 
 ## Caddy + Authelia
 
-The app implements its own local authentication. It can run behind Caddy and Authelia, but it does not depend on Authelia headers in `AUTH_MODE=local`.
+Dashboard implements its own authentication. In production with the shared Admin layer, use `AUTH_MODE=core`; Authelia can still protect the outer perimeter, but Dashboard does not use Authelia headers for application login.
 
 Example:
 
@@ -769,6 +845,23 @@ chat.project-ego.online {
     import auth_project_ego
 
     reverse_proxy 127.0.0.1:19100 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+```
+
+Admin should be exposed on its own subdomain and can also sit behind the same optional outer protection:
+
+```caddyfile
+admin.project-ego.online {
+    encode gzip zstd
+
+    import auth_project_ego
+
+    reverse_proxy 127.0.0.1:19120 {
         header_up Host {host}
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
@@ -797,17 +890,28 @@ pm.project-ego.online {
 }
 ```
 
-The PM bootstrap username must match `Remote-User`. PM does not use Dashboard local auth cookies.
+The PM bootstrap username must match `Remote-User`. PM does not use Dashboard cookies; it resolves the forwarded identity against shared `core.users`.
 
-## Local Authentication
+## Authentication
 
-The supported auth mode is:
+Dashboard supports two authentication modes.
+
+Shared core auth for production:
+
+```env
+AUTH_MODE=core
+CORE_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego
+```
+
+In shared core auth, users and sessions are stored in PostgreSQL `core.users` and `core.sessions`. Users are created and managed by ProjectEGO Admin. A user must have `dashboard_access=true` to sign in to Dashboard.
+
+Local SQLite auth remains available for isolated development:
 
 ```env
 AUTH_MODE=local
 ```
 
-Local auth uses SQLite tables for `users` and `sessions`.
+Local auth uses SQLite tables for `users` and `sessions` and is separate from PM/Admin users.
 
 - Passwords are hashed with Argon2id.
 - Raw session tokens are never stored in SQLite; only HMAC hashes are stored.
@@ -936,7 +1040,8 @@ For Docker, back up the mounted `/app/data` volume.
 | `MAX_LLM_ATTACHMENT_BYTES` | Maximum image attachment size forwarded to LLM as a download URL. Defaults to `10485760`. |
 | `AGENT_ATTACHMENT_TOKEN` | Bearer token required by `/api/internal/attachments/:attachmentId`. |
 | `DASHBOARD_INTERNAL_BASE_URL` | Base URL codex-agent can use to download internal attachments, for example `http://127.0.0.1:19100`. |
-| `AUTH_MODE` | `local`. |
+| `AUTH_MODE` | `core` for shared PostgreSQL users managed by Admin, or `local` for isolated SQLite development auth. |
+| `CORE_DATABASE_URL` | PostgreSQL URL for Dashboard shared auth when `AUTH_MODE=core`. Defaults to `PM_DATABASE_URL` if unset. |
 | `SESSION_SECRET` | Required in production for session hashing. |
 | `REGISTRATION_ENABLED` | Enables or disables new local registrations. |
 | `REGISTRATION_INVITE_CODE` | Required invite code when registration is enabled. |
@@ -959,6 +1064,15 @@ For Docker, back up the mounted `/app/data` volume.
 | `JOB_CALLBACK_TOKEN` | Optional bearer token for `POST /api/jobs/:jobId/events`. Required before workflow callbacks are accepted. |
 | `COMPONENT_STATUS_INTERVAL_MS` | Component reachability polling interval. Default `15000`. |
 | `COMPONENT_STATUS_TIMEOUT_MS` | Per-probe timeout. Default `2000`. |
+| `ADMIN_HOST` | Admin service bind host. |
+| `ADMIN_PORT` | Admin service port, default `19120`. |
+| `ADMIN_DATABASE_URL` | PostgreSQL URL for Admin. Defaults to `PM_DATABASE_URL` if unset. |
+| `ADMIN_SESSION_SECRET` | Admin session HMAC secret. Defaults to `SESSION_SECRET` if unset. |
+| `ADMIN_COOKIE_SECURE` | Sets the secure flag on Admin cookies. |
+| `ADMIN_BOOTSTRAP_USERNAME` | Optional startup superuser username. |
+| `ADMIN_BOOTSTRAP_PASSWORD` | Optional startup superuser password. |
+| `ADMIN_BOOTSTRAP_EMAIL` | Optional startup superuser email. |
+| `ADMIN_BOOTSTRAP_DISPLAY_NAME` | Optional startup superuser display name. |
 
 Codex agent example:
 
@@ -972,6 +1086,6 @@ CODEX_AGENT_HEALTH_URL=http://192.168.1.237:19090/healthz
 - Plane work-item creation is out of scope for Dashboard; route execution through n8n.
 - `CodexProvider` is non-streaming unless the configured backend streams or returns incremental events.
 - SQLite is intended for single-node deployment.
-- Password reset, email verification, and login rate limiting are not implemented yet.
+- Self-service password reset, email verification, and login rate limiting are not implemented yet.
 - No Telegram integration.
-- Roles exist in the schema, but there is no admin UI or advanced permission system yet.
+- Admin manages global user access flags; fine-grained PM permissions remain project-level roles.
