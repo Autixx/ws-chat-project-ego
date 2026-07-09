@@ -73,6 +73,29 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   overflow: hidden;
 }
 
+.pm-login-panel {
+  display: grid;
+  place-items: center;
+  min-height: 320px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.pm-login-box {
+  width: min(460px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.pm-login-box p {
+  min-height: 18px;
+  color: var(--yellow);
+  font-size: 12px;
+}
+
 .pm-topbar {
   display: grid;
   grid-template-columns: minmax(240px, 1fr) minmax(640px, auto) minmax(220px, 1fr);

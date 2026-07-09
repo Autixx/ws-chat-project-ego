@@ -29,6 +29,7 @@
             <button id="notificationToggle" type="button" class="notification-toggle">Notifications <span id="notificationCount">0</span></button>
             <button id="webhookToggle" type="button" class="notification-toggle">Webhooks <span id="webhookDeadCount">0</span></button>
             <button id="opsToggle" type="button" class="notification-toggle">Ops <span id="opsProblemCount">0</span></button>
+            <button id="pmLogoutBtn" type="button" class="notification-toggle" hidden>Logout</button>
           </div>
         </div>
         <div class="status-block">
@@ -78,7 +79,17 @@
 
       <section id="errorBanner" class="error-banner" hidden></section>
 
-      <section class="pm-grid">
+      <section id="pmLoginPanel" class="pm-login-panel">
+        <form id="pmLoginForm" class="pm-login-box">
+          <h2>ProjectEGO PM Login</h2>
+          <p id="pmLoginMessage"></p>
+          <input id="pmLoginName" autocomplete="username" placeholder="Username or email" />
+          <input id="pmLoginPassword" autocomplete="current-password" type="password" placeholder="Password" />
+          <button type="submit">Login</button>
+        </form>
+      </section>
+
+      <section id="pmGrid" class="pm-grid" hidden>
         <aside class="project-pane panel">
           <div class="panel-title">
             <h2>Projects</h2>

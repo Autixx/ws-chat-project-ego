@@ -515,6 +515,8 @@ test("PM service serves browser shell separately from Dashboard", async () => {
   const html = await response.text();
   assert.match(html, /ProjectEGO PM/);
   assert.match(html, /\/pm\.js/);
+  assert.match(html, /pmLoginForm/);
+  assert.match(html, /pmLogoutBtn/);
   assert.match(html, /theme-swatch/);
   assert.match(html, /bootstrapForm/);
   } finally {
@@ -581,11 +583,13 @@ test("PM README documents Kanban board API", () => {
   assert.match(compose, /PM_BOOTSTRAP_TOKEN:/);
   assert.match(readme, /PM_TEST_DATABASE_URL/);
   assert.match(readme, /TrueNAS PM first-run order/);
-  assert.match(readme, /Remote-User/);
+  assert.match(readme, /POST `?\/api\/pm\/auth\/login`?/);
+  assert.match(readme, /projectego_pm_session/);
   assert.match(readme, /ProjectEGO Admin/);
   assert.match(readme, /AUTH_MODE=core/);
   assert.match(readme, /CORE_DATABASE_URL/);
   assert.match(readme, /ADMIN_BOOTSTRAP_USERNAME/);
+  assert.doesNotMatch(readme, /PM uses Authelia as the identity source/);
   assert.match(compose, /projectego-pm:/);
   assert.match(compose, /projectego-admin:/);
   assert.match(compose, /AUTH_MODE: core/);
@@ -593,7 +597,7 @@ test("PM README documents Kanban board API", () => {
   assert.match(compose, /PM_DATABASE_URL: postgres:\/\/projectego_admin:/);
 });
 
-test("PM invite email keeps authentication in the existing identity provider", () => {
+test("PM invite email points users to ProjectEGO PM account access", () => {
   const mail = buildPmInviteEmail({
     to: "member@example.test",
     inviterName: "Tris",
@@ -604,7 +608,8 @@ test("PM invite email keeps authentication in the existing identity provider", (
   assert.equal(mail.to, "member@example.test");
   assert.match(mail.subject, /ProjectEGO/);
   assert.match(mail.text, /https:\/\/pm\.project-ego\.online\//);
-  assert.match(mail.text, /identity provider/);
+  assert.match(mail.text, /ProjectEGO PM account/);
+  assert.match(mail.text, /grant PM access/);
   assert.doesNotMatch(mail.text, /password/i);
 });
 

@@ -4,7 +4,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
-import { getAutheliaUser, type AuthenticatedUser } from "../auth/authelia.js";
+import type { AuthenticatedUser } from "../auth/authelia.js";
+import { getCookie } from "../auth/requireUser.js";
+import { PM_SESSION_COOKIE_NAME, PmCoreAuth } from "./auth.js";
 import { assertPmCanStart, forbiddenPmEnv, loadPmConfig, PM_FORBIDDEN_ENV_KEYS, type PmConfig } from "./config.js";
 import { PmEventHub } from "./events.js";
 import { PmWebhookDispatcher } from "./webhookDispatcher.js";
@@ -18,6 +20,7 @@ type PmIdentityRequest = express.Request & { pmIdentity?: AuthenticatedUser };
 export function createPmApp(pmConfig: PmConfig, store?: PmStore, events = new PmEventHub()): express.Express {
   const pmApp = express();
   const pmPublicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "public", "pm");
+  const pmAuth = store && pmConfig.databaseUrl && !pmConfig.devAuthBypass ? new PmCoreAuth(pmConfig) : undefined;
   pmApp.disable("x-powered-by");
   pmApp.use(express.json({ limit: "256kb" }));
 
@@ -39,7 +42,25 @@ export function createPmApp(pmConfig: PmConfig, store?: PmStore, events = new Pm
     pmApp.use("/api/pm/automation", createPmAutomationRouter(store, events, { pmConfig, webhooks }));
   }
 
-  pmApp.use("/api/pm", requirePmIdentity(pmConfig));
+  if (pmAuth) {
+    pmApp.post("/api/pm/auth/login", async (req, res) => {
+      try {
+        const result = await pmAuth.login({ usernameOrEmail: String(req.body?.usernameOrEmail ?? ""), password: String(req.body?.password ?? ""), req });
+        setPmCookie(res, result.sessionToken);
+        res.json({ user: result.user });
+      } catch {
+        res.status(401).json({ error: "Invalid username/email or password." });
+      }
+    });
+    pmApp.post("/api/pm/auth/logout", async (req, res) => {
+      const token = getCookie(req.headers.cookie, PM_SESSION_COOKIE_NAME);
+      if (token) await pmAuth.logout(token);
+      clearPmCookie(res);
+      res.json({ ok: true });
+    });
+  }
+
+  pmApp.use("/api/pm", requirePmIdentity(pmConfig, pmAuth));
 
   pmApp.get("/api/pm/security-boundary", (_req, res) => {
     res.json({
@@ -88,6 +109,7 @@ export async function startPmServer(pmConfig = loadPmConfig()): Promise<void> {
 
   const eventHub = new PmEventHub();
   const store = pmConfig.databaseUrl ? new PmStore(pmConfig.databaseUrl) : undefined;
+  const pmAuth = store && pmConfig.databaseUrl && !pmConfig.devAuthBypass ? new PmCoreAuth(pmConfig) : undefined;
   const app = createPmApp(pmConfig, store, eventHub);
   const server = createServer(app);
   const wsServer = new WebSocketServer({ noServer: true });
@@ -104,17 +126,14 @@ export async function startPmServer(pmConfig = loadPmConfig()): Promise<void> {
       : undefined;
   webhookRetryTimer?.unref();
 
-  server.on("upgrade", (req, socket, head) => {
+  server.on("upgrade", async (req, socket, head) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname !== "/pm/ws") {
       socket.destroy();
       return;
     }
 
-    const user = getAutheliaUser(req, {
-      devAuthBypass: pmConfig.devAuthBypass,
-      trustAutheliaHeaders: pmConfig.trustAutheliaHeaders
-    });
+    const user = await resolvePmIdentity(req, pmConfig, pmAuth);
     if (!user) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
@@ -138,12 +157,9 @@ export async function startPmServer(pmConfig = loadPmConfig()): Promise<void> {
   });
 }
 
-function requirePmIdentity(pmConfig: PmConfig) {
-  return (req: PmIdentityRequest, res: express.Response, next: express.NextFunction) => {
-    const user = getAutheliaUser(req, {
-      devAuthBypass: pmConfig.devAuthBypass,
-      trustAutheliaHeaders: pmConfig.trustAutheliaHeaders
-    });
+function requirePmIdentity(pmConfig: PmConfig, pmAuth?: PmCoreAuth) {
+  return async (req: PmIdentityRequest, res: express.Response, next: express.NextFunction) => {
+    const user = await resolvePmIdentity(req, pmConfig, pmAuth);
     if (!user) {
       res.status(401).json({ error: "Authentication required." });
       return;
@@ -151,6 +167,33 @@ function requirePmIdentity(pmConfig: PmConfig) {
     req.pmIdentity = user;
     next();
   };
+}
+
+async function resolvePmIdentity(req: express.Request | import("node:http").IncomingMessage, pmConfig: PmConfig, pmAuth?: PmCoreAuth): Promise<AuthenticatedUser | null> {
+  const token = getCookie(req.headers.cookie, PM_SESSION_COOKIE_NAME);
+  if (token && pmAuth) return pmAuth.userBySession(token);
+  if (pmConfig.devAuthBypass) {
+    return { username: "local-dev", email: "local-dev@example.test", name: "Local Dev", groups: ["dev"] };
+  }
+  return null;
+}
+
+function setPmCookie(res: express.Response, sessionToken: string): void {
+  res.cookie(PM_SESSION_COOKIE_NAME, sessionToken, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.PM_COOKIE_SECURE === "true" || process.env.COOKIE_SECURE === "true",
+    path: "/"
+  });
+}
+
+function clearPmCookie(res: express.Response): void {
+  res.clearCookie(PM_SESSION_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.PM_COOKIE_SECURE === "true" || process.env.COOKIE_SECURE === "true",
+    path: "/"
+  });
 }
 
 const isEntrypoint = process.argv[1] ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false;

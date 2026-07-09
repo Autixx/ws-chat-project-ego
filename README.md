@@ -6,7 +6,7 @@ Browser dashboard for ProjectEGO planning automation. The UI separates user requ
 
 - Express HTTP server with `GET /health`.
 - WebSocket endpoint at `GET /ws`.
-- Local SQLite-backed authentication with registration, login, logout, and session cookies.
+- Shared PostgreSQL-backed authentication through ProjectEGO Admin, with local SQLite auth available for isolated development.
 - SQLite-backed chat history:
   - conversations
   - messages
@@ -23,7 +23,7 @@ Browser dashboard for ProjectEGO planning automation. The UI separates user requ
 - n8n is the controlled workflow executor and future writer to Plane.
 - Plane is informational reachability only from the Dashboard; Dashboard does not create Plane work-items directly.
 - Multipart upload API for text-like files, media attachments, and image previews.
-- Local SQLite-backed registration, login, logout, and persistent sessions.
+- Dashboard and PM both use their own ProjectEGO login screens; Authelia is optional outer perimeter protection only.
 
 ## ProjectEGO PM Boundary
 
@@ -41,6 +41,8 @@ node dist/pm/server.js
 PM exposes:
 
 - `GET /health`
+- `POST /api/pm/auth/login`
+- `POST /api/pm/auth/logout`
 - `GET /api/pm/me`
 - `GET /api/pm/notifications`
 - `POST /api/pm/notifications/:notificationId/read`
@@ -150,7 +152,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.59 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.60 \
   node dist/pm/migrate.js
 ```
 
@@ -178,7 +180,7 @@ docker compose run --rm \
   node dist/pm/bootstrap.js
 ```
 
-The bootstrap username must match the username Authelia will send to PM through `Remote-User` when `PM_TRUST_AUTHELIA_HEADERS=true`.
+The bootstrap username must match a ProjectEGO Admin user that can sign in to PM with `pm_access=true`.
 
 Optional PostgreSQL integration tests can validate the PM store against a real test database:
 
@@ -207,7 +209,7 @@ The schema separates logical areas:
 
 Dashboard can use the shared users by running with `AUTH_MODE=core` and `CORE_DATABASE_URL`. PM does not receive direct access to Dashboard chat history, prompts, agent sessions, Codex APIs, or automation secrets.
 
-PM authorization is enforced server-side. Authelia can identify the user at the outer perimeter; the PM backend then resolves that identity against `core.users` and requires `pm_access=true` or a global admin role before returning or mutating project data. The first project API layer supports these project roles:
+PM authentication and authorization are enforced server-side through ProjectEGO's own login and `core.users`. The PM backend requires `pm_access=true` or a global admin role before returning or mutating project data. The first project API layer supports these project roles:
 
 - `admin`
 - `project_owner`
@@ -311,7 +313,7 @@ Webhook delivery attempts are persisted in PostgreSQL in `pm.webhook_deliveries`
 
 PM operational status is available through `GET /api/pm/operator/status` and the PM shell Ops panel. It reports DB reachability, applied PM schema migrations, webhook queue counts, SMTP configuration, and whether the PM automation token is configured without exposing secret values.
 
-The PM browser shell follows the Dashboard visual system: compact topbar, square status indicators, dark/contrast/custom theme controls, persistent custom colors, operator popovers, and the same monospace panel styling. The Ops panel also exposes a first-run bootstrap form while PM is unbootstrapped, so a TrueNAS deployment can be initialized from the browser after Authelia login.
+The PM browser shell follows the Dashboard visual system: compact topbar, square status indicators, dark/contrast/custom theme controls, persistent custom colors, operator popovers, and the same monospace panel styling. The Ops panel also exposes a first-run bootstrap form while PM is unbootstrapped, so a TrueNAS deployment can be initialized from the browser after ProjectEGO PM login.
 
 PM SMTP mail is configured with:
 
@@ -324,7 +326,7 @@ SMTP_FROM=pm@project-ego.online
 SMTP_TLS=false
 ```
 
-`GET /api/pm/mail/status` reports whether host/from are configured. `POST /api/pm/projects/:projectId/invites` sends a project invite email. Invites do not create PM passwords or a second login stack; invited users still authenticate through the configured identity provider.
+`GET /api/pm/mail/status` reports whether host/from are configured. `POST /api/pm/projects/:projectId/invites` sends a project invite email. Invites do not create passwords by themselves; create or enable the user in ProjectEGO Admin and grant `pm_access`.
 
 PM automation API is configured with a PM-specific bearer token:
 
@@ -735,8 +737,10 @@ Required env:
   PM_ATTACHMENTS_DIR=/app/data/attachments
   PM_DATABASE_URL=postgres://projectego_admin:<password>@<postgres-host>:5432/projectego
   PM_PUBLIC_BASE_URL=https://pm.project-ego.online
-  PM_TRUST_AUTHELIA_HEADERS=true
+  PM_TRUST_AUTHELIA_HEADERS=false
   PM_DEV_AUTH_BYPASS=false
+  PM_SESSION_SECRET=<long-random-secret>
+  PM_COOKIE_SECURE=true
 Forbidden env:
   CODEX_AGENT_TOKEN
   AGENT_ATTACHMENT_TOKEN
@@ -775,8 +779,8 @@ TrueNAS PM first-run order:
 3. Deploy Admin and sign in as `ADMIN_BOOTSTRAP_USERNAME`.
 4. Create or enable users in Admin and grant `dashboard_access` / `pm_access`.
 5. Deploy Dashboard with `AUTH_MODE=core` and the same PostgreSQL URL in `CORE_DATABASE_URL`.
-6. Put PM behind Authelia/Caddy so `Remote-User`, `Remote-Email`, and `Remote-Name` reach the PM container.
-7. Sign in through Authelia as a user that exists in Admin and has `pm_access=true`.
+6. Optionally put PM behind Authelia/Caddy as an outer perimeter only; do not forward identity headers as app authentication.
+7. Sign in through the PM login screen as a user that exists in Admin and has `pm_access=true`.
 8. Call `POST /api/pm/bootstrap` with `Authorization: Bearer <PM_BOOTSTRAP_TOKEN>` once, or use the Ops panel to confirm PM is still unbootstrapped before calling it.
 
 To update from the TrueNAS Apps UI:
@@ -832,9 +836,9 @@ The SQLite healthcheck verifies `SELECT 1`, `PRAGMA quick_check`, and write acce
 
 Component status polling runs in the background. `LLM_PROVIDER=codex` requires `CODEX_AGENT_URL` for generation; `CODEX_AGENT_HEALTH_URL` can override the probe URL. n8n reachability polling uses `N8N_BASE_URL`/`N8N_HEALTH_URL`, while Draft Inspector Apply uses `N8N_APPLY_WEBHOOK_URL` plus `N8N_WEBHOOK_TOKEN`. Plane reachability is informational only.
 
-## Caddy + Authelia
+## Caddy + Optional Authelia Perimeter
 
-Dashboard implements its own authentication. In production with the shared Admin layer, use `AUTH_MODE=core`; Authelia can still protect the outer perimeter, but Dashboard does not use Authelia headers for application login.
+Dashboard and PM implement their own ProjectEGO authentication. In production with the shared Admin layer, use `AUTH_MODE=core` for Dashboard and PM's built-in login for PM. Authelia can protect the outer perimeter, but neither Dashboard nor PM uses Authelia headers for application login.
 
 Example:
 
@@ -870,7 +874,7 @@ admin.project-ego.online {
 }
 ```
 
-ProjectEGO PM uses Authelia as the identity source when `PM_TRUST_AUTHELIA_HEADERS=true`. Caddy must forward the identity headers produced by the Authelia forward-auth snippet:
+ProjectEGO PM should be proxied like a normal web app. Do not forward `Remote-User`, `Remote-Email`, or `Remote-Name` as PM application identity:
 
 ```caddyfile
 pm.project-ego.online {
@@ -883,14 +887,11 @@ pm.project-ego.online {
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}
-        header_up Remote-User {http.request.header.Remote-User}
-        header_up Remote-Email {http.request.header.Remote-Email}
-        header_up Remote-Name {http.request.header.Remote-Name}
     }
 }
 ```
 
-The PM bootstrap username must match `Remote-User`. PM does not use Dashboard cookies; it resolves the forwarded identity against shared `core.users`.
+PM does not use Dashboard cookies and does not use Authelia identity headers. It signs in with `POST /api/pm/auth/login`, stores `projectego_pm_session`, and resolves that session against shared `core.users`.
 
 ## Authentication
 
@@ -904,6 +905,15 @@ CORE_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/proje
 ```
 
 In shared core auth, users and sessions are stored in PostgreSQL `core.users` and `core.sessions`. Users are created and managed by ProjectEGO Admin. A user must have `dashboard_access=true` to sign in to Dashboard.
+
+PM uses the same `core.users` table and its own login endpoint:
+
+```text
+POST /api/pm/auth/login
+POST /api/pm/auth/logout
+```
+
+A user must have `pm_access=true` or a global admin role to sign in to PM. PM stores its own cookie named `projectego_pm_session`.
 
 Local SQLite auth remains available for isolated development:
 
@@ -1064,6 +1074,8 @@ For Docker, back up the mounted `/app/data` volume.
 | `JOB_CALLBACK_TOKEN` | Optional bearer token for `POST /api/jobs/:jobId/events`. Required before workflow callbacks are accepted. |
 | `COMPONENT_STATUS_INTERVAL_MS` | Component reachability polling interval. Default `15000`. |
 | `COMPONENT_STATUS_TIMEOUT_MS` | Per-probe timeout. Default `2000`. |
+| `PM_SESSION_SECRET` | PM session HMAC secret. Defaults to `SESSION_SECRET` if unset. |
+| `PM_COOKIE_SECURE` | Sets the secure flag on PM cookies. Defaults through `COOKIE_SECURE` if unset. |
 | `ADMIN_HOST` | Admin service bind host. |
 | `ADMIN_PORT` | Admin service port, default `19120`. |
 | `ADMIN_DATABASE_URL` | PostgreSQL URL for Admin. Defaults to `PM_DATABASE_URL` if unset. |

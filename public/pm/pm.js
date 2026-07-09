@@ -53,6 +53,13 @@ const els = {
   webhookDeadCount: $("webhookDeadCount"),
   opsToggle: $("opsToggle"),
   opsProblemCount: $("opsProblemCount"),
+  pmLogoutBtn: $("pmLogoutBtn"),
+  pmLoginPanel: $("pmLoginPanel"),
+  pmLoginForm: $("pmLoginForm"),
+  pmLoginName: $("pmLoginName"),
+  pmLoginPassword: $("pmLoginPassword"),
+  pmLoginMessage: $("pmLoginMessage"),
+  pmGrid: $("pmGrid"),
   webhookPanel: $("webhookPanel"),
   webhookStatusFilter: $("webhookStatusFilter"),
   refreshWebhooksBtn: $("refreshWebhooksBtn"),
@@ -258,7 +265,57 @@ async function loadIdentity() {
   const { user } = await api("/api/pm/me");
   state.user = user;
   els.identityLine.textContent = `${user.displayName || user.username} / ${user.email || "no email"}`;
+  showPmApp();
+}
+
+function showPmLogin(message = "") {
+  state.user = null;
+  state.shouldReconnect = false;
+  if (state.ws) {
+    state.ws.close();
+    state.ws = null;
+  }
+  els.identityLine.textContent = "Not signed in";
+  els.pmLoginMessage.textContent = message;
+  els.pmLoginPanel.hidden = false;
+  els.pmGrid.hidden = true;
+  els.pmLogoutBtn.hidden = true;
+}
+
+function showPmApp() {
+  state.shouldReconnect = true;
+  els.pmLoginPanel.hidden = true;
+  els.pmGrid.hidden = false;
+  els.pmLogoutBtn.hidden = false;
+}
+
+async function loadAfterAuth() {
   await loadNotifications();
+  await loadWebhookDeliveries();
+  await loadOpsStatus();
+  await loadProjects();
+}
+
+async function loginPm(event) {
+  event.preventDefault();
+  try {
+    setError("");
+    await api("/api/pm/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ usernameOrEmail: els.pmLoginName.value, password: els.pmLoginPassword.value })
+    });
+    els.pmLoginPassword.value = "";
+    await loadIdentity();
+    await loadAfterAuth();
+    connectWs();
+  } catch (error) {
+    showPmLogin(error.message);
+  }
+}
+
+async function logoutPm() {
+  await api("/api/pm/auth/logout", { method: "POST" }).catch(() => undefined);
+  showPmLogin();
 }
 
 async function loadNotifications() {
@@ -1743,13 +1800,12 @@ async function boot() {
   try {
     await refreshHealth();
     await loadIdentity();
-    await loadWebhookDeliveries();
-    await loadOpsStatus();
-    await loadProjects();
+    await loadAfterAuth();
     connectWs();
     setInterval(refreshHealth, 15000);
   } catch (error) {
-    setError(error.message);
+    if (/Authentication required|HTTP 401/i.test(error.message)) showPmLogin();
+    else setError(error.message);
   }
 }
 
@@ -1764,6 +1820,8 @@ for (const input of [els.customBgColor, els.customFieldColor, els.customTextColo
 }
 
 els.bootstrapForm.addEventListener("submit", (event) => bootstrapPm(event).catch((error) => setError(error.message)));
+els.pmLoginForm.addEventListener("submit", (event) => loginPm(event).catch((error) => showPmLogin(error.message)));
+els.pmLogoutBtn.addEventListener("click", () => logoutPm().catch((error) => setError(error.message)));
 els.projectForm.addEventListener("submit", (event) => createProject(event).catch((error) => setError(error.message)));
 els.memberForm.addEventListener("submit", (event) => addMember(event).catch((error) => setError(error.message)));
 els.labelForm.addEventListener("submit", (event) => createLabel(event).catch((error) => setError(error.message)));

@@ -84,8 +84,10 @@ services:
       PM_BOOTSTRAP_PROJECT_KEY: PROJECTEGO
       PM_BOOTSTRAP_PROJECT_NAME: ProjectEGO
       PM_PUBLIC_BASE_URL: https://pm.project-ego.online
-      PM_TRUST_AUTHELIA_HEADERS: "true"
+      PM_TRUST_AUTHELIA_HEADERS: "false"
       PM_DEV_AUTH_BYPASS: "false"
+      PM_SESSION_SECRET: change-me-to-a-long-random-secret
+      PM_COOKIE_SECURE: "false"
       PM_AUTOMATION_TOKEN: ""
       PM_WEBHOOK_URLS: ""
       PM_WEBHOOK_SECRET: ""

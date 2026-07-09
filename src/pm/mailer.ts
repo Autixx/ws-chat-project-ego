@@ -28,7 +28,7 @@ export function buildPmInviteEmail(input: { to: string; inviterName: string; pro
       "",
       `Open: ${link}`,
       "",
-      "Sign in through the configured ProjectEGO identity provider. This email does not contain Dashboard or agent credentials."
+      "Sign in with your ProjectEGO PM account. If you do not have one yet, ask a ProjectEGO admin to create it and grant PM access."
     ].join("\n")
   };
 }
