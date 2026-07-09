@@ -509,10 +509,12 @@ test("PM service serves browser shell separately from Dashboard", async () => {
     const address = server.address();
     assert.ok(address && typeof address === "object");
     const response = await fetch(`http://127.0.0.1:${address.port}/`);
-    assert.equal(response.status, 200);
-    const html = await response.text();
-    assert.match(html, /ProjectEGO PM/);
-    assert.match(html, /\/pm\.js/);
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /ProjectEGO PM/);
+  assert.match(html, /\/pm\.js/);
+  assert.match(html, /theme-swatch/);
+  assert.match(html, /bootstrapForm/);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
@@ -563,6 +565,8 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /pm\.webhook_deliveries/);
   assert.match(readme, /Webhooks operator panel/);
   assert.match(readme, /PM shell Ops panel/);
+  assert.match(readme, /Dashboard visual system/);
+  assert.match(readme, /first-run bootstrap form/);
   assert.match(readme, /PM_WEBHOOK_MAX_ATTEMPTS/);
   assert.match(readme, /SMTP_HOST/);
   assert.match(readme, /PM_AUTOMATION_TOKEN/);

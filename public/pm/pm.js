@@ -1,3 +1,5 @@
+const THEME_STORAGE_KEY = "projectego-pm-theme";
+
 const state = {
   user: null,
   projects: [],
@@ -36,6 +38,11 @@ const els = {
   healthText: $("healthText"),
   wsDot: $("wsDot"),
   wsText: $("wsText"),
+  themeButtons: Array.from(document.querySelectorAll("[data-theme]")),
+  customBgColor: $("customBgColor"),
+  customFieldColor: $("customFieldColor"),
+  customTextColor: $("customTextColor"),
+  customLineColor: $("customLineColor"),
   errorBanner: $("errorBanner"),
   notificationToggle: $("notificationToggle"),
   notificationCount: $("notificationCount"),
@@ -54,6 +61,10 @@ const els = {
   opsPanel: $("opsPanel"),
   refreshOpsBtn: $("refreshOpsBtn"),
   opsStatusList: $("opsStatusList"),
+  bootstrapForm: $("bootstrapForm"),
+  bootstrapToken: $("bootstrapToken"),
+  bootstrapProjectKey: $("bootstrapProjectKey"),
+  bootstrapProjectName: $("bootstrapProjectName"),
   includeArchived: $("includeArchived"),
   projectForm: $("projectForm"),
   projectKey: $("projectKey"),
@@ -139,6 +150,84 @@ function setError(message) {
   els.errorBanner.textContent = message || "";
 }
 
+function setTheme(theme, { persist = true } = {}) {
+  document.body.classList.remove("theme-dark", "theme-contrast", "theme-custom");
+  document.body.classList.add(theme);
+  for (const button of els.themeButtons) button.classList.toggle("active", button.dataset.theme === theme);
+  if (theme === "theme-custom") applyCustomTheme();
+  if (persist) saveThemeSettings(theme);
+}
+
+function applyCustomTheme() {
+  document.documentElement.style.setProperty("--custom-bg", els.customBgColor.value);
+  document.documentElement.style.setProperty("--custom-panel", mixColor(els.customBgColor.value, "#ffffff", 0.06));
+  document.documentElement.style.setProperty("--custom-field", els.customFieldColor.value);
+  document.documentElement.style.setProperty("--custom-text", els.customTextColor.value);
+  document.documentElement.style.setProperty("--custom-muted", mixColor(els.customTextColor.value, els.customBgColor.value, 0.35));
+  document.documentElement.style.setProperty("--custom-line", els.customLineColor.value);
+}
+
+function saveThemeSettings(theme = activeTheme()) {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify({ theme, colors: customThemeColors() }));
+  } catch {
+    // Theme persistence is best-effort.
+  }
+}
+
+function loadThemeSettings() {
+  try {
+    const raw = localStorage.getItem(THEME_STORAGE_KEY);
+    if (!raw) {
+      applyCustomTheme();
+      setTheme("theme-dark", { persist: false });
+      return;
+    }
+    const saved = JSON.parse(raw);
+    if (saved?.colors && typeof saved.colors === "object") {
+      setColorInput(els.customBgColor, saved.colors.bg);
+      setColorInput(els.customFieldColor, saved.colors.field);
+      setColorInput(els.customTextColor, saved.colors.text);
+      setColorInput(els.customLineColor, saved.colors.line);
+    }
+    const theme = ["theme-dark", "theme-contrast", "theme-custom"].includes(saved?.theme) ? saved.theme : "theme-dark";
+    setTheme(theme, { persist: false });
+  } catch {
+    applyCustomTheme();
+    setTheme("theme-dark", { persist: false });
+  }
+}
+
+function customThemeColors() {
+  return {
+    bg: els.customBgColor.value,
+    field: els.customFieldColor.value,
+    text: els.customTextColor.value,
+    line: els.customLineColor.value
+  };
+}
+
+function activeTheme() {
+  if (document.body.classList.contains("theme-custom")) return "theme-custom";
+  if (document.body.classList.contains("theme-contrast")) return "theme-contrast";
+  return "theme-dark";
+}
+
+function setColorInput(input, value) {
+  if (typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value)) input.value = value;
+}
+
+function mixColor(first, second, secondRatio) {
+  const a = parseHex(first);
+  const b = parseHex(second);
+  const mixed = a.map((value, index) => Math.round(value * (1 - secondRatio) + b[index] * secondRatio));
+  return `#${mixed.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function parseHex(value) {
+  return [value.slice(1, 3), value.slice(3, 5), value.slice(5, 7)].map((part) => Number.parseInt(part, 16));
+}
+
 async function api(path, options = {}) {
   const isFormData = options.body instanceof FormData;
   const response = await fetch(path, {
@@ -157,10 +246,10 @@ async function api(path, options = {}) {
 async function refreshHealth() {
   try {
     const health = await api("/health", { headers: {} });
-    els.healthDot.className = `dot ${health.status === "ok" ? "green" : "yellow"}`;
+    els.healthDot.className = `sq ${health.status === "ok" ? "green" : "yellow"}`;
     els.healthText.textContent = `${health.status}${health.databaseReachable ? "" : " / db unavailable"}`;
   } catch (error) {
-    els.healthDot.className = "dot red";
+    els.healthDot.className = "sq red";
     els.healthText.textContent = error.message;
   }
 }
@@ -569,6 +658,11 @@ function renderOpsStatus() {
     !status.automation?.configured
   ].filter(Boolean).length;
   els.opsProblemCount.textContent = String(problems);
+  els.bootstrapForm.hidden = Boolean(status.bootstrap?.bootstrapped);
+  if (!status.bootstrap?.bootstrapped) {
+    els.bootstrapProjectKey.value ||= "PROJECTEGO";
+    els.bootstrapProjectName.value ||= "ProjectEGO";
+  }
   els.opsStatusList.replaceChildren(
     opsCard("Bootstrap", status.bootstrap?.bootstrapped ? "ok" : "warn", [
       `bootstrapped: ${yesNo(status.bootstrap?.bootstrapped)}`,
@@ -1418,6 +1512,23 @@ async function retryWebhookDelivery(delivery) {
   await loadWebhookDeliveries();
 }
 
+async function bootstrapPm(event) {
+  event.preventDefault();
+  const token = els.bootstrapToken.value.trim();
+  if (!token) throw new Error("PM_BOOTSTRAP_TOKEN is required.");
+  await api("/api/pm/bootstrap", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      projectKey: els.bootstrapProjectKey.value.trim() || undefined,
+      projectName: els.bootstrapProjectName.value.trim() || undefined
+    })
+  });
+  els.bootstrapToken.value = "";
+  await loadOpsStatus();
+  await loadProjects();
+}
+
 async function createComment(event) {
   event.preventDefault();
   if (!state.activeTask) return;
@@ -1487,7 +1598,7 @@ function connectWs() {
   const ws = new WebSocket(`${protocol}//${location.host}/pm/ws`);
   state.ws = ws;
   ws.addEventListener("open", () => {
-    els.wsDot.className = "dot green";
+    els.wsDot.className = "sq green";
     els.wsText.textContent = "ws connected";
   });
   ws.addEventListener("message", async (event) => {
@@ -1502,7 +1613,7 @@ function connectWs() {
     }
   });
   ws.addEventListener("close", () => {
-    els.wsDot.className = "dot red";
+    els.wsDot.className = "sq red";
     els.wsText.textContent = "ws disconnected";
     if (state.shouldReconnect) setTimeout(connectWs, 1500);
   });
@@ -1642,6 +1753,17 @@ async function boot() {
   }
 }
 
+loadThemeSettings();
+
+for (const button of els.themeButtons) button.addEventListener("click", () => setTheme(button.dataset.theme));
+for (const input of [els.customBgColor, els.customFieldColor, els.customTextColor, els.customLineColor]) {
+  input.addEventListener("input", () => {
+    applyCustomTheme();
+    setTheme("theme-custom");
+  });
+}
+
+els.bootstrapForm.addEventListener("submit", (event) => bootstrapPm(event).catch((error) => setError(error.message)));
 els.projectForm.addEventListener("submit", (event) => createProject(event).catch((error) => setError(error.message)));
 els.memberForm.addEventListener("submit", (event) => addMember(event).catch((error) => setError(error.message)));
 els.labelForm.addEventListener("submit", (event) => createLabel(event).catch((error) => setError(error.message)));

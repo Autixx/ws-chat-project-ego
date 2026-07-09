@@ -150,7 +150,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.57 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.58 \
   node dist/pm/migrate.js
 ```
 
@@ -266,6 +266,8 @@ Each PM event is posted as JSON with:
 Webhook delivery attempts are persisted in PostgreSQL in `pm.webhook_deliveries`. Failed deliveries are retried with exponential backoff until `PM_WEBHOOK_MAX_ATTEMPTS`, then marked `dead` for operator inspection instead of being silently lost. The PM browser shell includes a Webhooks operator panel for delivery status, and authenticated PM users can inspect/retry deliveries through `GET /api/pm/webhook-deliveries` and `POST /api/pm/webhook-deliveries/:deliveryId/retry`.
 
 PM operational status is available through `GET /api/pm/operator/status` and the PM shell Ops panel. It reports DB reachability, applied PM schema migrations, webhook queue counts, SMTP configuration, and whether the PM automation token is configured without exposing secret values.
+
+The PM browser shell follows the Dashboard visual system: compact topbar, square status indicators, dark/contrast/custom theme controls, persistent custom colors, operator popovers, and the same monospace panel styling. The Ops panel also exposes a first-run bootstrap form while PM is unbootstrapped, so a TrueNAS deployment can be initialized from the browser after Authelia login.
 
 PM SMTP mail is configured with:
 

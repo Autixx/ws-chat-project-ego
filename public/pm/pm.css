@@ -5,12 +5,34 @@
   --field: #020606;
   --line: #29413f;
   --text: #f2fbf8;
-  --muted: #9fb4af;
+  --muted: #b7c8c4;
   --accent: #44a4ff;
   --green: #00d084;
   --red: #ff4d4d;
   --yellow: #e7c94d;
+  --gray: #737b7a;
+  --white: #ffffff;
   font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+}
+
+body.theme-contrast {
+  --bg: #000;
+  --panel: #000;
+  --panel-2: #050505;
+  --line: #f2f2f2;
+  --field: #000;
+  --text: #fff;
+  --muted: #e0e0e0;
+}
+
+body.theme-custom {
+  --bg: var(--custom-bg, #050808);
+  --panel: var(--custom-panel, #0a1111);
+  --panel-2: var(--custom-field, #020606);
+  --line: var(--custom-line, #29413f);
+  --field: var(--custom-field, #020606);
+  --text: var(--custom-text, #f2fbf8);
+  --muted: var(--custom-muted, #b7c8c4);
 }
 
 * { box-sizing: border-box; }
@@ -45,17 +67,18 @@ h1 { font-size: 18px; }
 h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .pm-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .pm-topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(640px, auto) minmax(220px, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 14px;
+  gap: 10px;
+  padding: 6px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
@@ -65,11 +88,69 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   font-size: 12px;
 }
 
-.pm-status {
+.pm-status, .status-line, .pm-actions, .theme-picker {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex-wrap: wrap;
+}
+
+.title-block {
+  display: grid;
+  gap: 3px;
+}
+
+.toolbar {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.theme-picker {
+  color: var(--muted);
+  justify-content: center;
+  font-size: 12px;
+}
+
+.theme-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.theme-picker input[type="color"] {
+  width: 28px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--field);
+}
+
+.theme-swatch {
+  width: 10px;
+  height: 10px;
+  min-height: 10px;
+  padding: 0;
+  border: 1px solid var(--text);
+  cursor: pointer;
+}
+
+.theme-swatch.custom { background: linear-gradient(135deg, var(--field) 0 48%, var(--text) 48% 52%, var(--line) 52% 100%); }
+.theme-swatch.dark { background: #737b7a; }
+.theme-swatch.contrast { background: #000; }
+
+.theme-swatch.active {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.status-block {
+  display: grid;
+  justify-self: end;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .notification-toggle {
@@ -86,16 +167,17 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   color: var(--yellow);
 }
 
-.dot {
+.dot, .sq {
   width: 10px;
   height: 10px;
   border: 1px solid var(--line);
   display: inline-block;
 }
-.dot.green { background: var(--green); }
-.dot.red { background: var(--red); }
-.dot.yellow { background: var(--yellow); }
-.dot.gray { background: #6f7775; }
+.dot.green, .sq.green { background: var(--green); }
+.dot.red, .sq.red { background: var(--red); }
+.dot.yellow, .sq.yellow { background: var(--yellow); }
+.dot.gray, .sq.gray { background: var(--gray); }
+.sq.white { background: var(--white); }
 
 .error-banner {
   padding: 8px 14px;
@@ -195,6 +277,14 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   align-content: start;
   gap: 7px;
   padding-top: 8px;
+}
+
+.bootstrap-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(100px, .7fr) minmax(0, 1fr) auto;
+  gap: 7px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .ops-card {
@@ -776,6 +866,20 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 }
 
 @media (max-width: 900px) {
+  .pm-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+  .pm-topbar {
+    grid-template-columns: 1fr;
+  }
+  .status-block {
+    justify-self: start;
+  }
+  .bootstrap-form {
+    grid-template-columns: 1fr;
+  }
   .pm-grid {
     grid-template-columns: 1fr;
   }

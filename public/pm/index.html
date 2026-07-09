@@ -6,19 +6,33 @@
     <title>ProjectEGO PM</title>
     <link rel="stylesheet" href="/pm.css" />
   </head>
-  <body>
+  <body class="theme-dark">
     <main class="pm-shell">
       <header class="pm-topbar">
-        <div>
+        <div class="title-block">
           <h1>ProjectEGO PM</h1>
           <p id="identityLine">Checking identity...</p>
+          <div class="status-line"><span id="wsDot" class="sq red"></span><span>STATUS WS</span><span id="wsText">disconnected</span></div>
         </div>
-        <div class="pm-status">
-          <button id="notificationToggle" type="button" class="notification-toggle">Notifications <span id="notificationCount">0</span></button>
-          <button id="webhookToggle" type="button" class="notification-toggle">Webhooks <span id="webhookDeadCount">0</span></button>
-          <button id="opsToggle" type="button" class="notification-toggle">Ops <span id="opsProblemCount">0</span></button>
-          <span id="healthDot" class="dot gray"></span><span id="healthText">health unknown</span>
-          <span id="wsDot" class="dot gray"></span><span id="wsText">ws disconnected</span>
+        <div class="toolbar">
+          <div class="theme-picker" aria-label="Theme">
+            <span>Theme</span>
+            <button class="theme-swatch custom" type="button" data-theme="theme-custom" aria-label="Custom theme"></button>
+            <button class="theme-swatch dark active" type="button" data-theme="theme-dark" aria-label="Dark theme"></button>
+            <button class="theme-swatch contrast" type="button" data-theme="theme-contrast" aria-label="Black contrast theme"></button>
+            <label>BG<input id="customBgColor" type="color" value="#050808" /></label>
+            <label>Fields<input id="customFieldColor" type="color" value="#020606" /></label>
+            <label>Text<input id="customTextColor" type="color" value="#f2fbf8" /></label>
+            <label>Lines<input id="customLineColor" type="color" value="#29413f" /></label>
+          </div>
+          <div class="pm-actions">
+            <button id="notificationToggle" type="button" class="notification-toggle">Notifications <span id="notificationCount">0</span></button>
+            <button id="webhookToggle" type="button" class="notification-toggle">Webhooks <span id="webhookDeadCount">0</span></button>
+            <button id="opsToggle" type="button" class="notification-toggle">Ops <span id="opsProblemCount">0</span></button>
+          </div>
+        </div>
+        <div class="status-block">
+          <div><span id="healthDot" class="sq gray"></span>PM: <span id="healthText">health unknown</span></div>
         </div>
       </header>
 
@@ -53,6 +67,12 @@
           <h2>PM operations</h2>
           <button id="refreshOpsBtn" type="button">Refresh</button>
         </div>
+        <form id="bootstrapForm" class="bootstrap-form" hidden>
+          <input id="bootstrapToken" type="password" autocomplete="off" placeholder="PM_BOOTSTRAP_TOKEN" />
+          <input id="bootstrapProjectKey" maxlength="32" placeholder="Project key" />
+          <input id="bootstrapProjectName" maxlength="120" placeholder="Project name" />
+          <button type="submit">Bootstrap PM</button>
+        </form>
         <div id="opsStatusList" class="ops-status-list"></div>
       </section>
 
