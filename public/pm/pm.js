@@ -8,12 +8,15 @@ const state = {
   savedFilters: [],
   epics: [],
   sprints: [],
+  boards: [],
   tasks: [],
   board: null,
   columns: [],
   boardTasks: [],
   activeProjectId: null,
   activeEpicId: null,
+  activeBoardId: null,
+  editingProjectId: null,
   activeSprintId: "__backlog",
   activeTask: null,
   taskLabels: [],
@@ -60,6 +63,21 @@ const els = {
   pmLoginPassword: $("pmLoginPassword"),
   pmLoginMessage: $("pmLoginMessage"),
   pmGrid: $("pmGrid"),
+  projectSidebarToggle: $("projectSidebarToggle"),
+  projectSidebarBackdrop: $("projectSidebarBackdrop"),
+  closeProjectSidebarBtn: $("closeProjectSidebarBtn"),
+  openCreateProjectBtn: $("openCreateProjectBtn"),
+  projectModal: $("projectModal"),
+  projectModalTitle: $("projectModalTitle"),
+  cancelProjectModalBtn: $("cancelProjectModalBtn"),
+  boardSelect: $("boardSelect"),
+  boardModal: $("boardModal"),
+  boardForm: $("boardForm"),
+  boardName: $("boardName"),
+  boardEpic: $("boardEpic"),
+  createBoardBtn: $("createBoardBtn"),
+  cancelBoardModalBtn: $("cancelBoardModalBtn"),
+  taskSidebarToggle: $("taskSidebarToggle"),
   webhookPanel: $("webhookPanel"),
   webhookStatusFilter: $("webhookStatusFilter"),
   refreshWebhooksBtn: $("refreshWebhooksBtn"),
@@ -149,7 +167,11 @@ const els = {
   confirmTitle: $("confirmTitle"),
   confirmMessage: $("confirmMessage"),
   confirmCancelBtn: $("confirmCancelBtn"),
-  confirmOkBtn: $("confirmOkBtn")
+  confirmOkBtn: $("confirmOkBtn"),
+  mediaModal: $("mediaModal"),
+  mediaTitle: $("mediaTitle"),
+  mediaContent: $("mediaContent"),
+  closeMediaModalBtn: $("closeMediaModalBtn")
 };
 
 function setError(message) {
@@ -355,6 +377,7 @@ async function loadProjectData() {
   els.ensureBoardBtn.disabled = !project;
   els.memberForm.querySelector("button").disabled = !project;
   els.labelForm.querySelector("button").disabled = !project;
+  els.createBoardBtn.disabled = !project;
   els.saveFilterBtn.disabled = !project;
   els.updateFilterBtn.disabled = !project || !els.savedFilterSelect.value;
   els.deleteFilterBtn.disabled = !project || !els.savedFilterSelect.value;
@@ -369,6 +392,7 @@ async function loadProjectData() {
     state.savedFilters = [];
     state.epics = [];
     state.sprints = [];
+    state.boards = [];
     state.tasks = [];
     state.board = null;
     state.columns = [];
@@ -377,37 +401,49 @@ async function loadProjectData() {
     renderMembers();
     renderProjectLabels();
     renderSavedFilters();
+    renderBoardSelect();
     renderEpics();
     renderSprints();
     renderTasks();
     renderBoard();
     return;
   }
-  const [membersBody, labelsBody, filtersBody, epicsBody, sprintsBody, tasksBody, boardBody] = await Promise.all([
+  const [membersBody, labelsBody, filtersBody, epicsBody, sprintsBody, tasksBody, boardsBody] = await Promise.all([
     api(`/api/pm/projects/${project.id}/members`),
     api(`/api/pm/projects/${project.id}/labels`),
     api(`/api/pm/projects/${project.id}/filters`),
     api(`/api/pm/projects/${project.id}/epics`),
     api(`/api/pm/projects/${project.id}/sprints?includeCompleted=${els.includeCompletedSprints.checked ? "true" : "false"}${state.activeEpicId ? `&epicId=${encodeURIComponent(state.activeEpicId)}` : ""}`),
     api(`/api/pm/projects/${project.id}/tasks${taskSearchQuery()}`),
-    ensureDefaultBoard(project.id)
+    api(`/api/pm/projects/${project.id}/boards${state.activeEpicId ? `?epicId=${encodeURIComponent(state.activeEpicId)}` : ""}`)
   ]);
   state.members = membersBody.members;
   state.labels = labelsBody.labels;
   state.savedFilters = filtersBody.filters;
   state.epics = epicsBody.epics;
   state.sprints = sprintsBody.sprints;
+  state.boards = boardsBody.boards;
+  if (state.activeBoardId && !state.boards.some((board) => board.id === state.activeBoardId)) state.activeBoardId = null;
   if (state.activeSprintId && !["__all", "__backlog"].includes(state.activeSprintId) && !state.sprints.some((sprint) => sprint.id === state.activeSprintId)) {
     state.activeSprintId = "__backlog";
   }
   state.tasks = tasksBody.tasks;
-  state.board = boardBody.board;
-  state.columns = boardBody.columns;
-  await loadBoardSnapshot();
+  if (!state.boards.length) {
+    const boardBody = await ensureDefaultBoard(project.id);
+    state.boards = [boardBody.board];
+    state.activeBoardId = boardBody.board.id;
+    state.board = boardBody.board;
+    state.columns = boardBody.columns;
+    await loadBoardSnapshot();
+  } else {
+    if (!state.activeBoardId) state.activeBoardId = state.boards[0].id;
+    await loadSelectedBoard();
+  }
   renderActiveProject();
   renderMembers();
   renderProjectLabels();
   renderSavedFilters();
+  renderBoardSelect();
   renderEpics();
   renderSprints();
   renderTasks();
@@ -421,6 +457,19 @@ async function ensureDefaultBoard(projectId) {
   });
 }
 
+async function loadSelectedBoard() {
+  if (!state.activeBoardId) {
+    state.board = null;
+    state.columns = [];
+    state.boardTasks = [];
+    return;
+  }
+  const snapshot = await api(`/api/pm/boards/${state.activeBoardId}`);
+  state.board = snapshot.board;
+  state.columns = snapshot.columns;
+  state.boardTasks = snapshot.tasks;
+}
+
 async function loadBoardSnapshot() {
   if (!state.board) {
     state.boardTasks = [];
@@ -430,6 +479,25 @@ async function loadBoardSnapshot() {
   state.board = snapshot.board;
   state.columns = snapshot.columns;
   state.boardTasks = snapshot.tasks;
+}
+
+function renderBoardSelect() {
+  els.boardSelect.replaceChildren(
+    option("Boards", ""),
+    ...state.boards.map((board) => option(board.name, board.id))
+  );
+  els.boardSelect.value = state.activeBoardId || "";
+  els.boardEpic.replaceChildren(
+    option("Project board", ""),
+    ...state.epics.map((epic) => option(epic.title, epic.id))
+  );
+}
+
+function option(label, value) {
+  const item = document.createElement("option");
+  item.value = value;
+  item.textContent = label;
+  return item;
 }
 
 function activeProject() {
@@ -443,21 +511,36 @@ function taskSearchQuery() {
 
 function renderProjects() {
   els.projectList.replaceChildren(
-    ...state.projects.map((project) => {
-      const button = document.createElement("button");
-      button.type = "button";
+    ...state.projects.map((project, index) => {
+      const button = document.createElement("article");
       button.className = `project-card ${project.id === state.activeProjectId ? "active" : ""}`;
+      button.dataset.projectId = project.id;
+      button.tabIndex = 0;
       button.innerHTML = `
-        <div class="card-title">${escapeHtml(project.key)} / ${escapeHtml(project.name)}${project.archivedAt ? " / archived" : ""}</div>
-        <div class="card-meta">role: ${escapeHtml(project.role || "viewer")} / v${project.version}</div>
-        <div class="card-body">${escapeHtml(project.description || "")}</div>
+        <div class="card-title">${escapeHtml(project.name)}${project.archivedAt ? " / archived" : ""}</div>
+        <span class="project-drop-line"></span>
+        <button class="project-edit-button" type="button" title="Edit project">⚙</button>
       `;
-      button.addEventListener("click", async () => {
+      const activate = async () => {
         state.activeProjectId = project.id;
         state.activeEpicId = null;
+        state.activeBoardId = null;
         state.activeSprintId = "__backlog";
+        closeProjectSidebar();
         await loadProjectData();
+      };
+      button.addEventListener("click", activate);
+      button.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          activate().catch((error) => setError(error.message));
+        }
       });
+      button.querySelector(".project-edit-button").addEventListener("click", (event) => {
+        event.stopPropagation();
+        openProjectModal(project);
+      });
+      wireProjectDrag(button, index);
       return button;
     })
   );
@@ -473,6 +556,94 @@ function renderActiveProject() {
   els.activeProjectName.textContent = `${project.key} / ${project.name}`;
   els.activeProjectMeta.textContent = `role: ${project.role || "viewer"} / version ${project.version} / updated ${formatDate(project.updatedAt)}`;
   els.archiveProjectBtn.textContent = project.archivedAt ? "Unarchive" : "Archive";
+}
+
+function openProjectSidebar() {
+  els.projectSidebarBackdrop.hidden = false;
+}
+
+function closeProjectSidebar() {
+  els.projectSidebarBackdrop.hidden = true;
+}
+
+function openProjectModal(project = null) {
+  state.editingProjectId = project?.id || null;
+  els.projectModalTitle.textContent = project ? "Edit project" : "Create project";
+  els.projectKey.value = project?.key || "";
+  els.projectName.value = project?.name || "";
+  els.projectDescription.value = project?.description || "";
+  els.projectModal.hidden = false;
+}
+
+function closeProjectModal() {
+  state.editingProjectId = null;
+  els.projectModal.hidden = true;
+  els.projectForm.reset();
+}
+
+function openBoardModal() {
+  if (!activeProject()) return;
+  els.boardName.value = "";
+  els.boardEpic.value = state.activeEpicId || "";
+  els.boardModal.hidden = false;
+}
+
+function closeBoardModal() {
+  els.boardModal.hidden = true;
+  els.boardForm.reset();
+}
+
+function wireProjectDrag(button, startIndex) {
+  let timer = 0;
+  button.addEventListener("mousedown", () => {
+    timer = window.setTimeout(() => {
+      button.draggable = true;
+      button.classList.add("project-drag-ready");
+    }, 500);
+  });
+  for (const eventName of ["mouseup", "mouseleave"]) {
+    button.addEventListener(eventName, () => {
+      clearTimeout(timer);
+      if (!button.classList.contains("dragging")) button.draggable = false;
+      button.classList.remove("project-drag-ready");
+    });
+  }
+  button.addEventListener("dragstart", (event) => {
+    if (!button.draggable) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(startIndex));
+    button.classList.add("dragging");
+  });
+  button.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    clearProjectDropLines();
+    button.classList.add("drop-before");
+  });
+  button.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const from = Number(event.dataTransfer.getData("text/plain"));
+    const to = Number(startIndex);
+    clearProjectDropLines();
+    if (!Number.isFinite(from) || from === to) return;
+    const next = [...state.projects];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    state.projects = next;
+    renderProjects();
+  });
+  button.addEventListener("dragend", () => {
+    button.classList.remove("dragging", "project-drag-ready");
+    button.draggable = false;
+    clearProjectDropLines();
+    renderProjects();
+  });
+}
+
+function clearProjectDropLines() {
+  for (const item of els.projectList.querySelectorAll(".drop-before")) item.classList.remove("drop-before");
 }
 
 function renderMembers() {
@@ -569,6 +740,7 @@ function renderEpics() {
       button.innerHTML = `<div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.status)} / ${escapeHtml(epic.priority)}</div>`;
       button.addEventListener("click", async () => {
         state.activeEpicId = state.activeEpicId === epic.id ? null : epic.id;
+        state.activeBoardId = null;
         state.activeSprintId = "__backlog";
         await loadProjectData();
       });
@@ -934,17 +1106,33 @@ function closeTask() {
 async function createProject(event) {
   event.preventDefault();
   setError("");
-  const project = await api("/api/pm/projects", {
+  const payload = {
+    key: els.projectKey.value,
+    name: els.projectName.value,
+    description: els.projectDescription.value
+  };
+  const result = state.editingProjectId
+    ? await api(`/api/pm/projects/${state.editingProjectId}`, { method: "PATCH", body: JSON.stringify(payload) })
+    : await api("/api/pm/projects", { method: "POST", body: JSON.stringify(payload) });
+  closeProjectModal();
+  state.activeProjectId = result.project.id;
+  await loadProjects();
+}
+
+async function createBoard(event) {
+  event.preventDefault();
+  const project = activeProject();
+  if (!project) return;
+  const result = await api(`/api/pm/projects/${project.id}/boards/kanban`, {
     method: "POST",
     body: JSON.stringify({
-      key: els.projectKey.value,
-      name: els.projectName.value,
-      description: els.projectDescription.value
+      name: els.boardName.value,
+      epicId: els.boardEpic.value || undefined
     })
   });
-  els.projectForm.reset();
-  state.activeProjectId = project.project.id;
-  await loadProjects();
+  closeBoardModal();
+  state.activeBoardId = result.board.id;
+  await loadProjectData();
 }
 
 async function createEpic(event) {
@@ -1500,14 +1688,40 @@ function renderAttachments() {
         </div>
         <div class="card-meta">${escapeHtml(attachment.mimeType || "application/octet-stream")} / ${escapeHtml(attachment.storedFileName)}</div>
         <div class="attachment-actions">
+          ${isPreviewableAttachment(attachment) ? '<button class="mini-button preview-button" type="button">Preview</button>' : ""}
           <a href="/api/pm/attachments/${encodeURIComponent(attachment.id)}">Download</a>
           <button class="mini-button" type="button">Delete</button>
         </div>
       `;
-      card.querySelector("button").addEventListener("click", () => deleteAttachment(attachment).catch((error) => setError(error.message)));
+      card.querySelector(".preview-button")?.addEventListener("click", () => openMediaAttachment(attachment));
+      card.querySelector(".attachment-actions button:last-child").addEventListener("click", () => deleteAttachment(attachment).catch((error) => setError(error.message)));
       return card;
     })
   );
+}
+
+function isPreviewableAttachment(attachment) {
+  const mime = attachment.mimeType || "";
+  return mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/");
+}
+
+function openMediaAttachment(attachment) {
+  const src = `/api/pm/attachments/${encodeURIComponent(attachment.id)}`;
+  const mime = attachment.mimeType || "";
+  els.mediaTitle.textContent = attachment.originalFileName || attachment.storedFileName || "Media";
+  if (mime.startsWith("image/")) {
+    els.mediaContent.innerHTML = `<img src="${src}" alt="${escapeHtml(attachment.originalFileName)}" draggable="false" />`;
+  } else if (mime.startsWith("video/")) {
+    els.mediaContent.innerHTML = `<video src="${src}" controls></video>`;
+  } else if (mime.startsWith("audio/")) {
+    els.mediaContent.innerHTML = `<audio src="${src}" controls></audio>`;
+  }
+  els.mediaModal.hidden = false;
+}
+
+function closeMediaAttachment() {
+  els.mediaContent.replaceChildren();
+  els.mediaModal.hidden = true;
 }
 
 async function deleteAttachment(attachment) {
@@ -1822,7 +2036,16 @@ for (const input of [els.customBgColor, els.customFieldColor, els.customTextColo
 els.bootstrapForm.addEventListener("submit", (event) => bootstrapPm(event).catch((error) => setError(error.message)));
 els.pmLoginForm.addEventListener("submit", (event) => loginPm(event).catch((error) => showPmLogin(error.message)));
 els.pmLogoutBtn.addEventListener("click", () => logoutPm().catch((error) => setError(error.message)));
+els.projectSidebarToggle.addEventListener("click", openProjectSidebar);
+els.closeProjectSidebarBtn.addEventListener("click", closeProjectSidebar);
+els.projectSidebarBackdrop.addEventListener("click", (event) => {
+  if (event.target === els.projectSidebarBackdrop) closeProjectSidebar();
+});
+els.openCreateProjectBtn.addEventListener("click", () => openProjectModal());
+els.cancelProjectModalBtn.addEventListener("click", closeProjectModal);
 els.projectForm.addEventListener("submit", (event) => createProject(event).catch((error) => setError(error.message)));
+els.boardForm.addEventListener("submit", (event) => createBoard(event).catch((error) => setError(error.message)));
+els.cancelBoardModalBtn.addEventListener("click", closeBoardModal);
 els.memberForm.addEventListener("submit", (event) => addMember(event).catch((error) => setError(error.message)));
 els.labelForm.addEventListener("submit", (event) => createLabel(event).catch((error) => setError(error.message)));
 els.epicForm.addEventListener("submit", (event) => createEpic(event).catch((error) => setError(error.message)));
@@ -1865,6 +2088,14 @@ els.allSprintTasksBtn.addEventListener("click", () => {
 els.refreshBtn.addEventListener("click", () => loadProjects().catch((error) => setError(error.message)));
 els.archiveProjectBtn.addEventListener("click", () => toggleArchive().catch((error) => setError(error.message)));
 els.ensureBoardBtn.addEventListener("click", () => loadProjectData().catch((error) => setError(error.message)));
+els.createBoardBtn.addEventListener("click", openBoardModal);
+els.boardSelect.addEventListener("change", () => {
+  state.activeBoardId = els.boardSelect.value || null;
+  loadProjectData().catch((error) => setError(error.message));
+});
+els.taskSidebarToggle.addEventListener("click", () => {
+  if (state.activeTask) els.taskDrawer.hidden = !els.taskDrawer.hidden;
+});
 els.closeDrawerBtn.addEventListener("click", closeTask);
 els.archiveTaskBtn.addEventListener("click", () => toggleTaskArchive().catch((error) => setError(error.message)));
 els.deleteTaskBtn.addEventListener("click", () => deleteActiveTask().catch((error) => setError(error.message)));
@@ -1894,5 +2125,6 @@ els.savedFilterSelect.addEventListener("change", () => applySelectedFilter().cat
 els.saveFilterBtn.addEventListener("click", () => saveCurrentFilter().catch((error) => setError(error.message)));
 els.updateFilterBtn.addEventListener("click", () => updateSelectedFilter().catch((error) => setError(error.message)));
 els.deleteFilterBtn.addEventListener("click", () => deleteSelectedFilter().catch((error) => setError(error.message)));
+els.closeMediaModalBtn.addEventListener("click", closeMediaAttachment);
 
 boot();

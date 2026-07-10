@@ -342,3 +342,9 @@ export type CreateBoardColumnInput = {
   position?: number;
   wipLimit?: number;
 };
+
+export type CreateBoardInput = {
+  projectId: string;
+  epicId?: string;
+  name: string;
+};

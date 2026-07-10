@@ -517,6 +517,9 @@ test("PM service serves browser shell separately from Dashboard", async () => {
   assert.match(html, /\/pm\.js/);
   assert.match(html, /pmLoginForm/);
   assert.match(html, /pmLogoutBtn/);
+  assert.match(html, /projectSidebarToggle/);
+  assert.match(html, /taskSidebarToggle/);
+  assert.match(html, /boardForm/);
   assert.match(html, /theme-swatch/);
   assert.match(html, /bootstrapForm/);
   } finally {
@@ -529,6 +532,8 @@ test("PM README documents Kanban board API", () => {
   const packageJson = JSON.parse(readFileSync(path.resolve("package.json"), "utf8"));
   const compose = readFileSync(path.resolve("docker-compose.yml"), "utf8");
   assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/boards\/kanban\/default`?/);
+  assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/boards\/kanban`?/);
+  assert.match(readme, /multiple named Kanban boards per project/);
   assert.match(readme, /GET `?\/api\/pm\/boards\/:boardId`?/);
   assert.match(readme, /drag-and-drop task movement/);
   assert.match(readme, /GET `?\/api\/pm\/projects\/:projectId\/sprints`?/);

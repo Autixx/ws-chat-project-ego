@@ -78,6 +78,7 @@ PM exposes:
 - `PATCH /api/pm/sprints/:sprintId`
 - `GET /api/pm/projects/:projectId/boards`
 - `POST /api/pm/projects/:projectId/boards/kanban/default`
+- `POST /api/pm/projects/:projectId/boards/kanban`
 - `GET /api/pm/boards/:boardId`
 - `POST /api/pm/boards/:boardId/columns`
 - `GET /api/pm/projects/:projectId/tasks`
@@ -152,7 +153,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.60 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.61 \
   node dist/pm/migrate.js
 ```
 
@@ -223,8 +224,10 @@ The first PM frontend shell supports:
 - project list and creation
 - project archive/unarchive
 - epic list and creation
+- compact PM side rails with project drawer, task/media drawer controls, and hidden ops panels
 - task list and creation
 - project-level and epic-level default Kanban boards
+- multiple named Kanban boards per project
 - Kanban columns with drag-and-drop task movement
 - task drawer editing
 - task drawer comments with own-comment edit/delete

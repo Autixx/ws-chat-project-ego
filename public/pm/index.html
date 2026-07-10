@@ -12,7 +12,6 @@
         <div class="title-block">
           <h1>ProjectEGO PM</h1>
           <p id="identityLine">Checking identity...</p>
-          <div class="status-line"><span id="wsDot" class="sq red"></span><span>STATUS WS</span><span id="wsText">disconnected</span></div>
         </div>
         <div class="toolbar">
           <div class="theme-picker" aria-label="Theme">
@@ -26,14 +25,12 @@
             <label>Lines<input id="customLineColor" type="color" value="#29413f" /></label>
           </div>
           <div class="pm-actions">
-            <button id="notificationToggle" type="button" class="notification-toggle">Notifications <span id="notificationCount">0</span></button>
-            <button id="webhookToggle" type="button" class="notification-toggle">Webhooks <span id="webhookDeadCount">0</span></button>
-            <button id="opsToggle" type="button" class="notification-toggle">Ops <span id="opsProblemCount">0</span></button>
             <button id="pmLogoutBtn" type="button" class="notification-toggle" hidden>Logout</button>
           </div>
         </div>
         <div class="status-block">
-          <div><span id="healthDot" class="sq gray"></span>PM: <span id="healthText">health unknown</span></div>
+          <div><span id="healthDot" class="sq gray"></span>DB: <span id="healthText">health unknown</span></div>
+          <div><span id="wsDot" class="sq red"></span>WS: <span id="wsText">disconnected</span></div>
         </div>
       </header>
 
@@ -90,17 +87,26 @@
       </section>
 
       <section id="pmGrid" class="pm-grid" hidden>
-        <aside class="project-pane panel">
+        <nav class="pm-left-rail">
+          <button id="projectSidebarToggle" class="rail-button" type="button" title="Projects">P</button>
+        </nav>
+
+        <aside id="projectSidebarBackdrop" class="sidebar-backdrop" hidden>
+          <section class="project-pane panel pm-left-drawer">
+            <div class="drawer-mini-header">
+              <h2>Projects</h2>
+              <button id="closeProjectSidebarBtn" type="button">x</button>
+            </div>
           <div class="panel-title">
-            <h2>Projects</h2>
             <label class="inline-check"><input id="includeArchived" type="checkbox" /> archived</label>
+            <button id="openCreateProjectBtn" type="button">Create project</button>
           </div>
-          <form id="projectForm" class="stack-form">
-            <input id="projectKey" maxlength="32" placeholder="KEY" />
-            <input id="projectName" maxlength="120" placeholder="Project name" />
-            <textarea id="projectDescription" rows="3" placeholder="Description"></textarea>
-            <button type="submit">Create project</button>
+          <div id="projectList" class="list project-sort-list"></div>
+          <form id="epicForm" class="inline-form">
+            <input id="epicTitle" placeholder="Epic title" />
+            <button type="submit" disabled>Create epic</button>
           </form>
+          <div id="epicList" class="list compact"></div>
           <section class="team-box">
             <div class="panel-title">
               <h2>Team</h2>
@@ -127,7 +133,7 @@
             </form>
             <div id="labelList" class="list compact"></div>
           </section>
-          <div id="projectList" class="list"></div>
+          </section>
         </aside>
 
         <section class="work-pane">
@@ -143,17 +149,6 @@
           </section>
 
           <section class="boards">
-            <section class="panel epics-pane">
-              <div class="panel-title">
-                <h2>Epics</h2>
-              </div>
-              <form id="epicForm" class="inline-form">
-                <input id="epicTitle" placeholder="Epic title" />
-                <button type="submit" disabled>Create</button>
-              </form>
-              <div id="epicList" class="list compact"></div>
-            </section>
-
             <section class="panel sprints-pane">
               <div class="panel-title">
                 <h2>Sprints / Backlog</h2>
@@ -225,6 +220,10 @@
               </form>
               <div class="kanban-toolbar">
                 <span id="activeBoardLine">No board</span>
+                <select id="boardSelect">
+                  <option value="">Boards</option>
+                </select>
+                <button id="createBoardBtn" type="button" disabled>Create board</button>
                 <button id="ensureBoardBtn" type="button" disabled>Open Kanban</button>
               </div>
               <div id="kanbanBoard" class="kanban-board"></div>
@@ -232,6 +231,42 @@
             </section>
           </section>
         </section>
+
+        <nav class="pm-right-rail">
+          <button id="taskSidebarToggle" class="rail-button" type="button" title="Task drawer">T</button>
+          <div class="rail-bottom-stack">
+            <button id="notificationToggle" type="button" class="rail-button" title="Notifications">N<span id="notificationCount">0</span></button>
+            <button id="webhookToggle" type="button" class="rail-button" title="Webhooks">W<span id="webhookDeadCount">0</span></button>
+            <button id="opsToggle" type="button" class="rail-button" title="Operations">O<span id="opsProblemCount">0</span></button>
+          </div>
+        </nav>
+      </section>
+
+      <section id="projectModal" class="pm-modal-backdrop" hidden>
+        <form id="projectForm" class="pm-modal project-modal">
+          <h2 id="projectModalTitle">Create project</h2>
+          <input id="projectKey" maxlength="32" placeholder="KEY" />
+          <input id="projectName" maxlength="120" placeholder="Project name" />
+          <textarea id="projectDescription" rows="4" placeholder="Description"></textarea>
+          <div class="pm-modal-actions">
+            <button id="cancelProjectModalBtn" type="button">Cancel</button>
+            <button type="submit">Apply</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="boardModal" class="pm-modal-backdrop" hidden>
+        <form id="boardForm" class="pm-modal project-modal">
+          <h2>Create board</h2>
+          <input id="boardName" maxlength="120" placeholder="Board name" />
+          <select id="boardEpic">
+            <option value="">Project board</option>
+          </select>
+          <div class="pm-modal-actions">
+            <button id="cancelBoardModalBtn" type="button">Cancel</button>
+            <button type="submit">Create</button>
+          </div>
+        </form>
       </section>
 
       <aside id="taskDrawer" class="task-drawer" hidden>
@@ -348,6 +383,14 @@
             <button id="confirmOkBtn" type="button">Confirm</button>
           </div>
         </div>
+      </section>
+
+      <section id="mediaModal" class="pm-media-modal" hidden>
+        <header>
+          <span id="mediaTitle">Media</span>
+          <button id="closeMediaModalBtn" type="button">x</button>
+        </header>
+        <div id="mediaContent" class="pm-media-content"></div>
       </section>
     </main>
     <script src="/pm.js" defer></script>

@@ -3,6 +3,7 @@ import type { AuthenticatedUser } from "../auth/authelia.js";
 import { normalizeRole } from "./permissions.js";
 import type {
   CreateAttachmentInput,
+  CreateBoardInput,
   CreateCommentInput,
   CreateEpicInput,
   CreateLabelInput,
@@ -624,6 +625,27 @@ export class PmStore {
       if (!existing.rows[0]) {
         await this.insertAudit(client, { actorType: "user", actorId: user.id, projectId, eventType: "board.created", payload: { boardId: board.id, type: "kanban" } });
       }
+      return { board, columns };
+    });
+  }
+
+  async createKanbanBoard(user: PmUser, input: CreateBoardInput): Promise<{ board: PmBoard; columns: PmBoardColumn[] }> {
+    return this.withTransaction(async (client) => {
+      const board = mapBoard(
+        (
+          await client.query(
+            `
+            INSERT INTO pm.boards (project_id, epic_id, name, board_type)
+            VALUES ($1, $2, $3, 'kanban')
+            RETURNING *
+            `,
+            [input.projectId, input.epicId ?? null, input.name.trim()]
+          )
+        ).rows[0]
+      );
+      await this.ensureDefaultColumns(client, board.id);
+      const columns = (await client.query("SELECT * FROM pm.board_columns WHERE board_id = $1 ORDER BY position ASC", [board.id])).rows.map(mapColumn);
+      await this.insertAudit(client, { actorType: "user", actorId: user.id, projectId: input.projectId, eventType: "board.created", payload: { boardId: board.id, type: "kanban", name: board.name } });
       return { board, columns };
     });
   }

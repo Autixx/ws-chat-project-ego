@@ -496,6 +496,22 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     }
   });
 
+  router.post("/projects/:projectId/boards/kanban", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
+      const result = await store.createKanbanBoard(user, {
+        projectId: req.params.projectId,
+        epicId: optionalString(req.body?.epicId),
+        name: requiredString(req.body?.name, "name").slice(0, 120)
+      });
+      emit({ type: "board.created", projectId: req.params.projectId, version: result.board.version, createdAt: new Date().toISOString(), payload: result });
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/boards/:boardId", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
