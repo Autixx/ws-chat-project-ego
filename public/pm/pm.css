@@ -70,7 +70,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 .pm-shell {
   height: 100vh;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -404,6 +404,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .pm-grid {
   min-height: 0;
+  height: 100%;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) 34px;
 }
@@ -654,7 +655,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 .work-pane {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(38px, auto) minmax(0, 1fr);
 }
 
 .project-header {
@@ -662,6 +663,8 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   align-items: center;
   justify-content: space-between;
   gap: 14px;
+  min-height: 38px;
+  padding: 6px 10px;
 }
 
 .project-header p {
@@ -674,26 +677,49 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+.filters {
+  overflow-x: auto;
+  min-width: 0;
+  padding-bottom: 2px;
 }
 
 .filters select {
-  max-width: 170px;
+  width: 132px;
+  flex: 0 0 auto;
 }
 
 .filters input {
-  max-width: 180px;
+  width: 150px;
+  flex: 0 0 auto;
 }
 
 .boards {
   min-height: 0;
+  height: 100%;
   display: grid;
   grid-template-rows: minmax(0, 1fr);
 }
 
 .tasks-pane {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding: 8px;
+}
+
+.tasks-pane > .panel-title {
+  padding-bottom: 5px;
+}
+
+.tasks-pane > .panel-title h2 {
+  display: none;
+}
+
+.task-form {
+  grid-template-columns: minmax(0, 1fr) 120px 150px 130px auto;
+  padding: 5px 0;
 }
 
 .task-card {
@@ -708,7 +734,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 7px 0;
+  padding: 4px 0 7px;
   color: var(--muted);
   font-size: 12px;
 }
@@ -749,6 +775,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .kanban-board {
   min-height: 0;
+  height: 100%;
   overflow: auto;
   display: grid;
   grid-auto-flow: column;
@@ -781,7 +808,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 }
 
 .kanban-dropzone {
-  min-height: 160px;
+  min-height: 0;
   overflow: auto;
   display: grid;
   align-content: start;
