@@ -221,6 +221,63 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   background: #180808;
 }
 
+.toast-stack {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 120;
+  display: grid;
+  gap: 8px;
+  width: min(420px, calc(100vw - 28px));
+  pointer-events: none;
+}
+
+.toast {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .44);
+  pointer-events: auto;
+  animation: toast-in .16s ease-out;
+}
+
+.toast.error {
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--panel) 88%, var(--red) 12%);
+}
+
+.toast-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.toast-close {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  line-height: 1;
+}
+
+.toast.closing {
+  animation: toast-out .18s ease-in forwards;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(8px); }
+}
+
 .notification-panel {
   position: fixed;
   top: 48px;

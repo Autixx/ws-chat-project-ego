@@ -47,6 +47,7 @@ const els = {
   customTextColor: $("customTextColor"),
   customLineColor: $("customLineColor"),
   errorBanner: $("errorBanner"),
+  toastStack: $("toastStack"),
   notificationToggle: $("notificationToggle"),
   notificationCount: $("notificationCount"),
   notificationPanel: $("notificationPanel"),
@@ -175,8 +176,38 @@ const els = {
 };
 
 function setError(message) {
-  els.errorBanner.hidden = !message;
-  els.errorBanner.textContent = message || "";
+  if (els.errorBanner) {
+    els.errorBanner.hidden = true;
+    els.errorBanner.textContent = "";
+  }
+  if (!message) return;
+  showToast(message, "error");
+}
+
+function showToast(message, kind = "error") {
+  if (!els.toastStack) return;
+  const toast = document.createElement("article");
+  toast.className = `toast ${kind}`;
+  const text = document.createElement("div");
+  text.className = "toast-message";
+  text.textContent = message;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "toast-close";
+  close.setAttribute("aria-label", "Close notification");
+  close.textContent = "x";
+  toast.append(text, close);
+  els.toastStack.append(toast);
+
+  let removed = false;
+  const remove = () => {
+    if (removed) return;
+    removed = true;
+    toast.classList.add("closing");
+    window.setTimeout(() => toast.remove(), 180);
+  };
+  close.addEventListener("click", remove);
+  window.setTimeout(remove, 7000);
 }
 
 function setTheme(theme, { persist = true } = {}) {
