@@ -491,7 +491,7 @@ export class PmStore {
     const [activity, changes, announcements] = await Promise.all([
       this.pool.query(
         `
-        SELECT t.id, t.title, t.status, t.priority, t.created_at, p.name AS project_name
+        SELECT t.id, t.project_id, t.title, t.status, t.priority, t.created_at, p.name AS project_name
         FROM pm.tasks t
         JOIN pm.projects p ON p.id = t.project_id
         LEFT JOIN pm.project_members m ON m.project_id = t.project_id AND m.user_id = $1
@@ -504,7 +504,7 @@ export class PmStore {
       ),
       this.pool.query(
         `
-        SELECT DISTINCT ON (t.id) t.id, t.title, t.status, t.priority, t.updated_at, p.name AS project_name
+        SELECT DISTINCT ON (t.id) t.id, t.project_id, t.title, t.status, t.priority, t.updated_at, p.name AS project_name
         FROM pm.tasks t
         JOIN pm.projects p ON p.id = t.project_id
         LEFT JOIN pm.comments c ON c.task_id = t.id AND c.author_id = $1
@@ -519,8 +519,8 @@ export class PmStore {
       this.pool.query("SELECT * FROM pm.announcements ORDER BY created_at DESC LIMIT 5")
     ]);
     return {
-      activity: activity.rows.map((row) => ({ id: String(row.id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), createdAt: asIso(row.created_at) })),
-      changes: changes.rows.map((row) => ({ id: String(row.id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), updatedAt: asIso(row.updated_at) })),
+      activity: activity.rows.map((row) => ({ id: String(row.id), projectId: String(row.project_id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), createdAt: asIso(row.created_at) })),
+      changes: changes.rows.map((row) => ({ id: String(row.id), projectId: String(row.project_id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), updatedAt: asIso(row.updated_at) })),
       announcements: announcements.rows.map(mapAnnouncement)
     };
   }

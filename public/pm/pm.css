@@ -280,6 +280,11 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   background: color-mix(in srgb, var(--panel) 88%, var(--red) 12%);
 }
 
+.toast.info {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--panel) 88%, var(--accent) 12%);
+}
+
 .toast-message {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -979,6 +984,17 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   padding: 6px;
 }
 
+.widget-link-row {
+  cursor: pointer;
+}
+
+.widget-link-row:hover,
+.widget-link-row:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--field) 84%, var(--accent) 16%);
+  outline: none;
+}
+
 .widget-row-title {
   color: var(--text);
   font-weight: 700;
@@ -995,6 +1011,55 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   height: 100%;
   min-height: 120px;
   resize: none;
+}
+
+.api-terminal-widget {
+  display: grid;
+  gap: 4px;
+  min-height: 0;
+  padding: 6px;
+  border: 1px solid var(--line);
+  background: #000;
+  color: var(--green);
+  overflow: auto;
+}
+
+.api-terminal-line {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  min-height: 24px;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.api-terminal-line.prompt {
+  color: var(--yellow);
+}
+
+.api-terminal-line:not(.prompt):hover {
+  background: color-mix(in srgb, #000 78%, var(--accent) 22%);
+}
+
+.api-terminal-line span {
+  color: var(--yellow);
+}
+
+.api-terminal-line strong {
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.api-terminal-line em {
+  grid-column: 2;
+  color: var(--muted);
+  font-style: normal;
+  font-size: 11px;
 }
 
 .project-header {

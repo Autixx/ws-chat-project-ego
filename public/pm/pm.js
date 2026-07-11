@@ -31,6 +31,7 @@ const state = {
   homeWidgets: [],
   homeTemplates: [],
   homeData: {},
+  timerAlerts: new Set(),
   notifications: [],
   webhookDeliveries: [],
   webhookSummary: { pending: 0, retrying: 0, delivered: 0, dead: 0 },
@@ -385,6 +386,7 @@ async function loadAfterAuth() {
   await loadWebhookDeliveries();
   await loadOpsStatus();
   await loadProjects();
+  await openTaskFromHash();
 }
 
 function setPmView(view) {
@@ -424,6 +426,7 @@ async function loadHome() {
   state.homeData = data || {};
   renderHomeTemplates();
   renderHome();
+  checkHomeTimers();
 }
 
 async function addHomeWidget() {
@@ -540,7 +543,7 @@ function homeWidgetBody(widget) {
   if (widget.kind === "changes") return listWidgetRows(state.homeData.changes || [], "updatedAt");
   if (widget.kind === "announcement") return listAnnouncementRows(state.homeData.announcements || []);
   if (widget.kind === "timer") return [timerWidgetNode(widget)];
-  if (widget.kind === "api") return [plainWidgetNode(JSON.stringify(widget.config || {}, null, 2) || "No API source configured.")];
+  if (widget.kind === "api") return [apiWidgetNode()];
   return [notesWidgetNode(widget)];
 }
 
@@ -548,8 +551,22 @@ function listWidgetRows(items, dateKey) {
   if (!items.length) return [plainWidgetNode("No items.")];
   return items.slice(0, 8).map((item) => {
     const row = document.createElement("div");
-    row.className = "widget-row";
+    row.className = "widget-row widget-link-row";
+    row.tabIndex = 0;
     row.innerHTML = `<div class="widget-row-title">${escapeHtml(item.title || "Task")}</div><div class="widget-row-meta">${escapeHtml(item.projectName || "")} / ${escapeHtml(item.status || "")} / ${formatDate(item[dateKey])}</div>`;
+    row.addEventListener("click", (event) => openTaskReference(item, event.ctrlKey || event.metaKey).catch((error) => setError(error.message)));
+    row.addEventListener("auxclick", (event) => {
+      if (event.button === 1) {
+        event.preventDefault();
+        openTaskReference(item, true).catch((error) => setError(error.message));
+      }
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") openTaskReference(item, event.ctrlKey || event.metaKey).catch((error) => setError(error.message));
+    });
+    row.addEventListener("mousedown", (event) => {
+      if (event.button === 1) event.preventDefault();
+    });
     return row;
   });
 }
@@ -597,6 +614,97 @@ function plainWidgetNode(text) {
   node.className = "widget-row";
   node.textContent = text;
   return node;
+}
+
+function apiWidgetNode() {
+  const node = document.createElement("div");
+  node.className = "api-terminal-widget";
+  const commands = [
+    ["GET", "/api/pm/home", "front page widgets and data"],
+    ["GET", "/api/pm/projects", "projects visible to current user"],
+    ["GET", "/api/pm/projects/:projectId/tasks", "tasks for a project"],
+    ["GET", "/api/pm/tasks/:taskId/comments", "task comments"],
+    ["GET", "/api/pm/tasks/:taskId/activity", "task activity log"],
+    ["GET", "/api/pm/notifications", "user notifications"],
+    ["GET", "/api/pm/operator/status", "PM DB / webhook / SMTP status"]
+  ];
+  node.innerHTML = `
+    <div class="api-terminal-line prompt">projectego-pm api</div>
+    ${commands.map(([method, path, description]) => `
+      <button type="button" class="api-terminal-line" data-path="${escapeHtml(path)}">
+        <span>${escapeHtml(method)}</span>
+        <strong>${escapeHtml(path)}</strong>
+        <em>${escapeHtml(description)}</em>
+      </button>
+    `).join("")}
+  `;
+  for (const button of node.querySelectorAll("button")) {
+    button.addEventListener("click", () => {
+      navigator.clipboard?.writeText(button.dataset.path || "").catch(() => undefined);
+      showToast(`Copied ${button.dataset.path}`, "info");
+    });
+  }
+  return node;
+}
+
+async function openTaskReference(item, newTab = false) {
+  if (!item?.id || !item?.projectId) return;
+  const url = pmTaskUrl(item.projectId, item.id);
+  if (newTab) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  history.replaceState(null, "", url);
+  state.currentView = "kanban";
+  state.activeProjectId = item.projectId;
+  state.activeSprintId = "__all";
+  setPmView("kanban");
+  await loadProjectData();
+  const task = state.tasks.find((entry) => entry.id === item.id) || state.boardTasks.find((entry) => entry.id === item.id);
+  if (task) openTask(task);
+  else setError("Task is not visible in the current filters.");
+}
+
+function pmTaskUrl(projectId, taskId) {
+  const url = new URL(window.location.href);
+  url.hash = `project=${encodeURIComponent(projectId)}&task=${encodeURIComponent(taskId)}`;
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function pmHashParams() {
+  const raw = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+  return Object.fromEntries(new URLSearchParams(raw));
+}
+
+async function openTaskFromHash() {
+  const params = pmHashParams();
+  if (!params.project || !params.task) return;
+  if (state.activeProjectId !== params.project) {
+    if (!state.projects.some((project) => project.id === params.project)) return;
+    state.activeProjectId = params.project;
+    state.activeSprintId = "__all";
+    await loadProjectData();
+    return;
+  }
+  const task = state.tasks.find((entry) => entry.id === params.task) || state.boardTasks.find((entry) => entry.id === params.task);
+  if (!task || state.activeTask?.id === task.id) return;
+  setPmView("kanban");
+  openTask(task);
+}
+
+function checkHomeTimers() {
+  const now = Date.now();
+  for (const widget of state.homeWidgets) {
+    if (widget.kind !== "timer") continue;
+    const targetAt = widget.content?.targetAt;
+    if (!targetAt) continue;
+    const target = new Date(targetAt).getTime();
+    if (!Number.isFinite(target) || target > now) continue;
+    const key = `${widget.id}:${targetAt}`;
+    if (state.timerAlerts.has(key)) continue;
+    state.timerAlerts.add(key);
+    showToast(`${widget.title || "Timer"} fired.`, "info");
+  }
 }
 
 function renderWidgetSettings(widget) {
@@ -833,6 +941,8 @@ async function loadOpsStatus() {
 async function loadProjects() {
   const { projects } = await api(`/api/pm/projects?includeArchived=${els.includeArchived.checked ? "true" : "false"}`);
   state.projects = projects;
+  const deepLink = pmHashParams();
+  if (deepLink.project && projects.some((project) => project.id === deepLink.project)) state.activeProjectId = deepLink.project;
   if (!state.activeProjectId && projects[0]) state.activeProjectId = projects[0].id;
   if (state.activeProjectId && !projects.some((project) => project.id === state.activeProjectId)) {
     state.activeProjectId = projects[0]?.id || null;
@@ -919,6 +1029,7 @@ async function loadProjectData() {
   renderSprints();
   renderTasks();
   renderBoard();
+  await openTaskFromHash();
 }
 
 async function ensureDefaultBoard(projectId) {
@@ -2631,6 +2742,7 @@ async function boot() {
     await loadAfterAuth();
     connectWs();
     setInterval(refreshHealth, 15000);
+    setInterval(checkHomeTimers, 1000);
   } catch (error) {
     if (/Authentication required|HTTP 401/i.test(error.message)) showPmLogin();
     else setError(error.message);
@@ -2785,5 +2897,6 @@ els.saveFilterBtn.addEventListener("click", () => saveCurrentFilter().catch((err
 els.updateFilterBtn.addEventListener("click", () => updateSelectedFilter().catch((error) => setError(error.message)));
 els.deleteFilterBtn.addEventListener("click", () => deleteSelectedFilter().catch((error) => setError(error.message)));
 els.closeMediaModalBtn.addEventListener("click", closeMediaAttachment);
+window.addEventListener("hashchange", () => openTaskFromHash().catch((error) => setError(error.message)));
 
 boot();
