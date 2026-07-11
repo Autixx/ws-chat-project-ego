@@ -1,4 +1,5 @@
 const THEME_STORAGE_KEY = "projectego-pm-theme";
+const PM_HOME_GRID_STEP_KEY = "projectego-pm-home-grid-step";
 
 const state = {
   user: null,
@@ -75,7 +76,7 @@ const els = {
   pmHomeView: $("pmHomeView"),
   pmKanbanView: $("pmKanbanView"),
   homeEditToggle: $("homeEditToggle"),
-  homeGridDensity: $("homeGridDensity"),
+  homeGridStep: $("homeGridStep"),
   homeWidgetKind: $("homeWidgetKind"),
   addHomeWidgetBtn: $("addHomeWidgetBtn"),
   saveWidgetTemplateBtn: $("saveWidgetTemplateBtn"),
@@ -495,16 +496,20 @@ function renderHomeTemplates() {
 }
 
 function renderHome() {
-  els.homeGrid.className = `home-grid density-${els.homeGridDensity.value}${state.homeEditing ? " editing" : ""}`;
+  const step = homeGridStep();
+  els.homeGrid.style.setProperty("--home-grid-step", `${step}px`);
+  els.homeGrid.className = `home-grid${state.homeEditing ? " editing" : ""}`;
   els.homeEditToggle.textContent = state.homeEditing ? "Done" : "Edit";
   els.homeGrid.replaceChildren(...state.homeWidgets.map(renderHomeWidget));
 }
 
 function renderHomeWidget(widget) {
   const card = document.createElement("article");
+  const size = clampWidgetSize(widget, Number(widget.width || 1), Number(widget.height || 1));
+  const position = clampWidgetPosition({ ...widget, width: size.width, height: size.height }, Number(widget.x || 1), Number(widget.y || 1));
   card.className = `home-widget ${widget.clickable ? "clickable" : ""} ${state.homeEditing ? "editing" : ""}`;
-  card.style.gridColumn = `${widget.x} / span ${widget.width}`;
-  card.style.gridRow = `${widget.y} / span ${widget.height}`;
+  card.style.gridColumn = `${position.x} / span ${size.width}`;
+  card.style.gridRow = `${position.y} / span ${size.height}`;
   card.draggable = state.homeEditing;
   card.dataset.widgetId = widget.id;
   card.innerHTML = `
@@ -517,6 +522,7 @@ function renderHomeWidget(widget) {
   card.querySelector(".home-widget-body").replaceChildren(...homeWidgetBody(widget));
   if (state.homeEditing) {
     card.append(renderWidgetSettings(widget));
+    card.append(renderWidgetResizeHandle(widget));
     card.addEventListener("dragstart", (event) => {
       event.dataTransfer.setData("text/plain", widget.id);
       event.dataTransfer.effectAllowed = "move";
@@ -593,21 +599,59 @@ function renderWidgetSettings(widget) {
   const form = document.createElement("div");
   form.className = "home-widget-settings";
   form.innerHTML = `
-    <input type="number" min="1" max="24" value="${widget.x}" title="x" />
-    <input type="number" min="1" max="48" value="${widget.y}" title="y" />
-    <input type="number" min="1" max="24" value="${widget.width}" title="width" />
-    <input type="number" min="1" max="24" value="${widget.height}" title="height" />
     <button type="button">${widget.clickable ? "Clickable" : "Static"}</button>
     <button type="button">Delete</button>
   `;
-  const [x, y, width, height] = Array.from(form.querySelectorAll("input"));
-  for (const input of [x, y, width, height]) {
-    input.addEventListener("change", () => updateHomeWidget(widget.id, { x: x.value, y: y.value, width: width.value, height: height.value }).catch((error) => setError(error.message)));
-  }
   const [clickable, remove] = Array.from(form.querySelectorAll("button"));
   clickable.addEventListener("click", () => updateHomeWidget(widget.id, { clickable: !widget.clickable }).catch((error) => setError(error.message)));
   remove.addEventListener("click", () => deleteHomeWidget(widget.id).catch((error) => setError(error.message)));
   return form;
+}
+
+function renderWidgetResizeHandle(widget) {
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "home-widget-resize";
+  handle.title = "Resize widget";
+  handle.setAttribute("aria-label", "Resize widget");
+  handle.addEventListener("dragstart", (event) => event.preventDefault());
+  handle.addEventListener("pointerdown", (event) => startHomeWidgetResize(event, widget));
+  return handle;
+}
+
+function startHomeWidgetResize(event, widget) {
+  event.preventDefault();
+  event.stopPropagation();
+  const card = event.currentTarget.closest(".home-widget");
+  if (!card) return;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const startWidth = Number(widget.width || 1);
+  const startHeight = Number(widget.height || 1);
+  const step = homeGridStep();
+  let nextSize = { width: startWidth, height: startHeight };
+  document.body.classList.add("dragging-home-widget");
+
+  const move = (moveEvent) => {
+    moveEvent.preventDefault();
+    const deltaWidth = Math.round((moveEvent.clientX - startX) / step);
+    const deltaHeight = Math.round((moveEvent.clientY - startY) / step);
+    nextSize = clampWidgetSize(widget, startWidth + deltaWidth, startHeight + deltaHeight);
+    card.style.gridColumn = `${widget.x} / span ${nextSize.width}`;
+    card.style.gridRow = `${widget.y} / span ${nextSize.height}`;
+  };
+
+  const stop = () => {
+    document.body.classList.remove("dragging-home-widget");
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", stop);
+    if (nextSize.width !== startWidth || nextSize.height !== startHeight) {
+      updateHomeWidget(widget.id, nextSize).catch((error) => setError(error.message));
+    }
+  };
+
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", stop);
 }
 
 async function updateHomeWidget(id, patch) {
@@ -624,7 +668,7 @@ async function deleteHomeWidget(id) {
 
 function nextWidgetPosition() {
   const y = state.homeWidgets.reduce((max, widget) => Math.max(max, widget.y + widget.height), 1);
-  return { x: 1, y: Math.min(y, 42) };
+  return { x: 1, y: Math.min(y, maxHomeGridRows()) };
 }
 
 function defaultWidgetTitle(kind) {
@@ -632,27 +676,54 @@ function defaultWidgetTitle(kind) {
 }
 
 function homeGridMetrics() {
-  const density = els.homeGridDensity.value;
-  const columns = { coarse: 8, medium: 12, fine: 16 }[density] || 12;
-  const rowHeight = { coarse: 80, medium: 62, fine: 50 }[density] || 62;
-  return { columns, rowHeight };
+  const step = homeGridStep();
+  const rect = els.homeGrid.getBoundingClientRect();
+  const columns = Math.max(1, Math.floor((rect.width - 20) / step));
+  const rows = Math.max(1, Math.floor((rect.height - 20) / step));
+  return { columns, rows, step };
 }
 
 function clampWidgetPosition(widget, x, y) {
-  const { columns } = homeGridMetrics();
+  const { columns, rows } = homeGridMetrics();
   return {
     x: Math.max(1, Math.min(columns - Number(widget.width || 1) + 1, x)),
-    y: Math.max(1, Math.min(48 - Number(widget.height || 1) + 1, y))
+    y: Math.max(1, Math.min(rows - Number(widget.height || 1) + 1, y))
+  };
+}
+
+function clampWidgetSize(widget, width, height) {
+  const { columns, rows } = homeGridMetrics();
+  return {
+    width: Math.max(1, Math.min(columns - Number(widget.x || 1) + 1, width)),
+    height: Math.max(1, Math.min(rows - Number(widget.y || 1) + 1, height))
   };
 }
 
 function homeDropPosition(event, widget) {
   const rect = els.homeGrid.getBoundingClientRect();
-  const { columns, rowHeight } = homeGridMetrics();
-  const columnWidth = rect.width / columns;
-  const x = Math.floor((event.clientX - rect.left) / columnWidth) + 1;
-  const y = Math.floor((event.clientY - rect.top + els.homeGrid.scrollTop) / rowHeight) + 1;
+  const { step } = homeGridMetrics();
+  const x = Math.floor((event.clientX - rect.left - 10) / step) + 1;
+  const y = Math.floor((event.clientY - rect.top - 10) / step) + 1;
   return clampWidgetPosition(widget, x, y);
+}
+
+function homeGridStep() {
+  const value = Number(els.homeGridStep.value || 56);
+  if (!Number.isFinite(value)) return 56;
+  return Math.max(24, Math.min(160, Math.floor(value)));
+}
+
+function loadHomeGridStep() {
+  try {
+    const saved = Number(localStorage.getItem(PM_HOME_GRID_STEP_KEY));
+    if (Number.isFinite(saved)) els.homeGridStep.value = String(Math.max(24, Math.min(160, Math.floor(saved))));
+  } catch {
+    // Grid step persistence is best-effort.
+  }
+}
+
+function maxHomeGridRows() {
+  return homeGridMetrics().rows || 1;
 }
 
 async function loadNotifications() {
@@ -2483,6 +2554,7 @@ async function boot() {
 }
 
 loadThemeSettings();
+loadHomeGridStep();
 
 for (const button of els.themeButtons) button.addEventListener("click", () => setTheme(button.dataset.theme));
 for (const input of [els.customBgColor, els.customFieldColor, els.customTextColor, els.customLineColor]) {
@@ -2501,7 +2573,16 @@ els.homeEditToggle.addEventListener("click", () => {
   state.homeEditing = !state.homeEditing;
   renderHome();
 });
-els.homeGridDensity.addEventListener("change", renderHome);
+els.homeGridStep.addEventListener("input", () => {
+  const step = homeGridStep();
+  els.homeGridStep.value = String(step);
+  try {
+    localStorage.setItem(PM_HOME_GRID_STEP_KEY, String(step));
+  } catch {
+    // Grid step persistence is best-effort.
+  }
+  renderHome();
+});
 els.addHomeWidgetBtn.addEventListener("click", () => addHomeWidget().catch((error) => setError(error.message)));
 els.saveWidgetTemplateBtn.addEventListener("click", () => saveSelectedWidgetTemplate().catch((error) => setError(error.message)));
 els.useWidgetTemplateBtn.addEventListener("click", () => useSelectedWidgetTemplate().catch((error) => setError(error.message)));

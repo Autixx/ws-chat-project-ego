@@ -64,6 +64,11 @@ body {
   color: var(--text);
 }
 
+body.dragging-home-widget {
+  user-select: none;
+  cursor: nwse-resize;
+}
+
 button, input, select, textarea {
   font: inherit;
   border: 1px solid var(--line);
@@ -830,39 +835,22 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   min-height: 0;
   overflow: hidden;
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-auto-rows: 54px;
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, var(--home-grid-step, 56px));
+  grid-auto-rows: var(--home-grid-step, 56px);
+  gap: 0;
   padding: 10px;
-}
-
-.home-grid.density-coarse {
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  grid-auto-rows: 72px;
-}
-
-.home-grid.density-fine {
-  grid-template-columns: repeat(16, minmax(0, 1fr));
-  grid-auto-rows: 42px;
 }
 
 .home-grid.editing {
   background-image:
     linear-gradient(var(--line) 1px, transparent 1px),
     linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: calc((100% - 20px) / 12) 62px;
+  background-size: var(--home-grid-step, 56px) var(--home-grid-step, 56px);
   background-position: 10px 10px;
 }
 
-.home-grid.density-coarse.editing {
-  background-size: calc((100% - 20px) / 8) 80px;
-}
-
-.home-grid.density-fine.editing {
-  background-size: calc((100% - 20px) / 16) 50px;
-}
-
 .home-widget {
+  position: relative;
   min-width: 0;
   min-height: 0;
   display: grid;
@@ -878,7 +866,6 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .home-widget.editing {
   cursor: move;
-  resize: both;
 }
 
 .home-widget header {
@@ -901,14 +888,33 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .home-widget-settings {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto;
+  grid-template-columns: auto auto;
+  justify-content: end;
   gap: 5px;
   padding: 7px;
   border-top: 1px solid var(--line);
 }
 
-.home-widget-settings input[type="number"] {
-  min-width: 0;
+.home-widget-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--accent);
+  border-right: 0;
+  border-bottom: 0;
+  background:
+    linear-gradient(135deg, transparent 0 44%, var(--accent) 44% 56%, transparent 56% 100%),
+    var(--field);
+  cursor: nwse-resize;
+  z-index: 2;
+}
+
+.home-widget-resize:hover {
+  background:
+    linear-gradient(135deg, transparent 0 38%, var(--text) 38% 62%, transparent 62% 100%),
+    var(--field);
 }
 
 .widget-row {
