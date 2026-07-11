@@ -95,6 +95,12 @@ const els = {
   includeArchived: $("includeArchived"),
   projectForm: $("projectForm"),
   projectManagementFields: $("projectManagementFields"),
+  openTeamModalBtn: $("openTeamModalBtn"),
+  openLabelsModalBtn: $("openLabelsModalBtn"),
+  teamModal: $("teamModal"),
+  labelsModal: $("labelsModal"),
+  closeTeamModalBtn: $("closeTeamModalBtn"),
+  closeLabelsModalBtn: $("closeLabelsModalBtn"),
   projectKey: $("projectKey"),
   projectName: $("projectName"),
   projectDescription: $("projectDescription"),
@@ -482,6 +488,7 @@ async function loadProjectData() {
   renderProjectLabels();
   renderSavedFilters();
   renderBoardSelect();
+  renderProjects();
   renderEpics();
   renderSprints();
   renderTasks();
@@ -554,8 +561,20 @@ function renderProjects() {
       button.className = `project-card ${project.id === state.activeProjectId ? "active" : ""}`;
       button.dataset.projectId = project.id;
       button.tabIndex = 0;
+      const activeProjectBoards = project.id === state.activeProjectId ? state.boards : [];
+      const boardTree = activeProjectBoards.length > 1 ? `
+        <div class="project-board-tree">
+          ${activeProjectBoards.map((board, boardIndex) => `
+            <button class="project-board-node ${board.id === state.activeBoardId ? "active" : ""}" type="button" data-board-id="${escapeHtml(board.id)}">
+              <span>${boardIndex === activeProjectBoards.length - 1 ? "└──" : "├──"}</span>
+              <span>${escapeHtml(board.name)}${board.isDefault ? " / default" : ""}</span>
+            </button>
+          `).join("")}
+        </div>
+      ` : "";
       button.innerHTML = `
         <div class="card-title">${escapeHtml(project.name)}${project.archivedAt ? " / archived" : ""}</div>
+        ${boardTree}
         <span class="project-drop-line"></span>
         <button class="project-edit-button" type="button" title="Edit project">⚙</button>
       `;
@@ -578,6 +597,20 @@ function renderProjects() {
         event.stopPropagation();
         openProjectModal(project);
       });
+      for (const boardButton of button.querySelectorAll(".project-board-node")) {
+        boardButton.addEventListener("click", (event) => {
+          event.stopPropagation();
+          state.activeBoardId = boardButton.dataset.boardId || null;
+          closeProjectSidebar();
+          loadSelectedBoard()
+            .then(() => {
+              renderBoardSelect();
+              renderProjects();
+              renderBoard();
+            })
+            .catch((error) => setError(error.message));
+        });
+      }
       wireProjectDrag(button, index);
       return button;
     })
@@ -618,6 +651,24 @@ function closeProjectModal() {
   state.editingProjectId = null;
   els.projectModal.hidden = true;
   els.projectForm.reset();
+}
+
+function openTeamModal() {
+  if (!activeProject()) return;
+  els.teamModal.hidden = false;
+}
+
+function closeTeamModal() {
+  els.teamModal.hidden = true;
+}
+
+function openLabelsModal() {
+  if (!activeProject()) return;
+  els.labelsModal.hidden = false;
+}
+
+function closeLabelsModal() {
+  els.labelsModal.hidden = true;
 }
 
 function openBoardModal() {
@@ -2173,6 +2224,10 @@ els.projectSidebarBackdrop.addEventListener("click", (event) => {
 });
 els.openCreateProjectBtn.addEventListener("click", () => openProjectModal());
 els.cancelProjectModalBtn.addEventListener("click", closeProjectModal);
+els.openTeamModalBtn.addEventListener("click", openTeamModal);
+els.openLabelsModalBtn.addEventListener("click", openLabelsModal);
+els.closeTeamModalBtn.addEventListener("click", closeTeamModal);
+els.closeLabelsModalBtn.addEventListener("click", closeLabelsModal);
 els.projectForm.addEventListener("submit", (event) => createProject(event).catch((error) => setError(error.message)));
 els.boardForm.addEventListener("submit", (event) => createBoard(event).catch((error) => setError(error.message)));
 els.cancelBoardModalBtn.addEventListener("click", closeBoardModal);

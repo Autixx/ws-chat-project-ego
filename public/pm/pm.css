@@ -632,6 +632,12 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   gap: 10px;
 }
 
+.project-management-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .member-form, .label-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 120px auto;
@@ -696,6 +702,33 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   position: relative;
   min-height: 42px;
   padding-right: 34px;
+}
+
+.project-board-tree {
+  margin-top: 7px;
+  display: grid;
+  gap: 3px;
+}
+
+.project-board-node {
+  width: 100%;
+  min-height: 24px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  text-align: left;
+  padding: 2px 6px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.project-board-node:hover,
+.project-board-node.active {
+  border-color: var(--accent);
+  background: var(--panel-2);
+  color: var(--text);
 }
 
 .project-edit-button {

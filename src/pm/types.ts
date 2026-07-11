@@ -194,6 +194,7 @@ export type PmBoard = {
   epicId?: string;
   name: string;
   boardType: "kanban" | "scrum";
+  isDefault?: boolean;
   createdAt: string;
   updatedAt: string;
   version: number;

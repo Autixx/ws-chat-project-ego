@@ -574,11 +574,15 @@ export class PmStore {
   async listBoards(projectId: string, epicId?: string): Promise<PmBoard[]> {
     const result = await this.pool.query(
       `
-      SELECT *
-      FROM pm.boards
-      WHERE project_id = $1
-        AND ($2::uuid IS NULL OR epic_id = $2::uuid)
-      ORDER BY board_type ASC, updated_at DESC
+      SELECT b.*,
+             b.id = FIRST_VALUE(b.id) OVER (
+               PARTITION BY b.project_id, b.epic_id, b.board_type
+               ORDER BY b.created_at ASC
+             ) AS is_default
+      FROM pm.boards b
+      WHERE b.project_id = $1
+        AND ($2::uuid IS NULL OR b.epic_id = $2::uuid)
+      ORDER BY b.board_type ASC, b.created_at ASC
       `,
       [projectId, epicId ?? null]
     );
@@ -586,7 +590,21 @@ export class PmStore {
   }
 
   async loadBoard(boardId: string): Promise<PmBoard> {
-    const result = await this.pool.query("SELECT * FROM pm.boards WHERE id = $1", [boardId]);
+    const result = await this.pool.query(
+      `
+      SELECT *
+      FROM (
+        SELECT b.*,
+               b.id = FIRST_VALUE(b.id) OVER (
+                 PARTITION BY b.project_id, b.epic_id, b.board_type
+                 ORDER BY b.created_at ASC
+               ) AS is_default
+        FROM pm.boards b
+      ) ranked
+      WHERE id = $1
+      `,
+      [boardId]
+    );
     if (!result.rows[0]) throw new Error("Board not found.");
     return mapBoard(result.rows[0]);
   }
@@ -673,6 +691,7 @@ export class PmStore {
   async loadBoardSnapshot(boardId: string): Promise<{ board: PmBoard; columns: PmBoardColumn[]; tasks: PmBoardTask[] }> {
     const board = await this.loadBoard(boardId);
     const columns = await this.listBoardColumns(boardId);
+    const includeUnpositioned = Boolean(board.isDefault);
     const taskResult = await this.pool.query(
       `
       SELECT t.*, tp.column_id, tp.position AS board_position, COALESCE(array_agg(tl.label_id) FILTER (WHERE tl.label_id IS NOT NULL), ARRAY[]::uuid[]) AS label_ids
@@ -683,10 +702,11 @@ export class PmStore {
         AND t.deleted_at IS NULL
         AND t.archived_at IS NULL
         AND ($3::uuid IS NULL OR t.epic_id = $3::uuid)
+        AND ($4::boolean OR tp.board_id IS NOT NULL)
       GROUP BY t.id, tp.column_id, tp.position
       ORDER BY COALESCE(tp.position, 1000000000), t.updated_at DESC
       `,
-      [board.id, board.projectId, board.epicId ?? null]
+      [board.id, board.projectId, board.epicId ?? null, includeUnpositioned]
     );
     return { board, columns, tasks: taskResult.rows.map(mapBoardTask) };
   }
@@ -1612,6 +1632,7 @@ function mapBoard(row: Row): PmBoard {
     epicId: row.epic_id ? String(row.epic_id) : undefined,
     name: String(row.name),
     boardType: row.board_type === "scrum" ? "scrum" : "kanban",
+    isDefault: Boolean(row.is_default),
     createdAt: asIso(row.created_at) ?? "",
     updatedAt: asIso(row.updated_at) ?? "",
     version: Number(row.version ?? 1)

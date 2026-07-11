@@ -223,39 +223,50 @@
           <input id="projectKey" maxlength="32" placeholder="KEY" />
           <input id="projectName" maxlength="120" placeholder="Project name" />
           <textarea id="projectDescription" rows="4" placeholder="Description"></textarea>
-          <section id="projectManagementFields" class="project-management-fields">
-            <section class="team-box">
-              <div class="panel-title">
-                <h2>Team</h2>
-              </div>
-              <div id="memberForm" class="member-form">
-                <input id="memberIdentifier" placeholder="username or email" />
-                <select id="memberRole">
-                  <option value="member">member</option>
-                  <option value="viewer">viewer</option>
-                  <option value="project_owner">project owner</option>
-                </select>
-                <button type="button" disabled>Add</button>
-              </div>
-              <div id="memberList" class="list compact"></div>
-            </section>
-            <section class="label-box">
-              <div class="panel-title">
-                <h2>Labels</h2>
-              </div>
-              <div id="labelForm" class="label-form">
-                <input id="labelName" maxlength="40" placeholder="Label name" />
-                <input id="labelColor" type="color" value="#6b7280" />
-                <button type="button" disabled>Add</button>
-              </div>
-              <div id="labelList" class="list compact"></div>
-            </section>
-          </section>
+          <div id="projectManagementFields" class="project-management-buttons">
+            <button id="openTeamModalBtn" type="button">Team</button>
+            <button id="openLabelsModalBtn" type="button">Labels</button>
+          </div>
           <div class="pm-modal-actions">
             <button id="cancelProjectModalBtn" type="button">Cancel</button>
             <button type="submit">Apply</button>
           </div>
         </form>
+      </section>
+
+      <section id="teamModal" class="pm-modal-backdrop" hidden>
+        <section class="pm-modal project-modal">
+          <div class="panel-title">
+            <h2>Team</h2>
+            <button id="closeTeamModalBtn" type="button">x</button>
+          </div>
+          <p class="hint">Project creator is owner by default. Add extra users only when they need access.</p>
+          <div id="memberForm" class="member-form">
+            <input id="memberIdentifier" placeholder="username or email" />
+            <select id="memberRole">
+              <option value="member">member</option>
+              <option value="viewer">viewer</option>
+              <option value="project_owner">project owner</option>
+            </select>
+            <button type="button" disabled>Add</button>
+          </div>
+          <div id="memberList" class="list compact"></div>
+        </section>
+      </section>
+
+      <section id="labelsModal" class="pm-modal-backdrop" hidden>
+        <section class="pm-modal project-modal">
+          <div class="panel-title">
+            <h2>Labels</h2>
+            <button id="closeLabelsModalBtn" type="button">x</button>
+          </div>
+          <div id="labelForm" class="label-form">
+            <input id="labelName" maxlength="40" placeholder="Label name" />
+            <input id="labelColor" type="color" value="#6b7280" />
+            <button type="button" disabled>Add</button>
+          </div>
+          <div id="labelList" class="list compact"></div>
+        </section>
       </section>
 
       <section id="boardModal" class="pm-modal-backdrop" hidden>
