@@ -883,6 +883,11 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   outline-offset: -1px;
 }
 
+.home-widget.blocked {
+  outline: 1px solid var(--red);
+  outline-offset: -1px;
+}
+
 .home-widget header {
   display: flex;
   justify-content: space-between;
@@ -914,15 +919,16 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   position: absolute;
   left: 0;
   top: 0;
-  width: 14px;
-  height: 100%;
+  width: var(--home-grid-step, 56px);
+  height: var(--home-grid-step, 56px);
   min-height: 0;
   padding: 0;
-  border: 0;
-  border-right: 1px solid var(--accent);
+  border: 1px solid var(--accent);
+  border-left: 0;
+  border-top: 0;
   background:
     repeating-linear-gradient(
-      to bottom,
+      135deg,
       var(--accent) 0 2px,
       transparent 2px 6px
     ),
@@ -934,7 +940,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 .home-widget-anchor:hover {
   background:
     repeating-linear-gradient(
-      to bottom,
+      135deg,
       var(--text) 0 2px,
       transparent 2px 6px
     ),

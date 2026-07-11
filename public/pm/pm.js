@@ -428,7 +428,10 @@ async function loadHome() {
 
 async function addHomeWidget() {
   const kind = els.homeWidgetKind.value;
-  const next = nextWidgetPosition();
+  const width = kind === "notes" ? 4 : 5;
+  const height = kind === "timer" ? 2 : 4;
+  const next = nextWidgetPosition(width, height);
+  if (!next) throw new Error("No free grid space for this widget.");
   const { widget } = await api("/api/pm/home/widgets", {
     method: "POST",
     body: JSON.stringify({
@@ -436,8 +439,8 @@ async function addHomeWidget() {
       title: defaultWidgetTitle(kind),
       x: next.x,
       y: next.y,
-      width: kind === "notes" ? 4 : 5,
-      height: kind === "timer" ? 2 : 4,
+      width,
+      height,
       clickable: true,
       content: kind === "notes" ? { text: "" } : kind === "timer" ? { targetAt: new Date(Date.now() + 3600000).toISOString() } : {}
     })
@@ -467,7 +470,10 @@ async function saveSelectedWidgetTemplate() {
 async function useSelectedWidgetTemplate() {
   const template = state.homeTemplates.find((item) => item.id === els.homeTemplateSelect.value);
   if (!template) return;
-  const next = nextWidgetPosition();
+  const width = 5;
+  const height = template.kind === "timer" ? 2 : 4;
+  const next = nextWidgetPosition(width, height);
+  if (!next) throw new Error("No free grid space for this widget.");
   const { widget } = await api("/api/pm/home/widgets", {
     method: "POST",
     body: JSON.stringify({
@@ -476,8 +482,8 @@ async function useSelectedWidgetTemplate() {
       title: template.name,
       x: next.x,
       y: next.y,
-      width: 5,
-      height: template.kind === "timer" ? 2 : 4,
+      width,
+      height,
       clickable: true,
       config: template.config,
       content: template.content
@@ -635,13 +641,20 @@ function startHomeWidgetMove(event, widget) {
     moveEvent.preventDefault();
     const deltaX = Math.round((moveEvent.clientX - startX) / step);
     const deltaY = Math.round((moveEvent.clientY - startY) / step);
-    nextPosition = clampWidgetPosition({ ...widget, width: size.width, height: size.height }, startPosition.x + deltaX, startPosition.y + deltaY);
+    const candidate = clampWidgetPosition({ ...widget, width: size.width, height: size.height }, startPosition.x + deltaX, startPosition.y + deltaY);
+    if (homeWidgetCollides({ id: widget.id, ...candidate, width: size.width, height: size.height })) {
+      card.classList.add("blocked");
+      return;
+    }
+    card.classList.remove("blocked");
+    nextPosition = candidate;
     card.style.gridColumn = `${nextPosition.x} / span ${size.width}`;
     card.style.gridRow = `${nextPosition.y} / span ${size.height}`;
   };
 
   const stop = () => {
     card.classList.remove("moving");
+    card.classList.remove("blocked");
     document.body.classList.remove("dragging-home-widget");
     document.removeEventListener("pointermove", move);
     document.removeEventListener("pointerup", stop);
@@ -674,6 +687,7 @@ function startHomeWidgetResize(event, widget) {
   const startY = event.clientY;
   const startWidth = Number(widget.width || 1);
   const startHeight = Number(widget.height || 1);
+  const position = clampWidgetPosition(widget, Number(widget.x || 1), Number(widget.y || 1));
   const step = homeGridStep();
   let nextSize = { width: startWidth, height: startHeight };
   document.body.classList.add("resizing-home-widget");
@@ -682,12 +696,19 @@ function startHomeWidgetResize(event, widget) {
     moveEvent.preventDefault();
     const deltaWidth = Math.round((moveEvent.clientX - startX) / step);
     const deltaHeight = Math.round((moveEvent.clientY - startY) / step);
-    nextSize = clampWidgetSize(widget, startWidth + deltaWidth, startHeight + deltaHeight);
-    card.style.gridColumn = `${widget.x} / span ${nextSize.width}`;
-    card.style.gridRow = `${widget.y} / span ${nextSize.height}`;
+    const candidate = clampWidgetSize({ ...widget, x: position.x, y: position.y }, startWidth + deltaWidth, startHeight + deltaHeight);
+    if (homeWidgetCollides({ id: widget.id, x: position.x, y: position.y, width: candidate.width, height: candidate.height })) {
+      card.classList.add("blocked");
+      return;
+    }
+    card.classList.remove("blocked");
+    nextSize = candidate;
+    card.style.gridColumn = `${position.x} / span ${nextSize.width}`;
+    card.style.gridRow = `${position.y} / span ${nextSize.height}`;
   };
 
   const stop = () => {
+    card.classList.remove("blocked");
     document.body.classList.remove("resizing-home-widget");
     document.removeEventListener("pointermove", move);
     document.removeEventListener("pointerup", stop);
@@ -712,9 +733,16 @@ async function deleteHomeWidget(id) {
   renderHome();
 }
 
-function nextWidgetPosition() {
-  const y = state.homeWidgets.reduce((max, widget) => Math.max(max, widget.y + widget.height), 1);
-  return { x: 1, y: Math.min(y, maxHomeGridRows()) };
+function nextWidgetPosition(width = 4, height = 3) {
+  const { columns, rows } = homeGridMetrics();
+  const maxX = Math.max(1, columns - width + 1);
+  const maxY = Math.max(1, rows - height + 1);
+  for (let y = 1; y <= maxY; y += 1) {
+    for (let x = 1; x <= maxX; x += 1) {
+      if (!homeWidgetCollides({ x, y, width, height })) return { x, y };
+    }
+  }
+  return null;
 }
 
 function defaultWidgetTitle(kind) {
@@ -745,6 +773,28 @@ function clampWidgetSize(widget, width, height) {
   };
 }
 
+function homeWidgetCollides(candidate) {
+  return state.homeWidgets.some((widget) => {
+    if (candidate.id && widget.id === candidate.id) return false;
+    return rectanglesOverlap(normalizeWidgetRect(candidate), normalizeWidgetRect(widget));
+  });
+}
+
+function normalizeWidgetRect(widget) {
+  const width = Math.max(1, Number(widget.width || 1));
+  const height = Math.max(1, Number(widget.height || 1));
+  return {
+    x1: Number(widget.x || 1),
+    y1: Number(widget.y || 1),
+    x2: Number(widget.x || 1) + width - 1,
+    y2: Number(widget.y || 1) + height - 1
+  };
+}
+
+function rectanglesOverlap(a, b) {
+  return a.x1 <= b.x2 && a.x2 >= b.x1 && a.y1 <= b.y2 && a.y2 >= b.y1;
+}
+
 function homeGridStep() {
   const value = Number(els.homeGridStep.value || 56);
   if (!Number.isFinite(value)) return 56;
@@ -758,10 +808,6 @@ function loadHomeGridStep() {
   } catch {
     // Grid step persistence is best-effort.
   }
-}
-
-function maxHomeGridRows() {
-  return homeGridMetrics().rows || 1;
 }
 
 async function loadNotifications() {
