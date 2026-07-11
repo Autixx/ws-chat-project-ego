@@ -23,6 +23,9 @@ import type {
   PmComment,
   PmEpic,
   PmEventRecord,
+  PmAnnouncement,
+  PmHomeWidget,
+  PmHomeWidgetKind,
   PmLabel,
   PmNotification,
   PmProject,
@@ -33,6 +36,7 @@ import type {
   PmTaskDependency,
   PmTaskPosition,
   PmUser,
+  PmWidgetTemplate,
   PmWebhookDeliveryRecord,
   PmWebhookDeliverySummary,
   UpdateProjectInput,
@@ -119,7 +123,7 @@ export class PmStore {
       VALUES ($1, NULL, $2, $3)
       ON CONFLICT (external_subject)
       DO UPDATE SET username = EXCLUDED.username, display_name = EXCLUDED.display_name, updated_at = now()
-      RETURNING id, username, email, display_name
+      RETURNING id, username, email, display_name, global_role
       `,
       [username, displayName, `automation:${normalized}`]
     );
@@ -388,12 +392,153 @@ export class PmStore {
     return filter;
   }
 
+  async listHomeWidgets(userId: string): Promise<PmHomeWidget[]> {
+    const result = await this.pool.query("SELECT * FROM pm.home_widgets WHERE user_id = $1 ORDER BY y ASC, x ASC, created_at ASC", [userId]);
+    return result.rows.map(mapHomeWidget);
+  }
+
+  async createHomeWidget(user: PmUser, input: Partial<PmHomeWidget>): Promise<PmHomeWidget> {
+    const kind = normalizeWidgetKind(input.kind);
+    const result = await this.pool.query(
+      `
+      INSERT INTO pm.home_widgets (user_id, template_id, kind, title, x, y, width, height, clickable, config, content)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb)
+      RETURNING *
+      `,
+      [
+        user.id,
+        input.templateId ?? null,
+        kind,
+        normalizeWidgetTitle(input.title, kind),
+        clampNumber(input.x, 1, 24, 1),
+        clampNumber(input.y, 1, 48, 1),
+        clampNumber(input.width, 1, 24, 4),
+        clampNumber(input.height, 1, 24, 3),
+        input.clickable ?? true,
+        JSON.stringify(input.config ?? {}),
+        JSON.stringify(input.content ?? {})
+      ]
+    );
+    return mapHomeWidget(result.rows[0]);
+  }
+
+  async updateHomeWidget(user: PmUser, widgetId: string, input: Partial<PmHomeWidget>): Promise<PmHomeWidget> {
+    const current = await this.pool.query("SELECT * FROM pm.home_widgets WHERE id = $1 AND user_id = $2", [widgetId, user.id]);
+    if (!current.rows[0]) throw new Error("Widget not found.");
+    const existing = mapHomeWidget(current.rows[0]);
+    const kind = input.kind ? normalizeWidgetKind(input.kind) : existing.kind;
+    const result = await this.pool.query(
+      `
+      UPDATE pm.home_widgets
+      SET kind = $3,
+          title = $4,
+          x = $5,
+          y = $6,
+          width = $7,
+          height = $8,
+          clickable = $9,
+          config = $10::jsonb,
+          content = $11::jsonb,
+          updated_at = now()
+      WHERE id = $1 AND user_id = $2
+      RETURNING *
+      `,
+      [
+        widgetId,
+        user.id,
+        kind,
+        input.title === undefined ? existing.title : normalizeWidgetTitle(input.title, kind),
+        clampNumber(input.x ?? existing.x, 1, 24, existing.x),
+        clampNumber(input.y ?? existing.y, 1, 48, existing.y),
+        clampNumber(input.width ?? existing.width, 1, 24, existing.width),
+        clampNumber(input.height ?? existing.height, 1, 24, existing.height),
+        input.clickable ?? existing.clickable,
+        JSON.stringify(input.config ?? existing.config),
+        JSON.stringify(input.content ?? existing.content)
+      ]
+    );
+    return mapHomeWidget(result.rows[0]);
+  }
+
+  async deleteHomeWidget(user: PmUser, widgetId: string): Promise<void> {
+    const result = await this.pool.query("DELETE FROM pm.home_widgets WHERE id = $1 AND user_id = $2", [widgetId, user.id]);
+    if (!result.rowCount) throw new Error("Widget not found.");
+  }
+
+  async listWidgetTemplates(userId: string): Promise<PmWidgetTemplate[]> {
+    const result = await this.pool.query(
+      "SELECT * FROM pm.widget_templates WHERE visibility = 'public' OR owner_id = $1 ORDER BY visibility ASC, lower(name) ASC",
+      [userId]
+    );
+    return result.rows.map(mapWidgetTemplate);
+  }
+
+  async createWidgetTemplate(user: PmUser, input: Partial<PmWidgetTemplate>): Promise<PmWidgetTemplate> {
+    const kind = normalizeWidgetKind(input.kind);
+    const visibility = input.visibility === "public" ? "public" : "private";
+    const result = await this.pool.query(
+      `
+      INSERT INTO pm.widget_templates (owner_id, kind, name, visibility, config, content)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+      RETURNING *
+      `,
+      [user.id, kind, String(input.name || normalizeWidgetTitle(undefined, kind)).slice(0, 120), visibility, JSON.stringify(input.config ?? {}), JSON.stringify(input.content ?? {})]
+    );
+    return mapWidgetTemplate(result.rows[0]);
+  }
+
+  async listHomeWidgetData(user: PmUser): Promise<Record<string, unknown>> {
+    const [activity, changes, announcements] = await Promise.all([
+      this.pool.query(
+        `
+        SELECT t.id, t.title, t.status, t.priority, t.created_at, p.name AS project_name
+        FROM pm.tasks t
+        JOIN pm.projects p ON p.id = t.project_id
+        LEFT JOIN pm.project_members m ON m.project_id = t.project_id AND m.user_id = $1
+        WHERE t.deleted_at IS NULL
+          AND (t.creator_id = $1 OR t.assignee_id = $1 OR m.user_id = $1)
+        ORDER BY t.created_at DESC
+        LIMIT 20
+        `,
+        [user.id]
+      ),
+      this.pool.query(
+        `
+        SELECT DISTINCT ON (t.id) t.id, t.title, t.status, t.priority, t.updated_at, p.name AS project_name
+        FROM pm.tasks t
+        JOIN pm.projects p ON p.id = t.project_id
+        LEFT JOIN pm.comments c ON c.task_id = t.id AND c.author_id = $1
+        LEFT JOIN audit.events e ON e.task_id = t.id
+        WHERE t.deleted_at IS NULL
+          AND (t.creator_id = $1 OR t.assignee_id = $1 OR c.author_id = $1 OR e.actor_id = $1::text)
+        ORDER BY t.id, t.updated_at DESC
+        LIMIT 20
+        `,
+        [user.id]
+      ),
+      this.pool.query("SELECT * FROM pm.announcements ORDER BY created_at DESC LIMIT 5")
+    ]);
+    return {
+      activity: activity.rows.map((row) => ({ id: String(row.id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), createdAt: asIso(row.created_at) })),
+      changes: changes.rows.map((row) => ({ id: String(row.id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), updatedAt: asIso(row.updated_at) })),
+      announcements: announcements.rows.map(mapAnnouncement)
+    };
+  }
+
+  async createAnnouncement(user: PmUser, input: { title: string; body: string }): Promise<PmAnnouncement> {
+    if (!["admin", "super_admin"].includes(user.globalRole ?? "user")) throw new Error("Admin role is required to publish announcements.");
+    const result = await this.pool.query(
+      "INSERT INTO pm.announcements (author_id, title, body) VALUES ($1, $2, $3) RETURNING *",
+      [user.id, input.title.trim().slice(0, 120) || "Announcement", input.body.trim()]
+    );
+    return mapAnnouncement(result.rows[0]);
+  }
 
   async findUserByIdentifier(identifier: string): Promise<PmUser> {
     const value = identifier.trim();
     const result = await this.pool.query(
       `
-      SELECT id, username, email, display_name
+      SELECT id, username, email, display_name, global_role
       FROM core.users
       WHERE disabled = false
         AND (lower(username) = lower($1) OR lower(email) = lower($1) OR id::text = $1)
@@ -1431,12 +1576,36 @@ function normalizeSearch(value: string | undefined): string | null {
   return search || null;
 }
 
+function normalizeWidgetKind(value: unknown): PmHomeWidgetKind {
+  const kind = String(value || "notes");
+  return ["activity", "changes", "announcement", "notes", "timer", "api"].includes(kind) ? (kind as PmHomeWidgetKind) : "notes";
+}
+
+function normalizeWidgetTitle(value: unknown, kind: PmHomeWidgetKind): string {
+  const fallback: Record<PmHomeWidgetKind, string> = {
+    activity: "New activity",
+    changes: "New changes",
+    announcement: "Announcements",
+    notes: "Notes",
+    timer: "Timer",
+    api: "API widget"
+  };
+  return String(value || fallback[kind]).trim().slice(0, 120) || fallback[kind];
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(number)));
+}
+
 function mapUser(row: Row): PmUser {
   return {
     id: String(row.id),
     username: String(row.username),
     email: row.email ? String(row.email) : undefined,
-    displayName: row.display_name ? String(row.display_name) : undefined
+    displayName: row.display_name ? String(row.display_name) : undefined,
+    globalRole: ["super_admin", "admin", "user"].includes(String(row.global_role)) ? (String(row.global_role) as PmUser["globalRole"]) : "user"
   };
 }
 
@@ -1620,6 +1789,50 @@ function mapSavedFilter(row: Row): PmSavedFilter {
     userId: String(row.user_id),
     name: String(row.name),
     filter: parseJsonObject(row.filter_json),
+    createdAt: asIso(row.created_at) ?? "",
+    updatedAt: asIso(row.updated_at) ?? ""
+  };
+}
+
+function mapHomeWidget(row: Row): PmHomeWidget {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    templateId: row.template_id ? String(row.template_id) : undefined,
+    kind: normalizeWidgetKind(row.kind),
+    title: String(row.title),
+    x: Number(row.x ?? 1),
+    y: Number(row.y ?? 1),
+    width: Number(row.width ?? 4),
+    height: Number(row.height ?? 3),
+    clickable: Boolean(row.clickable),
+    config: parseJsonObject(row.config),
+    content: parseJsonObject(row.content),
+    createdAt: asIso(row.created_at) ?? "",
+    updatedAt: asIso(row.updated_at) ?? ""
+  };
+}
+
+function mapWidgetTemplate(row: Row): PmWidgetTemplate {
+  return {
+    id: String(row.id),
+    ownerId: row.owner_id ? String(row.owner_id) : undefined,
+    kind: normalizeWidgetKind(row.kind),
+    name: String(row.name),
+    visibility: row.visibility === "public" ? "public" : "private",
+    config: parseJsonObject(row.config),
+    content: parseJsonObject(row.content),
+    createdAt: asIso(row.created_at) ?? "",
+    updatedAt: asIso(row.updated_at) ?? ""
+  };
+}
+
+function mapAnnouncement(row: Row): PmAnnouncement {
+  return {
+    id: String(row.id),
+    authorId: row.author_id ? String(row.author_id) : undefined,
+    title: String(row.title),
+    body: String(row.body ?? ""),
     createdAt: asIso(row.created_at) ?? "",
     updatedAt: asIso(row.updated_at) ?? ""
   };

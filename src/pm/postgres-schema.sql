@@ -240,6 +240,48 @@ CREATE TABLE IF NOT EXISTS pm.saved_filters (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS pm.home_widgets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES core.users(id) ON DELETE CASCADE,
+  template_id UUID,
+  kind TEXT NOT NULL CHECK (kind IN ('activity', 'changes', 'announcement', 'notes', 'timer', 'api')),
+  title TEXT NOT NULL,
+  x INTEGER NOT NULL DEFAULT 1,
+  y INTEGER NOT NULL DEFAULT 1,
+  width INTEGER NOT NULL DEFAULT 4,
+  height INTEGER NOT NULL DEFAULT 3,
+  clickable BOOLEAN NOT NULL DEFAULT TRUE,
+  config JSONB NOT NULL DEFAULT '{}'::jsonb,
+  content JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (x >= 1),
+  CHECK (y >= 1),
+  CHECK (width >= 1),
+  CHECK (height >= 1)
+);
+
+CREATE TABLE IF NOT EXISTS pm.widget_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id UUID REFERENCES core.users(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('activity', 'changes', 'announcement', 'notes', 'timer', 'api')),
+  name TEXT NOT NULL,
+  visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN ('private', 'public')),
+  config JSONB NOT NULL DEFAULT '{}'::jsonb,
+  content JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS pm.announcements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  author_id UUID REFERENCES core.users(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS automation.service_accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,
@@ -267,6 +309,9 @@ CREATE INDEX IF NOT EXISTS idx_pm_comments_task_created ON pm.comments(task_id, 
 CREATE INDEX IF NOT EXISTS idx_pm_notifications_user_unread ON pm.notifications(user_id, created_at DESC) WHERE read_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_pm_webhook_deliveries_due ON pm.webhook_deliveries(next_attempt_at, created_at) WHERE status IN ('pending', 'retrying');
 CREATE INDEX IF NOT EXISTS idx_pm_webhook_deliveries_status ON pm.webhook_deliveries(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pm_home_widgets_user ON pm.home_widgets(user_id, y, x);
+CREATE INDEX IF NOT EXISTS idx_pm_widget_templates_visible ON pm.widget_templates(visibility, kind, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pm_announcements_created ON pm.announcements(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_project_created ON audit.events(project_id, created_at DESC);
 
 -- Runtime grant sketch:

@@ -25,6 +25,11 @@ const state = {
   comments: [],
   attachments: [],
   activity: [],
+  currentView: "home",
+  homeEditing: false,
+  homeWidgets: [],
+  homeTemplates: [],
+  homeData: {},
   notifications: [],
   webhookDeliveries: [],
   webhookSummary: { pending: 0, retrying: 0, delivered: 0, dead: 0 },
@@ -65,6 +70,19 @@ const els = {
   pmLoginPassword: $("pmLoginPassword"),
   pmLoginMessage: $("pmLoginMessage"),
   pmGrid: $("pmGrid"),
+  pmHomeBtn: $("pmHomeBtn"),
+  pmKanbanBtn: $("pmKanbanBtn"),
+  pmHomeView: $("pmHomeView"),
+  pmKanbanView: $("pmKanbanView"),
+  homeEditToggle: $("homeEditToggle"),
+  homeGridDensity: $("homeGridDensity"),
+  homeWidgetKind: $("homeWidgetKind"),
+  addHomeWidgetBtn: $("addHomeWidgetBtn"),
+  saveWidgetTemplateBtn: $("saveWidgetTemplateBtn"),
+  homeTemplateVisibility: $("homeTemplateVisibility"),
+  homeTemplateSelect: $("homeTemplateSelect"),
+  useWidgetTemplateBtn: $("useWidgetTemplateBtn"),
+  homeGrid: $("homeGrid"),
   projectSidebarToggle: $("projectSidebarToggle"),
   projectSidebarBackdrop: $("projectSidebarBackdrop"),
   closeProjectSidebarBtn: $("closeProjectSidebarBtn"),
@@ -346,6 +364,8 @@ function showPmLogin(message = "") {
   els.pmLoginPanel.hidden = false;
   els.pmGrid.hidden = true;
   els.pmLogoutBtn.hidden = true;
+  els.pmHomeBtn.hidden = true;
+  els.pmKanbanBtn.hidden = true;
 }
 
 function showPmApp() {
@@ -353,13 +373,25 @@ function showPmApp() {
   els.pmLoginPanel.hidden = true;
   els.pmGrid.hidden = false;
   els.pmLogoutBtn.hidden = false;
+  els.pmHomeBtn.hidden = false;
+  els.pmKanbanBtn.hidden = false;
+  setPmView(state.currentView || "home");
 }
 
 async function loadAfterAuth() {
+  await loadHome();
   await loadNotifications();
   await loadWebhookDeliveries();
   await loadOpsStatus();
   await loadProjects();
+}
+
+function setPmView(view) {
+  state.currentView = view === "kanban" ? "kanban" : "home";
+  els.pmHomeView.hidden = state.currentView !== "home";
+  els.pmKanbanView.hidden = state.currentView !== "kanban";
+  els.pmHomeBtn.classList.toggle("active", state.currentView === "home");
+  els.pmKanbanBtn.classList.toggle("active", state.currentView === "kanban");
 }
 
 async function loginPm(event) {
@@ -382,6 +414,245 @@ async function loginPm(event) {
 async function logoutPm() {
   await api("/api/pm/auth/logout", { method: "POST" }).catch(() => undefined);
   showPmLogin();
+}
+
+async function loadHome() {
+  const { widgets, templates, data } = await api("/api/pm/home");
+  state.homeWidgets = widgets;
+  state.homeTemplates = templates;
+  state.homeData = data || {};
+  renderHomeTemplates();
+  renderHome();
+}
+
+async function addHomeWidget() {
+  const kind = els.homeWidgetKind.value;
+  const next = nextWidgetPosition();
+  const { widget } = await api("/api/pm/home/widgets", {
+    method: "POST",
+    body: JSON.stringify({
+      kind,
+      title: defaultWidgetTitle(kind),
+      x: next.x,
+      y: next.y,
+      width: kind === "notes" ? 4 : 5,
+      height: kind === "timer" ? 2 : 4,
+      clickable: true,
+      content: kind === "notes" ? { text: "" } : kind === "timer" ? { targetAt: new Date(Date.now() + 3600000).toISOString() } : {}
+    })
+  });
+  state.homeWidgets.push(widget);
+  renderHome();
+}
+
+async function saveSelectedWidgetTemplate() {
+  const widget = state.homeWidgets[0];
+  if (!widget) return;
+  const { template } = await api("/api/pm/home/templates", {
+    method: "POST",
+    body: JSON.stringify({
+      kind: widget.kind,
+      name: widget.title,
+      visibility: els.homeTemplateVisibility.value,
+      config: widget.config,
+      content: widget.content
+    })
+  });
+  state.homeTemplates = [...state.homeTemplates, template];
+  renderHomeTemplates();
+  setError("Widget template saved.");
+}
+
+async function useSelectedWidgetTemplate() {
+  const template = state.homeTemplates.find((item) => item.id === els.homeTemplateSelect.value);
+  if (!template) return;
+  const next = nextWidgetPosition();
+  const { widget } = await api("/api/pm/home/widgets", {
+    method: "POST",
+    body: JSON.stringify({
+      templateId: template.id,
+      kind: template.kind,
+      title: template.name,
+      x: next.x,
+      y: next.y,
+      width: 5,
+      height: template.kind === "timer" ? 2 : 4,
+      clickable: true,
+      config: template.config,
+      content: template.content
+    })
+  });
+  state.homeWidgets.push(widget);
+  renderHome();
+}
+
+function renderHomeTemplates() {
+  els.homeTemplateSelect.replaceChildren(optionEl("", "Templates"));
+  for (const template of state.homeTemplates) {
+    els.homeTemplateSelect.append(optionEl(template.id, `${template.visibility}: ${template.name}`));
+  }
+  els.useWidgetTemplateBtn.disabled = state.homeTemplates.length === 0;
+}
+
+function renderHome() {
+  els.homeGrid.className = `home-grid density-${els.homeGridDensity.value}${state.homeEditing ? " editing" : ""}`;
+  els.homeEditToggle.textContent = state.homeEditing ? "Done" : "Edit";
+  els.homeGrid.replaceChildren(...state.homeWidgets.map(renderHomeWidget));
+}
+
+function renderHomeWidget(widget) {
+  const card = document.createElement("article");
+  card.className = `home-widget ${widget.clickable ? "clickable" : ""} ${state.homeEditing ? "editing" : ""}`;
+  card.style.gridColumn = `${widget.x} / span ${widget.width}`;
+  card.style.gridRow = `${widget.y} / span ${widget.height}`;
+  card.draggable = state.homeEditing;
+  card.dataset.widgetId = widget.id;
+  card.innerHTML = `
+    <header>
+      <span>${escapeHtml(widget.title)}</span>
+      <span>${escapeHtml(widget.kind)}</span>
+    </header>
+    <div class="home-widget-body"></div>
+  `;
+  card.querySelector(".home-widget-body").replaceChildren(...homeWidgetBody(widget));
+  if (state.homeEditing) {
+    card.append(renderWidgetSettings(widget));
+    card.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("text/plain", widget.id);
+      event.dataTransfer.effectAllowed = "move";
+    });
+  }
+  return card;
+}
+
+function homeWidgetBody(widget) {
+  if (widget.kind === "activity") return listWidgetRows(state.homeData.activity || [], "createdAt");
+  if (widget.kind === "changes") return listWidgetRows(state.homeData.changes || [], "updatedAt");
+  if (widget.kind === "announcement") return listAnnouncementRows(state.homeData.announcements || []);
+  if (widget.kind === "timer") return [timerWidgetNode(widget)];
+  if (widget.kind === "api") return [plainWidgetNode(JSON.stringify(widget.config || {}, null, 2) || "No API source configured.")];
+  return [notesWidgetNode(widget)];
+}
+
+function listWidgetRows(items, dateKey) {
+  if (!items.length) return [plainWidgetNode("No items.")];
+  return items.slice(0, 8).map((item) => {
+    const row = document.createElement("div");
+    row.className = "widget-row";
+    row.innerHTML = `<div class="widget-row-title">${escapeHtml(item.title || "Task")}</div><div class="widget-row-meta">${escapeHtml(item.projectName || "")} / ${escapeHtml(item.status || "")} / ${formatDate(item[dateKey])}</div>`;
+    return row;
+  });
+}
+
+function listAnnouncementRows(items) {
+  if (!items.length) return [plainWidgetNode("No announcements.")];
+  return items.map((item) => {
+    const row = document.createElement("div");
+    row.className = "widget-row";
+    row.innerHTML = `<div class="widget-row-title">${escapeHtml(item.title)}</div><div class="widget-row-meta">${formatDate(item.createdAt)}</div><div class="card-body">${escapeHtml(item.body || "")}</div>`;
+    return row;
+  });
+}
+
+function notesWidgetNode(widget) {
+  const wrap = document.createElement("div");
+  wrap.className = "notes-widget";
+  const textarea = document.createElement("textarea");
+  textarea.value = widget.content?.text || "";
+  textarea.readOnly = !state.homeEditing;
+  textarea.addEventListener("change", () => updateHomeWidget(widget.id, { content: { ...widget.content, text: textarea.value } }).catch((error) => setError(error.message)));
+  wrap.append(textarea);
+  return wrap;
+}
+
+function timerWidgetNode(widget) {
+  const target = widget.content?.targetAt ? new Date(widget.content.targetAt) : new Date(Date.now() + 3600000);
+  const seconds = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
+  const wrap = document.createElement("div");
+  wrap.className = "timer-widget";
+  if (state.homeEditing) {
+    const input = document.createElement("input");
+    input.type = "datetime-local";
+    input.value = localDateTimeInputValue(target);
+    input.addEventListener("change", () => updateHomeWidget(widget.id, { content: { ...widget.content, targetAt: new Date(input.value).toISOString() } }).catch((error) => setError(error.message)));
+    wrap.append(input);
+  }
+  const output = plainWidgetNode(`${target.toLocaleString()}\n${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m ${seconds % 60}s`);
+  wrap.append(output);
+  return wrap;
+}
+
+function plainWidgetNode(text) {
+  const node = document.createElement("pre");
+  node.className = "widget-row";
+  node.textContent = text;
+  return node;
+}
+
+function renderWidgetSettings(widget) {
+  const form = document.createElement("div");
+  form.className = "home-widget-settings";
+  form.innerHTML = `
+    <input type="number" min="1" max="24" value="${widget.x}" title="x" />
+    <input type="number" min="1" max="48" value="${widget.y}" title="y" />
+    <input type="number" min="1" max="24" value="${widget.width}" title="width" />
+    <input type="number" min="1" max="24" value="${widget.height}" title="height" />
+    <button type="button">${widget.clickable ? "Clickable" : "Static"}</button>
+    <button type="button">Delete</button>
+  `;
+  const [x, y, width, height] = Array.from(form.querySelectorAll("input"));
+  for (const input of [x, y, width, height]) {
+    input.addEventListener("change", () => updateHomeWidget(widget.id, { x: x.value, y: y.value, width: width.value, height: height.value }).catch((error) => setError(error.message)));
+  }
+  const [clickable, remove] = Array.from(form.querySelectorAll("button"));
+  clickable.addEventListener("click", () => updateHomeWidget(widget.id, { clickable: !widget.clickable }).catch((error) => setError(error.message)));
+  remove.addEventListener("click", () => deleteHomeWidget(widget.id).catch((error) => setError(error.message)));
+  return form;
+}
+
+async function updateHomeWidget(id, patch) {
+  const { widget } = await api(`/api/pm/home/widgets/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+  state.homeWidgets = state.homeWidgets.map((item) => (item.id === widget.id ? widget : item));
+  renderHome();
+}
+
+async function deleteHomeWidget(id) {
+  await api(`/api/pm/home/widgets/${encodeURIComponent(id)}`, { method: "DELETE" });
+  state.homeWidgets = state.homeWidgets.filter((widget) => widget.id !== id);
+  renderHome();
+}
+
+function nextWidgetPosition() {
+  const y = state.homeWidgets.reduce((max, widget) => Math.max(max, widget.y + widget.height), 1);
+  return { x: 1, y: Math.min(y, 42) };
+}
+
+function defaultWidgetTitle(kind) {
+  return { activity: "New activity", changes: "New changes", announcement: "Announcements", notes: "Notes", timer: "Timer", api: "API widget" }[kind] || "Widget";
+}
+
+function homeGridMetrics() {
+  const density = els.homeGridDensity.value;
+  const columns = { coarse: 8, medium: 12, fine: 16 }[density] || 12;
+  const rowHeight = { coarse: 80, medium: 62, fine: 50 }[density] || 62;
+  return { columns, rowHeight };
+}
+
+function clampWidgetPosition(widget, x, y) {
+  const { columns } = homeGridMetrics();
+  return {
+    x: Math.max(1, Math.min(columns - Number(widget.width || 1) + 1, x)),
+    y: Math.max(1, Math.min(48 - Number(widget.height || 1) + 1, y))
+  };
+}
+
+function homeDropPosition(event, widget) {
+  const rect = els.homeGrid.getBoundingClientRect();
+  const { columns, rowHeight } = homeGridMetrics();
+  const columnWidth = rect.width / columns;
+  const x = Math.floor((event.clientX - rect.left) / columnWidth) + 1;
+  const y = Math.floor((event.clientY - rect.top + els.homeGrid.scrollTop) / rowHeight) + 1;
+  return clampWidgetPosition(widget, x, y);
 }
 
 async function loadNotifications() {
@@ -2148,6 +2419,13 @@ function dateInputValue(value) {
   return String(value).slice(0, 10);
 }
 
+function localDateTimeInputValue(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
+}
+
 function startOfToday() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -2217,6 +2495,28 @@ for (const input of [els.customBgColor, els.customFieldColor, els.customTextColo
 els.bootstrapForm.addEventListener("submit", (event) => bootstrapPm(event).catch((error) => setError(error.message)));
 els.pmLoginForm.addEventListener("submit", (event) => loginPm(event).catch((error) => showPmLogin(error.message)));
 els.pmLogoutBtn.addEventListener("click", () => logoutPm().catch((error) => setError(error.message)));
+els.pmHomeBtn.addEventListener("click", () => setPmView("home"));
+els.pmKanbanBtn.addEventListener("click", () => setPmView("kanban"));
+els.homeEditToggle.addEventListener("click", () => {
+  state.homeEditing = !state.homeEditing;
+  renderHome();
+});
+els.homeGridDensity.addEventListener("change", renderHome);
+els.addHomeWidgetBtn.addEventListener("click", () => addHomeWidget().catch((error) => setError(error.message)));
+els.saveWidgetTemplateBtn.addEventListener("click", () => saveSelectedWidgetTemplate().catch((error) => setError(error.message)));
+els.useWidgetTemplateBtn.addEventListener("click", () => useSelectedWidgetTemplate().catch((error) => setError(error.message)));
+els.homeGrid.addEventListener("dragover", (event) => {
+  if (!state.homeEditing) return;
+  event.preventDefault();
+});
+els.homeGrid.addEventListener("drop", (event) => {
+  if (!state.homeEditing) return;
+  event.preventDefault();
+  const widgetId = event.dataTransfer.getData("text/plain");
+  const widget = state.homeWidgets.find((item) => item.id === widgetId);
+  if (!widget) return;
+  updateHomeWidget(widget.id, homeDropPosition(event, widget)).catch((error) => setError(error.message));
+});
 els.projectSidebarToggle.addEventListener("click", openProjectSidebar);
 els.closeProjectSidebarBtn.addEventListener("click", closeProjectSidebar);
 els.projectSidebarBackdrop.addEventListener("click", (event) => {

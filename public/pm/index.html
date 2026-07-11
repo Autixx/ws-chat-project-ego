@@ -25,6 +25,8 @@
             <label>Lines<input id="customLineColor" type="color" value="#29413f" /></label>
           </div>
           <div class="pm-actions">
+            <button id="pmHomeBtn" type="button" class="notification-toggle" hidden>Home</button>
+            <button id="pmKanbanBtn" type="button" class="notification-toggle" hidden>Kanban</button>
             <button id="pmLogoutBtn" type="button" class="notification-toggle" hidden>Logout</button>
           </div>
         </div>
@@ -112,6 +114,45 @@
         </aside>
 
         <section class="work-pane">
+          <section id="pmHomeView" class="home-view" hidden>
+            <section class="home-toolbar panel">
+              <div>
+                <h2>Front page</h2>
+                <p>Private personal PM workspace.</p>
+              </div>
+              <div class="home-controls">
+                <button id="homeEditToggle" type="button">Edit</button>
+                <label>Grid
+                  <select id="homeGridDensity">
+                    <option value="coarse">coarse</option>
+                    <option value="medium" selected>medium</option>
+                    <option value="fine">fine</option>
+                  </select>
+                </label>
+                <select id="homeWidgetKind">
+                  <option value="activity">New activity</option>
+                  <option value="changes">New changes</option>
+                  <option value="announcement">Announcements</option>
+                  <option value="notes">Notes</option>
+                  <option value="timer">Timer</option>
+                  <option value="api">API widget</option>
+                </select>
+                <button id="addHomeWidgetBtn" type="button">Add widget</button>
+                <button id="saveWidgetTemplateBtn" type="button">Save template</button>
+                <select id="homeTemplateVisibility">
+                  <option value="private">private</option>
+                  <option value="public">public</option>
+                </select>
+                <select id="homeTemplateSelect">
+                  <option value="">Templates</option>
+                </select>
+                <button id="useWidgetTemplateBtn" type="button">Use template</button>
+              </div>
+            </section>
+            <section id="homeGrid" class="home-grid density-medium"></section>
+          </section>
+
+          <section id="pmKanbanView" class="kanban-view">
           <section class="project-header panel">
             <div>
               <h2 id="activeProjectName">No project selected</h2>
@@ -204,6 +245,7 @@
               <div id="kanbanBoard" class="kanban-board"></div>
               <div id="taskList" class="task-list"></div>
             </section>
+          </section>
           </section>
         </section>
 

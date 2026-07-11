@@ -10,7 +10,7 @@ import { normalizeRole, PmPermissionError, requireProjectRole } from "./permissi
 import type { PmEvent, PmEventHub } from "./events.js";
 import { buildPmInviteEmail, sendPmMail } from "./mailer.js";
 import type { PmStore, PmConflictError } from "./postgresStore.js";
-import type { CreateBoardColumnInput, CreateEpicInput, CreateProjectInput, CreateSprintInput, CreateTaskInput, MoveTaskInput, PmSprintStatus, PmUser, UpdateProjectInput, UpdateSprintInput, UpdateTaskInput } from "./types.js";
+import type { CreateBoardColumnInput, CreateEpicInput, CreateProjectInput, CreateSprintInput, CreateTaskInput, MoveTaskInput, PmHomeWidget, PmHomeWidgetKind, PmSprintStatus, PmUser, PmWidgetTemplate, UpdateProjectInput, UpdateSprintInput, UpdateTaskInput } from "./types.js";
 import type { PmWebhookDispatcher } from "./webhookDispatcher.js";
 
 export type PmAuthedRequest = express.Request & { pmIdentity?: AuthenticatedUser; pmUser?: PmUser };
@@ -189,6 +189,66 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const notification = await store.markNotificationRead(user.id, req.params.notificationId);
       emit({ type: "notification.read", createdAt: new Date().toISOString(), payload: { userId: user.id, notificationId: notification.id } });
       res.json({ notification });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/home", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const [widgets, templates, data] = await Promise.all([store.listHomeWidgets(user.id), store.listWidgetTemplates(user.id), store.listHomeWidgetData(user)]);
+      res.json({ widgets, templates, data });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/home/widgets", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const widget = await store.createHomeWidget(user, parseHomeWidget(req.body));
+      res.status(201).json({ widget });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/home/widgets/:widgetId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const widget = await store.updateHomeWidget(user, req.params.widgetId, parseHomeWidget(req.body));
+      res.json({ widget });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/home/widgets/:widgetId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      await store.deleteHomeWidget(requirePmUser(req), req.params.widgetId);
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/home/templates", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const template = await store.createWidgetTemplate(requirePmUser(req), parseWidgetTemplate(req.body));
+      res.status(201).json({ template });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/home/announcements", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const body = objectBody(req.body);
+      const announcement = await store.createAnnouncement(user, { title: requiredString(body.title, "title"), body: requiredString(body.body, "body") });
+      emit({ type: "announcement.created", createdAt: new Date().toISOString(), payload: { announcementId: announcement.id } });
+      res.status(201).json({ announcement });
     } catch (error) {
       next(error);
     }
@@ -963,6 +1023,33 @@ function parseUpdateSavedFilter(body: unknown): { name?: string; filter?: Record
   };
 }
 
+function parseHomeWidget(body: unknown): Partial<PmHomeWidget> {
+  const raw = objectBody(body);
+  return {
+    templateId: optionalString(raw.templateId),
+    kind: optionalHomeWidgetKind(raw.kind),
+    title: optionalString(raw.title),
+    x: optionalNumber(raw.x),
+    y: optionalNumber(raw.y),
+    width: optionalNumber(raw.width),
+    height: optionalNumber(raw.height),
+    clickable: typeof raw.clickable === "boolean" ? raw.clickable : undefined,
+    config: optionalObject(raw.config),
+    content: optionalObject(raw.content)
+  };
+}
+
+function parseWidgetTemplate(body: unknown): Partial<PmWidgetTemplate> {
+  const raw = objectBody(body);
+  return {
+    kind: optionalHomeWidgetKind(raw.kind),
+    name: requiredString(raw.name, "name").slice(0, 120),
+    visibility: optionalVisibility(raw.visibility),
+    config: optionalObject(raw.config),
+    content: optionalObject(raw.content)
+  };
+}
+
 function parseCreateSprint(body: unknown): Omit<CreateSprintInput, "projectId"> {
   const raw = objectBody(body);
   return {
@@ -1061,6 +1148,12 @@ function objectBody(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function optionalObject(value: unknown): Record<string, unknown> | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("value must be an object.");
+  return value as Record<string, unknown>;
+}
+
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${field} is required.`);
   return value.trim();
@@ -1099,6 +1192,20 @@ function optionalPriority(value: unknown): string | undefined {
   if (!priority) return undefined;
   if (!["urgent", "high", "medium", "low", "none"].includes(priority)) throw new Error("priority must be urgent, high, medium, low, or none.");
   return priority;
+}
+
+function optionalHomeWidgetKind(value: unknown): PmHomeWidgetKind | undefined {
+  const kind = optionalString(value);
+  if (!kind) return undefined;
+  if (!["activity", "changes", "announcement", "notes", "timer", "api"].includes(kind)) throw new Error("widget kind is not supported.");
+  return kind as PmHomeWidgetKind;
+}
+
+function optionalVisibility(value: unknown): "private" | "public" | undefined {
+  const visibility = optionalString(value);
+  if (!visibility) return undefined;
+  if (!["private", "public"].includes(visibility)) throw new Error("visibility must be private or public.");
+  return visibility as "private" | "public";
 }
 
 function optionalWebhookStatus(value: unknown): "pending" | "retrying" | "delivered" | "dead" | undefined {

@@ -5,6 +5,7 @@ export type PmUser = {
   username: string;
   email?: string;
   displayName?: string;
+  globalRole?: "super_admin" | "admin" | "user";
 };
 
 export type PmProject = {
@@ -223,6 +224,46 @@ export type PmTaskPosition = {
 export type PmBoardTask = PmTask & {
   columnId?: string;
   boardPosition?: number;
+};
+
+export type PmHomeWidgetKind = "activity" | "changes" | "announcement" | "notes" | "timer" | "api";
+
+export type PmHomeWidget = {
+  id: string;
+  userId: string;
+  templateId?: string;
+  kind: PmHomeWidgetKind;
+  title: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  clickable: boolean;
+  config: Record<string, unknown>;
+  content: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PmWidgetTemplate = {
+  id: string;
+  ownerId?: string;
+  kind: PmHomeWidgetKind;
+  name: string;
+  visibility: "private" | "public";
+  config: Record<string, unknown>;
+  content: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PmAnnouncement = {
+  id: string;
+  authorId?: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type PmEventRecord = {
