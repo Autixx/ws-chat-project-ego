@@ -27,6 +27,7 @@ const state = {
   attachments: [],
   activity: [],
   currentView: "home",
+  routeTaskId: null,
   homeEditing: false,
   homeWidgets: [],
   homeTemplates: [],
@@ -377,16 +378,18 @@ function showPmApp() {
   els.pmLogoutBtn.hidden = false;
   els.pmHomeBtn.hidden = false;
   els.pmKanbanBtn.hidden = false;
+  applyPmRouteState();
   setPmView(state.currentView || "home");
 }
 
 async function loadAfterAuth() {
+  applyPmRouteState();
   await loadHome();
   await loadNotifications();
   await loadWebhookDeliveries();
   await loadOpsStatus();
   await loadProjects();
-  await openTaskFromHash();
+  await openTaskFromRoute();
 }
 
 function setPmView(view) {
@@ -395,6 +398,56 @@ function setPmView(view) {
   els.pmKanbanView.hidden = state.currentView !== "kanban";
   els.pmHomeBtn.classList.toggle("active", state.currentView === "home");
   els.pmKanbanBtn.classList.toggle("active", state.currentView === "kanban");
+}
+
+function applyPmRouteState() {
+  const route = pmRouteFromLocation();
+  state.currentView = route.view;
+  if (route.projectId !== undefined) state.activeProjectId = route.projectId;
+  if (route.boardId !== undefined) state.activeBoardId = route.boardId;
+  state.routeTaskId = route.taskId || null;
+}
+
+function pmRouteFromLocation() {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  const pmIndex = parts[0] === "pm" ? 0 : -1;
+  const route = pmIndex >= 0 ? parts.slice(1) : parts;
+  if (route[0] === "home" || route.length === 0) return { view: "home" };
+  if (route[0] !== "projects") return legacyHashRoute() || { view: "home" };
+  const projectId = route[1] || null;
+  if (!projectId) return { view: "kanban", projectId: null };
+  if (route[2] === "boards") {
+    return { view: "kanban", projectId, boardId: route[3] || null, taskId: route[4] === "tasks" ? route[5] || null : null };
+  }
+  if (route[2] === "tasks") return { view: "kanban", projectId, taskId: route[3] || null };
+  return { view: "kanban", projectId };
+}
+
+function legacyHashRoute() {
+  const params = pmHashParams();
+  if (!params.project && !params.task) return null;
+  return { view: "kanban", projectId: params.project || null, taskId: params.task || null };
+}
+
+function navigatePm(path, { replace = false } = {}) {
+  if (window.location.pathname === path && !window.location.hash) return;
+  const method = replace ? "replaceState" : "pushState";
+  history[method](null, "", path);
+  applyPmRouteState();
+  setPmView(state.currentView);
+}
+
+async function applyPmRoute() {
+  applyPmRouteState();
+  setPmView(state.currentView);
+  if (state.currentView === "home") {
+    closeTask({ navigate: false });
+    await loadHome();
+    return;
+  }
+  await loadProjects();
+  if (!state.routeTaskId) closeTask({ navigate: false });
+  await openTaskFromRoute();
 }
 
 async function loginPm(event) {
@@ -649,12 +702,12 @@ function apiWidgetNode() {
 
 async function openTaskReference(item, newTab = false) {
   if (!item?.id || !item?.projectId) return;
-  const url = pmTaskUrl(item.projectId, item.id);
+  const url = pmTaskPath(item.projectId, null, item.id);
   if (newTab) {
     window.open(url, "_blank", "noopener");
     return;
   }
-  history.replaceState(null, "", url);
+  navigatePm(url);
   state.currentView = "kanban";
   state.activeProjectId = item.projectId;
   state.activeSprintId = "__all";
@@ -665,10 +718,22 @@ async function openTaskReference(item, newTab = false) {
   else setError("Task is not visible in the current filters.");
 }
 
-function pmTaskUrl(projectId, taskId) {
-  const url = new URL(window.location.href);
-  url.hash = `project=${encodeURIComponent(projectId)}&task=${encodeURIComponent(taskId)}`;
-  return `${url.pathname}${url.search}${url.hash}`;
+function pmHomePath() {
+  return "/pm/home";
+}
+
+function pmProjectPath(projectId) {
+  return projectId ? `/pm/projects/${encodeURIComponent(projectId)}` : "/pm/projects";
+}
+
+function pmBoardPath(projectId, boardId) {
+  return projectId && boardId ? `/pm/projects/${encodeURIComponent(projectId)}/boards/${encodeURIComponent(boardId)}` : pmProjectPath(projectId);
+}
+
+function pmTaskPath(projectId, boardId, taskId) {
+  if (!projectId || !taskId) return pmProjectPath(projectId);
+  if (!boardId) return `/pm/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`;
+  return `${pmBoardPath(projectId, boardId)}/tasks/${encodeURIComponent(taskId)}`;
 }
 
 function pmHashParams() {
@@ -676,20 +741,26 @@ function pmHashParams() {
   return Object.fromEntries(new URLSearchParams(raw));
 }
 
-async function openTaskFromHash() {
-  const params = pmHashParams();
-  if (!params.project || !params.task) return;
-  if (state.activeProjectId !== params.project) {
-    if (!state.projects.some((project) => project.id === params.project)) return;
-    state.activeProjectId = params.project;
+async function openTaskFromRoute() {
+  const route = pmRouteFromLocation();
+  if (!route.projectId || !route.taskId) return;
+  if (state.activeProjectId !== route.projectId) {
+    if (!state.projects.some((project) => project.id === route.projectId)) return;
+    state.activeProjectId = route.projectId;
+    if (route.boardId) state.activeBoardId = route.boardId;
     state.activeSprintId = "__all";
     await loadProjectData();
     return;
   }
-  const task = state.tasks.find((entry) => entry.id === params.task) || state.boardTasks.find((entry) => entry.id === params.task);
+  if (route.boardId && state.activeBoardId !== route.boardId) {
+    state.activeBoardId = route.boardId;
+    await loadProjectData();
+    return;
+  }
+  const task = state.tasks.find((entry) => entry.id === route.taskId) || state.boardTasks.find((entry) => entry.id === route.taskId);
   if (!task || state.activeTask?.id === task.id) return;
   setPmView("kanban");
-  openTask(task);
+  openTask(task, "view", { navigate: false });
 }
 
 function checkHomeTimers() {
@@ -941,8 +1012,8 @@ async function loadOpsStatus() {
 async function loadProjects() {
   const { projects } = await api(`/api/pm/projects?includeArchived=${els.includeArchived.checked ? "true" : "false"}`);
   state.projects = projects;
-  const deepLink = pmHashParams();
-  if (deepLink.project && projects.some((project) => project.id === deepLink.project)) state.activeProjectId = deepLink.project;
+  const route = pmRouteFromLocation();
+  if (route.projectId && projects.some((project) => project.id === route.projectId)) state.activeProjectId = route.projectId;
   if (!state.activeProjectId && projects[0]) state.activeProjectId = projects[0].id;
   if (state.activeProjectId && !projects.some((project) => project.id === state.activeProjectId)) {
     state.activeProjectId = projects[0]?.id || null;
@@ -1003,6 +1074,8 @@ async function loadProjectData() {
   state.epics = epicsBody.epics;
   state.sprints = sprintsBody.sprints;
   state.boards = boardsBody.boards;
+  const route = pmRouteFromLocation();
+  if (route.boardId && state.boards.some((board) => board.id === route.boardId)) state.activeBoardId = route.boardId;
   if (state.activeBoardId && !state.boards.some((board) => board.id === state.activeBoardId)) state.activeBoardId = null;
   if (state.activeSprintId && !["__all", "__backlog"].includes(state.activeSprintId) && !state.sprints.some((sprint) => sprint.id === state.activeSprintId)) {
     state.activeSprintId = "__backlog";
@@ -1029,7 +1102,7 @@ async function loadProjectData() {
   renderSprints();
   renderTasks();
   renderBoard();
-  await openTaskFromHash();
+  await openTaskFromRoute();
 }
 
 async function ensureDefaultBoard(projectId) {
@@ -1065,7 +1138,6 @@ async function loadBoardSnapshot() {
 
 function renderBoardSelect() {
   els.boardSelect.replaceChildren(
-    option("Boards", ""),
     ...state.boards.map((board) => option(board.name, board.id))
   );
   els.boardSelect.value = state.activeBoardId || "";
@@ -1121,6 +1193,7 @@ function renderProjects() {
         state.activeBoardId = null;
         state.activeSprintId = "__backlog";
         closeProjectSidebar();
+        navigatePm(pmProjectPath(project.id));
         await loadProjectData();
       };
       button.addEventListener("click", activate);
@@ -1139,6 +1212,7 @@ function renderProjects() {
           event.stopPropagation();
           state.activeBoardId = boardButton.dataset.boardId || null;
           closeProjectSidebar();
+          navigatePm(pmBoardPath(project.id, state.activeBoardId));
           loadSelectedBoard()
             .then(() => {
               renderBoardSelect();
@@ -1717,7 +1791,11 @@ async function handleTaskDrop(event, column) {
   await loadProjectData();
 }
 
-function openTask(task, mode = "view") {
+function openTask(task, mode = "view", options = {}) {
+  if (options.navigate !== false) {
+    const projectId = task.projectId || state.activeProjectId;
+    if (projectId) navigatePm(pmTaskPath(projectId, state.activeBoardId, task.id));
+  }
   state.activeTask = task;
   state.taskDrawerMode = mode;
   els.taskDrawer.hidden = false;
@@ -1744,10 +1822,14 @@ function openTask(task, mode = "view") {
   loadTaskDrawerData(task.id).catch((error) => setError(error.message));
 }
 
-function closeTask() {
+function closeTask(options = {}) {
+  const navigate = options?.navigate !== false;
+  const projectId = state.activeTask?.projectId || state.activeProjectId;
+  const boardId = state.activeBoardId;
   state.activeTask = null;
   els.taskDrawer.classList.remove("open");
   closeActivityDrawer();
+  if (navigate && projectId) navigatePm(pmBoardPath(projectId, boardId));
   window.setTimeout(() => {
     if (!state.activeTask) els.taskDrawer.hidden = true;
   }, 180);
@@ -1830,6 +1912,7 @@ async function createProject(event) {
     : await api("/api/pm/projects", { method: "POST", body: JSON.stringify(payload) });
   closeProjectModal();
   state.activeProjectId = result.project.id;
+  navigatePm(pmProjectPath(result.project.id));
   await loadProjects();
 }
 
@@ -1846,6 +1929,7 @@ async function createBoard(event) {
   });
   closeBoardModal();
   state.activeBoardId = result.board.id;
+  navigatePm(pmBoardPath(project.id, result.board.id));
   await loadProjectData();
 }
 
@@ -2763,8 +2847,14 @@ for (const input of [els.customBgColor, els.customFieldColor, els.customTextColo
 els.bootstrapForm.addEventListener("submit", (event) => bootstrapPm(event).catch((error) => setError(error.message)));
 els.pmLoginForm.addEventListener("submit", (event) => loginPm(event).catch((error) => showPmLogin(error.message)));
 els.pmLogoutBtn.addEventListener("click", () => logoutPm().catch((error) => setError(error.message)));
-els.pmHomeBtn.addEventListener("click", () => setPmView("home"));
-els.pmKanbanBtn.addEventListener("click", () => setPmView("kanban"));
+els.pmHomeBtn.addEventListener("click", () => {
+  navigatePm(pmHomePath());
+  setPmView("home");
+});
+els.pmKanbanBtn.addEventListener("click", () => {
+  navigatePm(state.activeBoardId ? pmBoardPath(state.activeProjectId, state.activeBoardId) : pmProjectPath(state.activeProjectId));
+  setPmView("kanban");
+});
 els.homeEditToggle.addEventListener("click", () => {
   state.homeEditing = !state.homeEditing;
   renderHome();
@@ -2841,6 +2931,7 @@ els.ensureBoardBtn.addEventListener("click", () => loadProjectData().catch((erro
 els.createBoardBtn.addEventListener("click", openBoardModal);
 els.boardSelect.addEventListener("change", () => {
   state.activeBoardId = els.boardSelect.value || null;
+  if (state.activeProjectId) navigatePm(pmBoardPath(state.activeProjectId, state.activeBoardId));
   loadProjectData().catch((error) => setError(error.message));
 });
 els.taskSidebarToggle.addEventListener("click", () => {
@@ -2855,7 +2946,7 @@ els.taskSidebarToggle.addEventListener("click", () => {
     }, 180);
   }
 });
-els.closeDrawerBtn.addEventListener("click", closeTask);
+els.closeDrawerBtn.addEventListener("click", () => closeTask());
 els.editTaskModeBtn.addEventListener("click", toggleTaskDrawerMode);
 els.activityDrawerBtn.addEventListener("click", openActivityDrawer);
 els.closeActivityDrawerBtn.addEventListener("click", closeActivityDrawer);
@@ -2897,6 +2988,7 @@ els.saveFilterBtn.addEventListener("click", () => saveCurrentFilter().catch((err
 els.updateFilterBtn.addEventListener("click", () => updateSelectedFilter().catch((error) => setError(error.message)));
 els.deleteFilterBtn.addEventListener("click", () => deleteSelectedFilter().catch((error) => setError(error.message)));
 els.closeMediaModalBtn.addEventListener("click", closeMediaAttachment);
-window.addEventListener("hashchange", () => openTaskFromHash().catch((error) => setError(error.message)));
+window.addEventListener("popstate", () => applyPmRoute().catch((error) => setError(error.message)));
+window.addEventListener("hashchange", () => applyPmRoute().catch((error) => setError(error.message)));
 
 boot();
