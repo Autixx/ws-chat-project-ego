@@ -1075,19 +1075,36 @@ function renderKanbanCard(task) {
   card.className = "kanban-card";
   card.draggable = true;
   card.dataset.taskId = task.id;
+  let pointerStart = null;
+  let dragged = false;
   card.innerHTML = `
     <div class="card-title">${escapeHtml(task.title)}</div>
     <div class="card-meta">${escapeHtml(task.priority)} / ${escapeHtml(assigneeLabel(task.assigneeId))} / ${escapeHtml(dueLabel(task))} / ${escapeHtml(sprintLabel(task.sprintId))} / v${task.version}</div>
     <div class="card-body">${escapeHtml(task.description || "")}</div>
     ${taskLabelChips(task)}
   `;
-  card.addEventListener("click", () => openTask(task));
+  card.addEventListener("pointerdown", (event) => {
+    pointerStart = { x: event.clientX, y: event.clientY, time: Date.now() };
+    dragged = false;
+  });
+  card.addEventListener("pointerup", (event) => {
+    if (!pointerStart || dragged) return;
+    const distance = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
+    const duration = Date.now() - pointerStart.time;
+    if (distance <= 6 && duration < 450) openTask(task);
+  });
   card.addEventListener("dragstart", (event) => {
+    dragged = true;
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", task.id);
     card.classList.add("dragging");
   });
-  card.addEventListener("dragend", () => card.classList.remove("dragging"));
+  card.addEventListener("dragend", () => {
+    card.classList.remove("dragging");
+    window.setTimeout(() => {
+      dragged = false;
+    }, 0);
+  });
   return card;
 }
 
@@ -1110,7 +1127,6 @@ async function handleTaskDrop(event, column) {
   });
   setError("");
   await loadProjectData();
-  openTask(movedTask);
 }
 
 function openTask(task, mode = "view") {
@@ -1150,10 +1166,19 @@ function closeTask() {
   renderTasks();
 }
 
+function collapseTaskDrawer() {
+  els.taskDrawer.classList.remove("open");
+  closeActivityDrawer();
+  window.setTimeout(() => {
+    if (!els.taskDrawer.classList.contains("open")) els.taskDrawer.hidden = true;
+  }, 180);
+}
+
 function renderTaskDrawerMode() {
   const editing = state.taskDrawerMode === "edit";
   if (els.taskViewPanel) els.taskViewPanel.hidden = editing;
   if (els.taskEditForm) els.taskEditForm.hidden = !editing;
+  if (els.deleteTaskBtn) els.deleteTaskBtn.hidden = !editing;
   if (els.editTaskModeBtn) els.editTaskModeBtn.textContent = editing ? "View" : "Edit";
 }
 
@@ -1724,10 +1749,12 @@ function renderComments() {
       card.innerHTML = `
         <div class="comment-head">
           <span>${escapeHtml(comment.authorName || comment.authorId || "unknown")}</span>
+          ${canEdit ? `<button class="mini-button comment-edit-button" data-action="edit" type="button">Edit</button>` : `<span></span>`}
           <span>${formatDate(comment.createdAt)}</span>
+          ${canEdit ? `<button class="mini-button comment-delete-button" data-action="delete" type="button" title="Delete comment" aria-label="Delete comment">&#128465;</button>` : `<span></span>`}
         </div>
         <div class="comment-body">${escapeHtml(comment.body)}</div>
-        ${canEdit ? `<div class="attachment-actions"><button class="mini-button" data-action="edit" type="button">Edit</button><button class="mini-button" data-action="delete" type="button">Delete</button></div>` : ""}
+        ${canEdit ? `<div class="attachment-actions comment-edit-actions" hidden></div>` : ""}
       `;
       if (canEdit) {
         card.querySelector('[data-action="edit"]').addEventListener("click", () => editComment(comment, card).catch((error) => setError(error.message)));
@@ -1740,7 +1767,7 @@ function renderComments() {
 
 async function editComment(comment, card) {
   const body = card.querySelector(".comment-body");
-  const actions = card.querySelector(".attachment-actions");
+  const actions = card.querySelector(".comment-edit-actions");
   const textarea = document.createElement("textarea");
   textarea.rows = 4;
   textarea.value = comment.body;
@@ -1753,6 +1780,7 @@ async function editComment(comment, card) {
   cancel.className = "mini-button";
   cancel.textContent = "Cancel";
   body.replaceWith(textarea);
+  actions.hidden = false;
   actions.replaceChildren(save, cancel);
   cancel.addEventListener("click", renderComments);
   save.addEventListener("click", async () => {
@@ -2211,6 +2239,15 @@ els.closeDrawerBtn.addEventListener("click", closeTask);
 els.editTaskModeBtn.addEventListener("click", toggleTaskDrawerMode);
 els.activityDrawerBtn.addEventListener("click", openActivityDrawer);
 els.closeActivityDrawerBtn.addEventListener("click", closeActivityDrawer);
+document.addEventListener("pointerdown", (event) => {
+  if (els.taskDrawer.hidden || !els.taskDrawer.classList.contains("open")) return;
+  const target = event.target;
+  if (!(target instanceof Node)) return;
+  if (els.taskDrawer.contains(target)) return;
+  if (els.activityDrawer?.contains(target)) return;
+  if (target instanceof Element && target.closest(".pm-right-rail, .pm-modal-backdrop, .pm-media-modal, .notification-panel, .kanban-card")) return;
+  collapseTaskDrawer();
+});
 els.archiveTaskBtn.addEventListener("click", () => toggleTaskArchive().catch((error) => setError(error.message)));
 els.deleteTaskBtn.addEventListener("click", () => deleteActiveTask().catch((error) => setError(error.message)));
 els.statusFilter.addEventListener("change", () => {

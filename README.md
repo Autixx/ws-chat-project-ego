@@ -153,7 +153,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.1.65 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.1.66 \
   node dist/pm/migrate.js
 ```
 
