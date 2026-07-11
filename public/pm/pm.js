@@ -500,6 +500,7 @@ function renderHome() {
   els.homeGrid.style.setProperty("--home-grid-step", `${step}px`);
   els.homeGrid.className = `home-grid${state.homeEditing ? " editing" : ""}`;
   els.homeEditToggle.textContent = state.homeEditing ? "Done" : "Edit";
+  for (const control of document.querySelectorAll(".home-edit-control")) control.hidden = !state.homeEditing;
   els.homeGrid.replaceChildren(...state.homeWidgets.map(renderHomeWidget));
 }
 
@@ -510,7 +511,7 @@ function renderHomeWidget(widget) {
   card.className = `home-widget ${widget.clickable ? "clickable" : ""} ${state.homeEditing ? "editing" : ""}`;
   card.style.gridColumn = `${position.x} / span ${size.width}`;
   card.style.gridRow = `${position.y} / span ${size.height}`;
-  card.draggable = state.homeEditing;
+  card.draggable = false;
   card.dataset.widgetId = widget.id;
   card.innerHTML = `
     <header>
@@ -521,12 +522,9 @@ function renderHomeWidget(widget) {
   `;
   card.querySelector(".home-widget-body").replaceChildren(...homeWidgetBody(widget));
   if (state.homeEditing) {
+    card.append(renderWidgetAnchor(widget));
     card.append(renderWidgetSettings(widget));
     card.append(renderWidgetResizeHandle(widget));
-    card.addEventListener("dragstart", (event) => {
-      event.dataTransfer.setData("text/plain", widget.id);
-      event.dataTransfer.effectAllowed = "move";
-    });
   }
   return card;
 }
@@ -608,6 +606,54 @@ function renderWidgetSettings(widget) {
   return form;
 }
 
+function renderWidgetAnchor(widget) {
+  const anchor = document.createElement("button");
+  anchor.type = "button";
+  anchor.className = "home-widget-anchor";
+  anchor.title = "Move widget";
+  anchor.setAttribute("aria-label", "Move widget");
+  anchor.addEventListener("dragstart", (event) => event.preventDefault());
+  anchor.addEventListener("pointerdown", (event) => startHomeWidgetMove(event, widget));
+  return anchor;
+}
+
+function startHomeWidgetMove(event, widget) {
+  event.preventDefault();
+  event.stopPropagation();
+  const card = event.currentTarget.closest(".home-widget");
+  if (!card) return;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const size = clampWidgetSize(widget, Number(widget.width || 1), Number(widget.height || 1));
+  const startPosition = clampWidgetPosition({ ...widget, width: size.width, height: size.height }, Number(widget.x || 1), Number(widget.y || 1));
+  const step = homeGridStep();
+  let nextPosition = startPosition;
+  card.classList.add("moving");
+  document.body.classList.add("dragging-home-widget");
+
+  const move = (moveEvent) => {
+    moveEvent.preventDefault();
+    const deltaX = Math.round((moveEvent.clientX - startX) / step);
+    const deltaY = Math.round((moveEvent.clientY - startY) / step);
+    nextPosition = clampWidgetPosition({ ...widget, width: size.width, height: size.height }, startPosition.x + deltaX, startPosition.y + deltaY);
+    card.style.gridColumn = `${nextPosition.x} / span ${size.width}`;
+    card.style.gridRow = `${nextPosition.y} / span ${size.height}`;
+  };
+
+  const stop = () => {
+    card.classList.remove("moving");
+    document.body.classList.remove("dragging-home-widget");
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", stop);
+    if (nextPosition.x !== startPosition.x || nextPosition.y !== startPosition.y) {
+      updateHomeWidget(widget.id, nextPosition).catch((error) => setError(error.message));
+    }
+  };
+
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", stop);
+}
+
 function renderWidgetResizeHandle(widget) {
   const handle = document.createElement("button");
   handle.type = "button";
@@ -630,7 +676,7 @@ function startHomeWidgetResize(event, widget) {
   const startHeight = Number(widget.height || 1);
   const step = homeGridStep();
   let nextSize = { width: startWidth, height: startHeight };
-  document.body.classList.add("dragging-home-widget");
+  document.body.classList.add("resizing-home-widget");
 
   const move = (moveEvent) => {
     moveEvent.preventDefault();
@@ -642,7 +688,7 @@ function startHomeWidgetResize(event, widget) {
   };
 
   const stop = () => {
-    document.body.classList.remove("dragging-home-widget");
+    document.body.classList.remove("resizing-home-widget");
     document.removeEventListener("pointermove", move);
     document.removeEventListener("pointerup", stop);
     if (nextSize.width !== startWidth || nextSize.height !== startHeight) {
@@ -697,14 +743,6 @@ function clampWidgetSize(widget, width, height) {
     width: Math.max(1, Math.min(columns - Number(widget.x || 1) + 1, width)),
     height: Math.max(1, Math.min(rows - Number(widget.y || 1) + 1, height))
   };
-}
-
-function homeDropPosition(event, widget) {
-  const rect = els.homeGrid.getBoundingClientRect();
-  const { step } = homeGridMetrics();
-  const x = Math.floor((event.clientX - rect.left - 10) / step) + 1;
-  const y = Math.floor((event.clientY - rect.top - 10) / step) + 1;
-  return clampWidgetPosition(widget, x, y);
 }
 
 function homeGridStep() {
@@ -2586,18 +2624,6 @@ els.homeGridStep.addEventListener("input", () => {
 els.addHomeWidgetBtn.addEventListener("click", () => addHomeWidget().catch((error) => setError(error.message)));
 els.saveWidgetTemplateBtn.addEventListener("click", () => saveSelectedWidgetTemplate().catch((error) => setError(error.message)));
 els.useWidgetTemplateBtn.addEventListener("click", () => useSelectedWidgetTemplate().catch((error) => setError(error.message)));
-els.homeGrid.addEventListener("dragover", (event) => {
-  if (!state.homeEditing) return;
-  event.preventDefault();
-});
-els.homeGrid.addEventListener("drop", (event) => {
-  if (!state.homeEditing) return;
-  event.preventDefault();
-  const widgetId = event.dataTransfer.getData("text/plain");
-  const widget = state.homeWidgets.find((item) => item.id === widgetId);
-  if (!widget) return;
-  updateHomeWidget(widget.id, homeDropPosition(event, widget)).catch((error) => setError(error.message));
-});
 els.projectSidebarToggle.addEventListener("click", openProjectSidebar);
 els.closeProjectSidebarBtn.addEventListener("click", closeProjectSidebar);
 els.projectSidebarBackdrop.addEventListener("click", (event) => {

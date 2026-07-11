@@ -122,10 +122,10 @@
               </div>
               <div class="home-controls">
                 <button id="homeEditToggle" type="button">Edit</button>
-                <label>Grid step
+                <label class="home-edit-control">Grid step
                   <input id="homeGridStep" type="number" min="12" max="160" step="4" value="56" />
                 </label>
-                <select id="homeWidgetKind">
+                <select id="homeWidgetKind" class="home-edit-control">
                   <option value="activity">New activity</option>
                   <option value="changes">New changes</option>
                   <option value="announcement">Announcements</option>
@@ -133,16 +133,16 @@
                   <option value="timer">Timer</option>
                   <option value="api">API widget</option>
                 </select>
-                <button id="addHomeWidgetBtn" type="button">Add widget</button>
-                <button id="saveWidgetTemplateBtn" type="button">Save template</button>
-                <select id="homeTemplateVisibility">
+                <button id="addHomeWidgetBtn" class="home-edit-control" type="button">Add widget</button>
+                <button id="saveWidgetTemplateBtn" class="home-edit-control" type="button">Save template</button>
+                <select id="homeTemplateVisibility" class="home-edit-control">
                   <option value="private">private</option>
                   <option value="public">public</option>
                 </select>
-                <select id="homeTemplateSelect">
+                <select id="homeTemplateSelect" class="home-edit-control">
                   <option value="">Templates</option>
                 </select>
-                <button id="useWidgetTemplateBtn" type="button">Use template</button>
+                <button id="useWidgetTemplateBtn" class="home-edit-control" type="button">Use template</button>
               </div>
             </section>
             <section id="homeGrid" class="home-grid"></section>

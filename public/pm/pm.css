@@ -66,6 +66,11 @@ body {
 
 body.dragging-home-widget {
   user-select: none;
+  cursor: grabbing;
+}
+
+body.resizing-home-widget {
+  user-select: none;
   cursor: nwse-resize;
 }
 
@@ -830,6 +835,10 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   color: var(--muted);
 }
 
+.home-edit-control[hidden] {
+  display: none;
+}
+
 .home-grid {
   position: relative;
   min-height: 0;
@@ -865,7 +874,13 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 }
 
 .home-widget.editing {
-  cursor: move;
+  cursor: default;
+}
+
+.home-widget.moving {
+  opacity: .82;
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
 }
 
 .home-widget header {
@@ -893,6 +908,41 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   gap: 5px;
   padding: 7px;
   border-top: 1px solid var(--line);
+}
+
+.home-widget-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 14px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--accent);
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      var(--accent) 0 2px,
+      transparent 2px 6px
+    ),
+    color-mix(in srgb, var(--field) 82%, var(--accent));
+  cursor: grab;
+  z-index: 2;
+}
+
+.home-widget-anchor:hover {
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      var(--text) 0 2px,
+      transparent 2px 6px
+    ),
+    color-mix(in srgb, var(--field) 72%, var(--accent));
+}
+
+.home-widget-anchor:active {
+  cursor: grabbing;
 }
 
 .home-widget-resize {
