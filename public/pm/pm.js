@@ -710,13 +710,13 @@ function homeDropPosition(event, widget) {
 function homeGridStep() {
   const value = Number(els.homeGridStep.value || 56);
   if (!Number.isFinite(value)) return 56;
-  return Math.max(24, Math.min(160, Math.floor(value)));
+  return Math.max(12, Math.min(160, Math.floor(value)));
 }
 
 function loadHomeGridStep() {
   try {
     const saved = Number(localStorage.getItem(PM_HOME_GRID_STEP_KEY));
-    if (Number.isFinite(saved)) els.homeGridStep.value = String(Math.max(24, Math.min(160, Math.floor(saved))));
+    if (Number.isFinite(saved)) els.homeGridStep.value = String(Math.max(12, Math.min(160, Math.floor(saved))));
   } catch {
     // Grid step persistence is best-effort.
   }
