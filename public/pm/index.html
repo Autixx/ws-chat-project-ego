@@ -103,37 +103,11 @@
             <button id="openCreateProjectBtn" type="button">Create project</button>
           </div>
           <div id="projectList" class="list project-sort-list"></div>
-          <form id="epicForm" class="inline-form">
+          <div id="epicList" class="list compact"></div>
+          <form id="epicForm" class="inline-form epic-bottom-form">
             <input id="epicTitle" placeholder="Epic title" />
             <button type="submit" disabled>Create epic</button>
           </form>
-          <div id="epicList" class="list compact"></div>
-          <section class="team-box">
-            <div class="panel-title">
-              <h2>Team</h2>
-            </div>
-            <form id="memberForm" class="member-form">
-              <input id="memberIdentifier" placeholder="username or email" />
-              <select id="memberRole">
-                <option value="member">member</option>
-                <option value="viewer">viewer</option>
-                <option value="project_owner">project owner</option>
-              </select>
-              <button type="submit" disabled>Add</button>
-            </form>
-            <div id="memberList" class="list compact"></div>
-          </section>
-          <section class="label-box">
-            <div class="panel-title">
-              <h2>Labels</h2>
-            </div>
-            <form id="labelForm" class="label-form">
-              <input id="labelName" maxlength="40" placeholder="Label name" />
-              <input id="labelColor" type="color" value="#6b7280" />
-              <button type="submit" disabled>Add</button>
-            </form>
-            <div id="labelList" class="list compact"></div>
-          </section>
           </section>
         </aside>
 
@@ -249,6 +223,34 @@
           <input id="projectKey" maxlength="32" placeholder="KEY" />
           <input id="projectName" maxlength="120" placeholder="Project name" />
           <textarea id="projectDescription" rows="4" placeholder="Description"></textarea>
+          <section id="projectManagementFields" class="project-management-fields">
+            <section class="team-box">
+              <div class="panel-title">
+                <h2>Team</h2>
+              </div>
+              <div id="memberForm" class="member-form">
+                <input id="memberIdentifier" placeholder="username or email" />
+                <select id="memberRole">
+                  <option value="member">member</option>
+                  <option value="viewer">viewer</option>
+                  <option value="project_owner">project owner</option>
+                </select>
+                <button type="button" disabled>Add</button>
+              </div>
+              <div id="memberList" class="list compact"></div>
+            </section>
+            <section class="label-box">
+              <div class="panel-title">
+                <h2>Labels</h2>
+              </div>
+              <div id="labelForm" class="label-form">
+                <input id="labelName" maxlength="40" placeholder="Label name" />
+                <input id="labelColor" type="color" value="#6b7280" />
+                <button type="button" disabled>Add</button>
+              </div>
+              <div id="labelList" class="list compact"></div>
+            </section>
+          </section>
           <div class="pm-modal-actions">
             <button id="cancelProjectModalBtn" type="button">Cancel</button>
             <button type="submit">Apply</button>
@@ -276,10 +278,15 @@
             <h2 id="drawerTitle">Task</h2>
             <p id="drawerMeta"></p>
           </div>
-          <button id="closeDrawerBtn" type="button">Close</button>
+          <div class="drawer-header-actions">
+            <button id="activityDrawerBtn" type="button">Activity</button>
+            <button id="editTaskModeBtn" type="button">Edit</button>
+            <button id="closeDrawerBtn" type="button">x</button>
+          </div>
         </header>
         <div class="drawer-scroll">
-          <form id="taskEditForm" class="drawer-form">
+          <section id="taskViewPanel" class="task-view-panel"></section>
+          <form id="taskEditForm" class="drawer-form" hidden>
             <label>Title<input id="editTaskTitle" /></label>
             <label>Status
               <select id="editTaskStatus">
@@ -365,14 +372,15 @@
             <p class="hint">Supported: text, images, audio/video, pdf, zip. Stored under PM_ATTACHMENTS_DIR.</p>
             <div id="attachmentList" class="drawer-list"></div>
           </section>
-
-          <section class="drawer-section">
-            <div class="drawer-section-title">
-              <h3>Activity</h3>
-            </div>
-            <div id="activityList" class="drawer-list activity-list"></div>
-          </section>
         </div>
+      </aside>
+
+      <aside id="activityDrawer" class="activity-drawer" hidden>
+        <header>
+          <span>Activity</span>
+          <button id="closeActivityDrawerBtn" type="button">x</button>
+        </header>
+        <div id="activityList" class="drawer-list activity-list"></div>
       </aside>
 
       <section id="confirmModal" class="pm-modal-backdrop" hidden>

@@ -19,6 +19,7 @@ const state = {
   editingProjectId: null,
   activeSprintId: "__backlog",
   activeTask: null,
+  taskDrawerMode: "view",
   taskLabels: [],
   dependencies: { blockingTasks: [], blockedTasks: [] },
   comments: [],
@@ -93,6 +94,7 @@ const els = {
   bootstrapProjectName: $("bootstrapProjectName"),
   includeArchived: $("includeArchived"),
   projectForm: $("projectForm"),
+  projectManagementFields: $("projectManagementFields"),
   projectKey: $("projectKey"),
   projectName: $("projectName"),
   projectDescription: $("projectDescription"),
@@ -139,10 +141,15 @@ const els = {
   deleteFilterBtn: $("deleteFilterBtn"),
   taskDrawer: $("taskDrawer"),
   closeDrawerBtn: $("closeDrawerBtn"),
+  activityDrawerBtn: $("activityDrawerBtn"),
+  editTaskModeBtn: $("editTaskModeBtn"),
+  activityDrawer: $("activityDrawer"),
+  closeActivityDrawerBtn: $("closeActivityDrawerBtn"),
   archiveTaskBtn: $("archiveTaskBtn"),
   deleteTaskBtn: $("deleteTaskBtn"),
   drawerTitle: $("drawerTitle"),
   drawerMeta: $("drawerMeta"),
+  taskViewPanel: $("taskViewPanel"),
   taskEditForm: $("taskEditForm"),
   editTaskTitle: $("editTaskTitle"),
   editTaskStatus: $("editTaskStatus"),
@@ -603,6 +610,7 @@ function openProjectModal(project = null) {
   els.projectKey.value = project?.key || "";
   els.projectName.value = project?.name || "";
   els.projectDescription.value = project?.description || "";
+  if (els.projectManagementFields) els.projectManagementFields.hidden = !project;
   els.projectModal.hidden = false;
 }
 
@@ -1105,11 +1113,13 @@ async function handleTaskDrop(event, column) {
   openTask(movedTask);
 }
 
-function openTask(task) {
+function openTask(task, mode = "view") {
   state.activeTask = task;
+  state.taskDrawerMode = mode;
   els.taskDrawer.hidden = false;
+  window.requestAnimationFrame(() => els.taskDrawer.classList.add("open"));
   els.drawerTitle.textContent = task.title;
-  els.drawerMeta.textContent = `${task.id} / version ${task.version}`;
+  els.drawerMeta.textContent = `version ${task.version}`;
   els.editTaskTitle.value = task.title;
   els.editTaskStatus.value = task.status;
   els.editTaskPriority.value = task.priority;
@@ -1123,6 +1133,8 @@ function openTask(task) {
   state.dependencies = { blockingTasks: [], blockedTasks: [] };
   state.attachments = [];
   state.activity = [];
+  renderTaskView();
+  renderTaskDrawerMode();
   renderDrawerData();
   renderTasks();
   loadTaskDrawerData(task.id).catch((error) => setError(error.message));
@@ -1130,8 +1142,66 @@ function openTask(task) {
 
 function closeTask() {
   state.activeTask = null;
-  els.taskDrawer.hidden = true;
+  els.taskDrawer.classList.remove("open");
+  closeActivityDrawer();
+  window.setTimeout(() => {
+    if (!state.activeTask) els.taskDrawer.hidden = true;
+  }, 180);
   renderTasks();
+}
+
+function renderTaskDrawerMode() {
+  const editing = state.taskDrawerMode === "edit";
+  if (els.taskViewPanel) els.taskViewPanel.hidden = editing;
+  if (els.taskEditForm) els.taskEditForm.hidden = !editing;
+  if (els.editTaskModeBtn) els.editTaskModeBtn.textContent = editing ? "View" : "Edit";
+}
+
+function toggleTaskDrawerMode() {
+  state.taskDrawerMode = state.taskDrawerMode === "edit" ? "view" : "edit";
+  renderTaskDrawerMode();
+}
+
+function renderTaskView() {
+  if (!els.taskViewPanel || !state.activeTask) return;
+  const task = state.activeTask;
+  els.taskViewPanel.replaceChildren(
+    taskInfoRow("Title", task.title),
+    taskInfoRow("Status", task.status),
+    taskInfoRow("Priority", task.priority),
+    taskInfoRow("Assignee", assigneeLabel(task.assigneeId)),
+    taskInfoRow("Sprint", sprintLabel(task.sprintId)),
+    taskInfoRow("Due date", dueLabel(task)),
+    taskInfoRow("Entity ID", task.id),
+    taskInfoRow("Description", task.description || "-", "wide")
+  );
+}
+
+function taskInfoRow(label, value, className = "") {
+  const row = document.createElement("div");
+  row.className = `task-info-row ${className}`.trim();
+  const name = document.createElement("span");
+  name.className = "task-info-label";
+  name.textContent = label;
+  const content = document.createElement("span");
+  content.className = "task-info-value";
+  content.textContent = value || "-";
+  row.append(name, content);
+  return row;
+}
+
+function openActivityDrawer() {
+  if (!state.activeTask || !els.activityDrawer) return;
+  els.activityDrawer.hidden = false;
+  window.requestAnimationFrame(() => els.activityDrawer.classList.add("open"));
+}
+
+function closeActivityDrawer() {
+  if (!els.activityDrawer) return;
+  els.activityDrawer.classList.remove("open");
+  window.setTimeout(() => {
+    if (!els.activityDrawer.classList.contains("open")) els.activityDrawer.hidden = true;
+  }, 180);
 }
 
 async function createProject(event) {
@@ -1180,7 +1250,7 @@ async function createEpic(event) {
 }
 
 async function addMember(event) {
-  event.preventDefault();
+  event?.preventDefault();
   const project = activeProject();
   if (!project) return;
   await api(`/api/pm/projects/${project.id}/members`, {
@@ -1190,7 +1260,7 @@ async function addMember(event) {
       role: els.memberRole.value
     })
   });
-  els.memberForm.reset();
+  els.memberIdentifier.value = "";
   els.memberRole.value = "member";
   await loadProjectData();
 }
@@ -1213,7 +1283,7 @@ async function removeMember(member) {
 }
 
 async function createLabel(event) {
-  event.preventDefault();
+  event?.preventDefault();
   const project = activeProject();
   if (!project) return;
   const { label } = await api(`/api/pm/projects/${project.id}/labels`, {
@@ -1223,7 +1293,7 @@ async function createLabel(event) {
       color: els.labelColor.value
     })
   });
-  els.labelForm.reset();
+  els.labelName.value = "";
   els.labelColor.value = "#6b7280";
   state.labels = [...state.labels.filter((item) => item.id !== label.id), label].sort((a, b) => a.name.localeCompare(b.name));
   renderProjectLabels();
@@ -1535,6 +1605,7 @@ async function loadTaskDrawerData(taskId) {
 }
 
 function renderDrawerData() {
+  renderTaskView();
   renderTaskLabels();
   renderDependencies();
   renderComments();
@@ -2077,8 +2148,8 @@ els.cancelProjectModalBtn.addEventListener("click", closeProjectModal);
 els.projectForm.addEventListener("submit", (event) => createProject(event).catch((error) => setError(error.message)));
 els.boardForm.addEventListener("submit", (event) => createBoard(event).catch((error) => setError(error.message)));
 els.cancelBoardModalBtn.addEventListener("click", closeBoardModal);
-els.memberForm.addEventListener("submit", (event) => addMember(event).catch((error) => setError(error.message)));
-els.labelForm.addEventListener("submit", (event) => createLabel(event).catch((error) => setError(error.message)));
+els.memberForm.querySelector("button").addEventListener("click", (event) => addMember(event).catch((error) => setError(error.message)));
+els.labelForm.querySelector("button").addEventListener("click", (event) => createLabel(event).catch((error) => setError(error.message)));
 els.epicForm.addEventListener("submit", (event) => createEpic(event).catch((error) => setError(error.message)));
 els.sprintForm.addEventListener("submit", (event) => createSprint(event).catch((error) => setError(error.message)));
 els.taskForm.addEventListener("submit", (event) => createTask(event).catch((error) => setError(error.message)));
@@ -2125,9 +2196,21 @@ els.boardSelect.addEventListener("change", () => {
   loadProjectData().catch((error) => setError(error.message));
 });
 els.taskSidebarToggle.addEventListener("click", () => {
-  if (state.activeTask) els.taskDrawer.hidden = !els.taskDrawer.hidden;
+  if (!state.activeTask) return;
+  if (els.taskDrawer.hidden) {
+    els.taskDrawer.hidden = false;
+    window.requestAnimationFrame(() => els.taskDrawer.classList.add("open"));
+  } else {
+    els.taskDrawer.classList.toggle("open");
+    if (!els.taskDrawer.classList.contains("open")) window.setTimeout(() => {
+      if (!els.taskDrawer.classList.contains("open")) els.taskDrawer.hidden = true;
+    }, 180);
+  }
 });
 els.closeDrawerBtn.addEventListener("click", closeTask);
+els.editTaskModeBtn.addEventListener("click", toggleTaskDrawerMode);
+els.activityDrawerBtn.addEventListener("click", openActivityDrawer);
+els.closeActivityDrawerBtn.addEventListener("click", closeActivityDrawer);
 els.archiveTaskBtn.addEventListener("click", () => toggleTaskArchive().catch((error) => setError(error.message)));
 els.deleteTaskBtn.addEventListener("click", () => deleteActiveTask().catch((error) => setError(error.message)));
 els.statusFilter.addEventListener("change", () => {
