@@ -155,7 +155,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.2.8 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.2.9 \
   node dist/pm/migrate.js
 ```
 
@@ -342,7 +342,10 @@ PM_AUTOMATION_TOKEN=<separate-token-for-n8n>
 n8n should call these routes with `Authorization: Bearer <PM_AUTOMATION_TOKEN>`:
 
 - `GET /api/pm/automation/status`
+- `GET /api/pm/automation/projects/boards`
 - `POST /api/pm/automation/projects/:projectId/tasks`
+- `POST /api/pm/automation/boards/:boardId/tasks`
+- `POST /api/pm/automation/projects/:projectId/boards/default/tasks`
 - `PATCH /api/pm/automation/tasks/:taskId`
 - `POST /api/pm/automation/tasks/:taskId/move`
 - `POST /api/pm/automation/tasks/:taskId/comments`
@@ -798,7 +801,7 @@ To update from the TrueNAS Apps UI:
 For predictable production rollouts, prefer a fixed tag such as:
 
 ```text
-ghcr.io/autixx/ws-chat-project-ego:v0.2.8
+ghcr.io/autixx/ws-chat-project-ego:v0.2.9
 ```
 
 Then update the tag in TrueNAS when moving to a newer release.

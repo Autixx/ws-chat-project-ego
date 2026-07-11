@@ -43,6 +43,22 @@ export function createPmAutomationRouter(store: PmStore, events: PmEventHub, opt
     res.json({ ok: true, service: "projectego-pm-automation" });
   });
 
+  router.get("/projects/boards", async (_req, res, next) => {
+    try {
+      const actor = await store.ensureAutomationUser("n8n");
+      const projects = await store.listProjects(actor.id, true);
+      const projectsWithBoards = await Promise.all(
+        projects.map(async (project) => ({
+          ...project,
+          boards: await store.listBoards(project.id)
+        }))
+      );
+      res.json({ projects: projectsWithBoards });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/projects/:projectId/tasks", async (req, res, next) => {
     try {
       const actor = await store.ensureAutomationUser("n8n");

@@ -395,6 +395,47 @@ test("PM automation API creates tasks directly on explicit and default boards", 
   }
 });
 
+test("PM automation API lists projects with boards for n8n routing", async () => {
+  const calls: string[] = [];
+  const fakeStore = {
+    async ensureAutomationUser(name: string) {
+      calls.push(`actor:${name}`);
+      return { id: "automation-user", username: "projectego_automation_n8n", displayName: "ProjectEGO automation: n8n" };
+    },
+    async health() {
+      return { ok: true };
+    },
+    async listProjects(userId: string, includeArchived: boolean) {
+      calls.push(`projects:${userId}:${includeArchived}`);
+      return [
+        { id: "project-1", key: "DASH", name: "Dashboard", description: "", ownerId: "automation-user", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1 },
+        { id: "project-2", key: "PM", name: "PM", description: "", ownerId: "automation-user", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1 }
+      ];
+    },
+    async listBoards(projectId: string) {
+      calls.push(`boards:${projectId}`);
+      return [{ id: `${projectId}-board`, projectId, name: "Project Kanban", boardType: "kanban", isDefault: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1 }];
+    }
+  };
+  const app = createPmApp(loadPmConfig({ NODE_ENV: "development", PM_AUTOMATION_TOKEN: "pm-auto-secret", PM_DEV_AUTH_BYPASS: "false" }), fakeStore as never);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/pm/automation/projects/boards`, {
+      headers: { authorization: "Bearer pm-auto-secret" }
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.projects.length, 2);
+    assert.equal(body.projects[0].boards[0].id, "project-1-board");
+    assert.deepEqual(calls, ["actor:n8n", "projects:automation-user:true", "boards:project-1", "boards:project-2"]);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test("PM API lists webhook deliveries and retries one delivery", async () => {
   let webhookCalls = 0;
   const webhookServer = http.createServer((_req, res) => {
@@ -685,7 +726,10 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /SMTP_HOST/);
   assert.match(readme, /PM_AUTOMATION_TOKEN/);
   assert.match(readme, /GET `?\/api\/pm\/automation\/status`?/);
+  assert.match(readme, /GET `?\/api\/pm\/automation\/projects\/boards`?/);
   assert.match(readme, /POST `?\/api\/pm\/automation\/projects\/:projectId\/tasks`?/);
+  assert.match(readme, /POST `?\/api\/pm\/automation\/boards\/:boardId\/tasks`?/);
+  assert.match(readme, /POST `?\/api\/pm\/automation\/projects\/:projectId\/boards\/default\/tasks`?/);
   assert.match(readme, /PM_BOOTSTRAP_USERNAME/);
   assert.match(readme, /PM_BOOTSTRAP_TOKEN/);
   assert.match(readme, /PM_AUTO_MIGRATE=true/);
