@@ -54,6 +54,51 @@ export function createPmAutomationRouter(store: PmStore, events: PmEventHub, opt
     }
   });
 
+  router.post("/boards/:boardId/tasks", async (req, res, next) => {
+    try {
+      const actor = await store.ensureAutomationUser("n8n");
+      const board = await store.loadBoard(req.params.boardId);
+      const result = await createTaskOnBoard(actor, board.projectId, board.id, req.body);
+      emit({ type: "task.created", projectId: board.projectId, taskId: result.task.id, version: result.task.version, createdAt: new Date().toISOString(), payload: { task: result.task, boardId: board.id, position: result.position, actor: "n8n" } });
+      emit({ type: "task.moved", projectId: board.projectId, taskId: result.task.id, version: result.task.version, createdAt: new Date().toISOString(), payload: { task: result.task, position: result.position, actor: "n8n" } });
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects/:projectId/boards/default/tasks", async (req, res, next) => {
+    try {
+      const actor = await store.ensureAutomationUser("n8n");
+      const { board } = await store.ensureDefaultKanbanBoard(actor, req.params.projectId, optionalBodyString(req.body, "epicId"));
+      const result = await createTaskOnBoard(actor, req.params.projectId, board.id, req.body);
+      emit({ type: "task.created", projectId: req.params.projectId, taskId: result.task.id, version: result.task.version, createdAt: new Date().toISOString(), payload: { task: result.task, boardId: board.id, position: result.position, actor: "n8n" } });
+      emit({ type: "task.moved", projectId: req.params.projectId, taskId: result.task.id, version: result.task.version, createdAt: new Date().toISOString(), payload: { task: result.task, position: result.position, actor: "n8n" } });
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  async function createTaskOnBoard(actor: Awaited<ReturnType<PmStore["ensureAutomationUser"]>>, projectId: string, boardId: string, body: unknown) {
+    const raw = objectBody(body);
+    const taskInput = parseCreateTaskBody(raw);
+    const columns = await store.listBoardColumns(boardId);
+    const columnId = optionalBodyString(raw, "columnId");
+    const column = columnId ? columns.find((entry) => entry.id === columnId) : columns.find((entry) => entry.statusKey === (taskInput.status || "todo")) || columns[0];
+    if (!column) throw new Error("Board has no columns.");
+    if (columnId && column.id !== columnId) throw new Error("columnId does not belong to board.");
+    const task = await store.createTask(actor, { ...taskInput, projectId });
+    return store.moveTask(actor, {
+      taskId: task.id,
+      boardId,
+      columnId: column.id,
+      position: optionalBodyNumber(raw, "position") ?? Date.now(),
+      status: taskInput.status || column.statusKey || task.status,
+      expectedVersion: task.version
+    });
+  }
+
   router.patch("/tasks/:taskId", async (req, res, next) => {
     try {
       const actor = await store.ensureAutomationUser("n8n");
@@ -134,6 +179,24 @@ function isBearerToken(header: string, expectedToken: string): boolean {
   const actual = Buffer.from(header.slice(prefix.length));
   const expected = Buffer.from(expectedToken);
   return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function objectBody(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("JSON object body is required.");
+  return value as Record<string, unknown>;
+}
+
+function optionalBodyString(body: unknown, field: string): string | undefined {
+  const value = objectBody(body)[field];
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+function optionalBodyNumber(body: unknown, field: string): number | undefined {
+  const value = objectBody(body)[field];
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${field} must be a number.`);
+  return parsed;
 }
 
 function statusForAutomationError(error: unknown): number {

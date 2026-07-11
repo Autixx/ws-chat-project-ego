@@ -596,6 +596,34 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     }
   });
 
+  router.post("/boards/:boardId/tasks", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const board = await store.loadBoard(req.params.boardId);
+      requireProjectRole(await store.getProjectRole(user.id, board.projectId), "member");
+      const result = await createTaskOnBoard(user, board.projectId, board.id, req.body);
+      emit({ type: "task.created", projectId: board.projectId, taskId: result.task.id, version: result.task.version, createdAt: new Date().toISOString(), payload: { task: result.task, boardId: board.id, position: result.position } });
+      emit({ type: "task.moved", projectId: board.projectId, taskId: result.task.id, version: result.task.version, createdAt: new Date().toISOString(), payload: { task: result.task, position: result.position } });
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/projects/:projectId/boards/default/tasks", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "member");
+      const { board } = await store.ensureDefaultKanbanBoard(user, req.params.projectId, optionalString(req.body?.epicId));
+      const result = await createTaskOnBoard(user, req.params.projectId, board.id, req.body);
+      emit({ type: "task.created", projectId: req.params.projectId, taskId: result.task.id, version: result.task.version, createdAt: new Date().toISOString(), payload: { task: result.task, boardId: board.id, position: result.position } });
+      emit({ type: "task.moved", projectId: req.params.projectId, taskId: result.task.id, version: result.task.version, createdAt: new Date().toISOString(), payload: { task: result.task, position: result.position } });
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/projects/:projectId/tasks", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
@@ -624,6 +652,25 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       next(error);
     }
   });
+
+  async function createTaskOnBoard(user: PmUser, projectId: string, boardId: string, body: unknown) {
+    const raw = objectBody(body);
+    const taskInput = parseCreateTask(raw);
+    const columns = await store.listBoardColumns(boardId);
+    const columnId = optionalString(raw.columnId);
+    const column = columnId ? columns.find((entry) => entry.id === columnId) : columns.find((entry) => entry.statusKey === (taskInput.status || "todo")) || columns[0];
+    if (!column) throw new Error("Board has no columns.");
+    if (columnId && column.id !== columnId) throw new Error("columnId does not belong to board.");
+    const task = await store.createTask(user, { ...taskInput, projectId });
+    return store.moveTask(user, {
+      taskId: task.id,
+      boardId,
+      columnId: column.id,
+      position: optionalNumber(raw.position) ?? Date.now(),
+      status: taskInput.status || column.statusKey || task.status,
+      expectedVersion: task.version
+    });
+  }
 
   router.patch("/tasks/:taskId", async (req: PmAuthedRequest, res, next) => {
     try {

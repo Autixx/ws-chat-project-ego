@@ -290,6 +290,111 @@ test("PM automation API uses PM_AUTOMATION_TOKEN instead of user auth", async ()
   }
 });
 
+test("PM automation API creates tasks directly on explicit and default boards", async () => {
+  const calls: string[] = [];
+  const fakeStore = {
+    async ensureAutomationUser(name: string) {
+      calls.push(`actor:${name}`);
+      return { id: "automation-user", username: "projectego_automation_n8n", displayName: "ProjectEGO automation: n8n" };
+    },
+    async health() {
+      return { ok: true };
+    },
+    async loadBoard(boardId: string) {
+      calls.push(`loadBoard:${boardId}`);
+      return { id: boardId, projectId: "project-1", name: "Roadmap", boardType: "kanban", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1 };
+    },
+    async ensureDefaultKanbanBoard(_actor: unknown, projectId: string) {
+      calls.push(`defaultBoard:${projectId}`);
+      return {
+        board: { id: "board-default", projectId, name: "Project Kanban", boardType: "kanban", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1 },
+        columns: []
+      };
+    },
+    async listBoardColumns(boardId: string) {
+      calls.push(`columns:${boardId}`);
+      return [{ id: `${boardId}-todo`, boardId, name: "Todo", statusKey: "todo", position: 1000, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }];
+    },
+    async createTask(_actor: unknown, input: Record<string, unknown>) {
+      calls.push(`create:${input.projectId}:${input.title}`);
+      return {
+        id: `task-${calls.filter((call) => call.startsWith("create:")).length}`,
+        projectId: input.projectId,
+        title: input.title,
+        description: "",
+        status: "todo",
+        priority: "medium",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1
+      };
+    },
+    async moveTask(_actor: unknown, input: Record<string, unknown>) {
+      calls.push(`move:${input.taskId}:${input.boardId}:${input.columnId}`);
+      return {
+        task: {
+          id: input.taskId,
+          projectId: "project-1",
+          title: "Created on board",
+          description: "",
+          status: input.status,
+          priority: "medium",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          version: 2
+        },
+        position: {
+          taskId: input.taskId,
+          boardId: input.boardId,
+          columnId: input.columnId,
+          backlogScope: "project",
+          position: input.position
+        }
+      };
+    }
+  };
+  const app = createPmApp(loadPmConfig({ NODE_ENV: "development", PM_AUTOMATION_TOKEN: "pm-auto-secret", PM_DEV_AUTH_BYPASS: "false" }), fakeStore as never);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const base = `http://127.0.0.1:${address.port}/api/pm/automation`;
+    const headers = { "content-type": "application/json", authorization: "Bearer pm-auto-secret" };
+
+    const explicit = await fetch(`${base}/boards/board-1/tasks`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ title: "Created on board" })
+    });
+    assert.equal(explicit.status, 201);
+    assert.equal((await explicit.json()).position.boardId, "board-1");
+
+    const viaDefault = await fetch(`${base}/projects/project-1/boards/default/tasks`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ title: "Created on default board" })
+    });
+    assert.equal(viaDefault.status, 201);
+    assert.equal((await viaDefault.json()).position.boardId, "board-default");
+
+    assert.deepEqual(calls, [
+      "actor:n8n",
+      "loadBoard:board-1",
+      "columns:board-1",
+      "create:project-1:Created on board",
+      "move:task-1:board-1:board-1-todo",
+      "actor:n8n",
+      "defaultBoard:project-1",
+      "columns:board-default",
+      "create:project-1:Created on default board",
+      "move:task-2:board-default:board-default-todo"
+    ]);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test("PM API lists webhook deliveries and retries one delivery", async () => {
   let webhookCalls = 0;
   const webhookServer = http.createServer((_req, res) => {
