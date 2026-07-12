@@ -155,7 +155,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.2.9 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.2.10 \
   node dist/pm/migrate.js
 ```
 
@@ -801,7 +801,7 @@ To update from the TrueNAS Apps UI:
 For predictable production rollouts, prefer a fixed tag such as:
 
 ```text
-ghcr.io/autixx/ws-chat-project-ego:v0.2.9
+ghcr.io/autixx/ws-chat-project-ego:v0.2.10
 ```
 
 Then update the tag in TrueNAS when moving to a newer release.

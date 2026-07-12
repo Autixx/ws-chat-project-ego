@@ -26,6 +26,7 @@ const state = {
   comments: [],
   attachments: [],
   activity: [],
+  floatingWindows: [],
   currentView: "home",
   routeTaskId: null,
   homeEditing: false,
@@ -206,7 +207,8 @@ const els = {
   mediaModal: $("mediaModal"),
   mediaTitle: $("mediaTitle"),
   mediaContent: $("mediaContent"),
-  closeMediaModalBtn: $("closeMediaModalBtn")
+  closeMediaModalBtn: $("closeMediaModalBtn"),
+  pmWindowDockList: $("pmWindowDockList")
 };
 
 function setError(message) {
@@ -2510,20 +2512,203 @@ function isPreviewableAttachment(attachment) {
 function openMediaAttachment(attachment) {
   const src = `/api/pm/attachments/${encodeURIComponent(attachment.id)}`;
   const mime = attachment.mimeType || "";
-  els.mediaTitle.textContent = attachment.originalFileName || attachment.storedFileName || "Media";
+  const title = attachment.originalFileName || attachment.storedFileName || "Media";
   if (mime.startsWith("image/")) {
-    els.mediaContent.innerHTML = `<img src="${src}" alt="${escapeHtml(attachment.originalFileName)}" draggable="false" />`;
+    openImageMediaWindow(src, title);
   } else if (mime.startsWith("video/")) {
-    els.mediaContent.innerHTML = `<video src="${src}" controls></video>`;
+    openPlaybackMediaWindow(src, title, "video");
   } else if (mime.startsWith("audio/")) {
-    els.mediaContent.innerHTML = `<audio src="${src}" controls></audio>`;
+    openPlaybackMediaWindow(src, title, "audio");
   }
-  els.mediaModal.hidden = false;
 }
 
 function closeMediaAttachment() {
   els.mediaContent.replaceChildren();
   els.mediaModal.hidden = true;
+}
+
+function openImageMediaWindow(src, title) {
+  const viewer = createFloatingWindow("pm-media-image-window", title, "image");
+  const body = document.createElement("div");
+  body.className = "pm-floating-media-body";
+  const image = document.createElement("img");
+  image.src = src;
+  image.alt = title;
+  image.draggable = false;
+  body.append(image);
+  viewer.panel.append(body);
+
+  let zoom = 1;
+  let panX = 0;
+  let panY = 0;
+  let drag = null;
+  const update = () => {
+    image.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  };
+  const stopDrag = () => {
+    drag = null;
+    document.body.classList.remove("no-text-select");
+    body.classList.remove("dragging");
+  };
+
+  image.addEventListener("dragstart", (event) => event.preventDefault());
+  body.addEventListener("dragstart", (event) => event.preventDefault());
+  body.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    zoom = Math.max(0.2, Math.min(6, zoom + (event.deltaY < 0 ? 0.12 : -0.12)));
+    update();
+  });
+  body.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    drag = { x: event.clientX, y: event.clientY, panX, panY };
+    document.body.classList.add("no-text-select");
+    body.classList.add("dragging");
+    body.setPointerCapture(event.pointerId);
+  });
+  body.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    panX = drag.panX + event.clientX - drag.x;
+    panY = drag.panY + event.clientY - drag.y;
+    update();
+  });
+  body.addEventListener("pointerup", stopDrag);
+  body.addEventListener("pointercancel", stopDrag);
+  viewer.onClose = stopDrag;
+  update();
+}
+
+function openPlaybackMediaWindow(src, title, kind) {
+  const viewer = createFloatingWindow("pm-media-playback-window", title, kind);
+  const body = document.createElement("div");
+  body.className = "pm-floating-media-body";
+  const media = document.createElement(kind === "audio" ? "audio" : "video");
+  media.controls = true;
+  if (kind === "video") media.playsInline = true;
+  media.src = src;
+  body.append(media);
+  viewer.panel.append(body);
+  viewer.onClose = () => {
+    media.pause();
+    media.removeAttribute("src");
+    media.load();
+  };
+}
+
+function createFloatingWindow(className, title, kind = "window") {
+  const panel = document.createElement("section");
+  panel.className = `${className} pm-floating-window`;
+  const offset = state.floatingWindows.length * 18;
+  panel.style.left = `calc(12.5vw + ${offset}px)`;
+  panel.style.top = `calc(12.5vh + ${offset}px)`;
+
+  const header = document.createElement("header");
+  const label = document.createElement("span");
+  label.textContent = title;
+  const minimize = document.createElement("button");
+  minimize.className = "pm-window-minimize";
+  minimize.type = "button";
+  minimize.setAttribute("aria-label", "Minimize to sidebar");
+  const close = document.createElement("button");
+  close.className = "pm-window-close";
+  close.type = "button";
+  close.setAttribute("aria-label", "Close");
+  const controls = document.createElement("div");
+  controls.className = "pm-window-controls";
+  controls.append(minimize, close);
+  header.append(label, controls);
+  panel.append(header);
+  document.body.append(panel);
+
+  const floating = { panel, onClose: null };
+  const windowState = registerFloatingWindow(panel, title, kind, () => closeFloatingWindow());
+  function closeFloatingWindow() {
+    floating.onClose?.();
+    unregisterFloatingWindow(windowState.id);
+    panel.remove();
+  }
+
+  minimize.addEventListener("click", () => setFloatingWindowMinimized(windowState, true));
+  close.addEventListener("click", closeFloatingWindow);
+  wireDraggableFloatingWindow(panel, header);
+  return floating;
+}
+
+function wireDraggableFloatingWindow(panel, handle) {
+  let drag = null;
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.target.closest?.("button")) return;
+    const rect = panel.getBoundingClientRect();
+    drag = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+    document.body.classList.add("no-text-select");
+    handle.setPointerCapture(event.pointerId);
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    const nextLeft = Math.max(0, Math.min(window.innerWidth - 80, drag.left + event.clientX - drag.x));
+    const nextTop = Math.max(0, Math.min(window.innerHeight - 60, drag.top + event.clientY - drag.y));
+    panel.style.left = `${nextLeft}px`;
+    panel.style.top = `${nextTop}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+  });
+  const stopDrag = () => {
+    drag = null;
+    document.body.classList.remove("no-text-select");
+  };
+  handle.addEventListener("pointerup", stopDrag);
+  handle.addEventListener("pointercancel", stopDrag);
+}
+
+function registerFloatingWindow(panel, title, kind, closeWindow) {
+  const id = `pm-floating-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const windowState = { id, panel, title, kind, minimized: false, closeWindow };
+  state.floatingWindows.push(windowState);
+  renderWindowDock();
+  return windowState;
+}
+
+function unregisterFloatingWindow(id) {
+  state.floatingWindows = state.floatingWindows.filter((item) => item.id !== id);
+  renderWindowDock();
+}
+
+function setFloatingWindowMinimized(windowState, minimized) {
+  windowState.minimized = minimized;
+  if (minimized) {
+    windowState.panel.classList.add("minimized");
+    window.setTimeout(() => {
+      if (windowState.minimized) windowState.panel.hidden = true;
+    }, 170);
+  } else {
+    windowState.panel.hidden = false;
+    requestAnimationFrame(() => windowState.panel.classList.remove("minimized"));
+  }
+  renderWindowDock();
+}
+
+function toggleFloatingWindow(windowState) {
+  setFloatingWindowMinimized(windowState, !windowState.minimized);
+}
+
+function renderWindowDock() {
+  els.pmWindowDockList.replaceChildren();
+  for (const windowState of state.floatingWindows) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `pm-dock-icon ${windowState.minimized ? "" : "active"}`;
+    button.textContent = windowIcon(windowState.kind);
+    button.title = windowState.title;
+    button.addEventListener("click", () => toggleFloatingWindow(windowState));
+    els.pmWindowDockList.append(button);
+  }
+}
+
+function windowIcon(kind) {
+  if (kind === "video") return "V";
+  if (kind === "audio") return "A";
+  if (kind === "image") return "I";
+  return "W";
 }
 
 async function deleteAttachment(attachment) {
@@ -2956,7 +3141,7 @@ document.addEventListener("pointerdown", (event) => {
   if (!(target instanceof Node)) return;
   if (els.taskDrawer.contains(target)) return;
   if (els.activityDrawer?.contains(target)) return;
-  if (target instanceof Element && target.closest(".pm-right-rail, .pm-modal-backdrop, .pm-media-modal, .notification-panel, .kanban-card")) return;
+  if (target instanceof Element && target.closest(".pm-right-rail, .pm-modal-backdrop, .pm-media-modal, .pm-floating-window, .notification-panel, .kanban-card")) return;
   collapseTaskDrawer();
 });
 els.archiveTaskBtn.addEventListener("click", () => toggleTaskArchive().catch((error) => setError(error.message)));
