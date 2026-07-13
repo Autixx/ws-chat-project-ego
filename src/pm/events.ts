@@ -8,6 +8,7 @@ export type PmEventType =
   | "epic.updated"
   | "board.created"
   | "board.updated"
+  | "board.deleted"
   | "board.column_created"
   | "task.created"
   | "task.updated"

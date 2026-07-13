@@ -1022,6 +1022,86 @@ export class PmStore {
     return task;
   }
 
+  async hardDeleteTask(user: PmUser, taskId: string): Promise<{ task: PmTask; attachments: PmAttachment[] }> {
+    return this.withTransaction(async (client) => {
+      const taskResult = await client.query("SELECT * FROM pm.tasks WHERE id = $1", [taskId]);
+      if (!taskResult.rows[0]) throw new Error("Task not found.");
+      const task = mapTask(taskResult.rows[0]);
+      const attachmentResult = await client.query(
+        `
+        SELECT a.*, COALESCE(u.display_name, u.username) AS uploader_name
+        FROM pm.attachments a
+        LEFT JOIN core.users u ON u.id = a.uploaded_by
+        WHERE a.task_id = $1
+        `,
+        [taskId]
+      );
+      await client.query("DELETE FROM pm.tasks WHERE id = $1", [taskId]);
+      await this.insertAudit(client, {
+        actorType: "user",
+        actorId: user.id,
+        projectId: task.projectId,
+        eventType: "task.hard_deleted",
+        payload: { taskId, title: task.title, attachmentCount: attachmentResult.rowCount ?? attachmentResult.rows.length }
+      });
+      return { task, attachments: attachmentResult.rows.map(mapAttachment) };
+    });
+  }
+
+  async hardDeleteBoard(user: PmUser, boardId: string): Promise<{ board: PmBoard; taskIds: string[]; attachments: PmAttachment[] }> {
+    return this.withTransaction(async (client) => {
+      const boardResult = await client.query(
+        `
+        SELECT *
+        FROM (
+          SELECT b.*,
+                 b.id = FIRST_VALUE(b.id) OVER (
+                   PARTITION BY b.project_id, b.epic_id, b.board_type
+                   ORDER BY b.created_at ASC
+                 ) AS is_default
+          FROM pm.boards b
+        ) ranked
+        WHERE id = $1
+        `,
+        [boardId]
+      );
+      if (!boardResult.rows[0]) throw new Error("Board not found.");
+      const board = mapBoard(boardResult.rows[0]);
+      const taskIdResult = await client.query(
+        `
+        SELECT DISTINCT task_id
+        FROM pm.task_positions
+        WHERE board_id = $1
+        `,
+        [boardId]
+      );
+      const taskIds = taskIdResult.rows.map((row) => String(row.task_id));
+      const attachmentResult = taskIds.length
+        ? await client.query(
+            `
+            SELECT a.*, COALESCE(u.display_name, u.username) AS uploader_name
+            FROM pm.attachments a
+            LEFT JOIN core.users u ON u.id = a.uploaded_by
+            WHERE a.task_id = ANY($1::uuid[])
+            `,
+            [taskIds]
+          )
+        : { rows: [] };
+      if (taskIds.length) {
+        await client.query("DELETE FROM pm.tasks WHERE id = ANY($1::uuid[])", [taskIds]);
+      }
+      await client.query("DELETE FROM pm.boards WHERE id = $1", [boardId]);
+      await this.insertAudit(client, {
+        actorType: "user",
+        actorId: user.id,
+        projectId: board.projectId,
+        eventType: "board.hard_deleted",
+        payload: { boardId, name: board.name, taskIds, attachmentCount: attachmentResult.rows.length }
+      });
+      return { board, taskIds, attachments: attachmentResult.rows.map(mapAttachment) };
+    });
+  }
+
   async moveTask(user: PmUser, input: MoveTaskInput): Promise<{ task: PmTask; position: PmTaskPosition }> {
     return this.withTransaction(async (client) => {
       const taskResult = await client.query(

@@ -100,6 +100,7 @@ const els = {
   boardName: $("boardName"),
   boardEpic: $("boardEpic"),
   createBoardBtn: $("createBoardBtn"),
+  deleteBoardBtn: $("deleteBoardBtn"),
   cancelBoardModalBtn: $("cancelBoardModalBtn"),
   taskSidebarToggle: $("taskSidebarToggle"),
   webhookPanel: $("webhookPanel"),
@@ -1031,6 +1032,7 @@ async function loadProjectData() {
   els.memberForm.querySelector("button").disabled = !project;
   els.labelForm.querySelector("button").disabled = !project;
   els.createBoardBtn.disabled = !project;
+  els.deleteBoardBtn.disabled = !project || !state.activeBoardId;
   els.saveFilterBtn.disabled = !project;
   els.updateFilterBtn.disabled = !project || !els.savedFilterSelect.value;
   els.deleteFilterBtn.disabled = !project || !els.savedFilterSelect.value;
@@ -2233,12 +2235,28 @@ async function toggleTaskArchive() {
 async function deleteActiveTask() {
   if (!state.activeTask) return;
   const confirmed = await confirmAction({
-    title: "Delete task",
-    message: `Delete this task from active lists?\n\n${state.activeTask.title}`
+    title: "Delete task permanently",
+    message: `This will permanently delete the task and its attachments from storage.\n\n${state.activeTask.title}`
   });
   if (!confirmed) return;
-  await api(`/api/pm/tasks/${state.activeTask.id}`, { method: "DELETE" });
+  await api(`/api/pm/tasks/${state.activeTask.id}/permanent`, { method: "DELETE" });
   closeTask();
+  await loadProjectData();
+}
+
+async function deleteActiveBoard() {
+  if (!state.activeBoardId || !state.board) return;
+  const confirmed = await confirmAction({
+    title: "Delete board permanently",
+    message: `This will permanently delete board "${state.board.name}", every task positioned on it, and attachments used by those tasks. This cannot be undone.`
+  });
+  if (!confirmed) return;
+  await api(`/api/pm/boards/${state.activeBoardId}/permanent`, { method: "DELETE" });
+  if (state.activeTask) closeTask({ navigate: false });
+  state.activeBoardId = null;
+  state.board = null;
+  state.columns = [];
+  state.boardTasks = [];
   await loadProjectData();
 }
 
@@ -3114,6 +3132,7 @@ els.refreshBtn.addEventListener("click", () => loadProjects().catch((error) => s
 els.archiveProjectBtn.addEventListener("click", () => toggleArchive().catch((error) => setError(error.message)));
 els.ensureBoardBtn.addEventListener("click", () => loadProjectData().catch((error) => setError(error.message)));
 els.createBoardBtn.addEventListener("click", openBoardModal);
+els.deleteBoardBtn.addEventListener("click", () => deleteActiveBoard().catch((error) => setError(error.message)));
 els.boardSelect.addEventListener("change", () => {
   state.activeBoardId = els.boardSelect.value || null;
   if (state.activeProjectId) navigatePm(pmBoardPath(state.activeProjectId, state.activeBoardId));

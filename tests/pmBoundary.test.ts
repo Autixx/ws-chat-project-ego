@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -436,6 +436,107 @@ test("PM automation API lists projects with boards for n8n routing", async () =>
   }
 });
 
+test("PM API hard deletes tasks and boards with attachment files", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "projectego-pm-hard-delete-"));
+  const attachmentsDir = path.join(root, "attachments");
+  mkdirSync(attachmentsDir, { recursive: true });
+  const taskDir = path.join(attachmentsDir, "task-1");
+  const boardTaskDir = path.join(attachmentsDir, "task-board");
+  mkdirSync(taskDir, { recursive: true });
+  mkdirSync(boardTaskDir, { recursive: true });
+  const taskFile = path.join(taskDir, "PMATT_task.txt");
+  const boardFile = path.join(boardTaskDir, "PMATT_board.txt");
+  writeFileSync(taskFile, "task");
+  writeFileSync(boardFile, "board");
+  const calls: string[] = [];
+  const makeTask = (id: string) => ({
+    id,
+    projectId: "project-1",
+    title: id,
+    description: "",
+    status: "todo",
+    priority: "medium",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    version: 1
+  });
+  const makeAttachment = (id: string, taskId: string, storagePath: string) => ({
+    id,
+    taskId,
+    uploaderId: "pm-user-1",
+    originalFileName: `${id}.txt`,
+    storedFileName: path.basename(storagePath),
+    mimeType: "text/plain",
+    sizeBytes: 4,
+    storagePath,
+    createdAt: new Date().toISOString()
+  });
+  const fakeStore = {
+    async ensureUser() {
+      return { id: "pm-user-1", username: "operator", displayName: "Operator" };
+    },
+    async health() {
+      return { ok: true };
+    },
+    async getProjectRole(userId: string, projectId: string) {
+      calls.push(`role:${userId}:${projectId}`);
+      return "project_owner";
+    },
+    async loadTask(taskId: string) {
+      calls.push(`loadTask:${taskId}`);
+      return makeTask(taskId);
+    },
+    async hardDeleteTask(_user: unknown, taskId: string) {
+      calls.push(`hardTask:${taskId}`);
+      return { task: makeTask(taskId), attachments: [makeAttachment("att-task", taskId, taskFile)] };
+    },
+    async loadBoard(boardId: string) {
+      calls.push(`loadBoard:${boardId}`);
+      return { id: boardId, projectId: "project-1", name: "Board", boardType: "kanban", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1 };
+    },
+    async hardDeleteBoard(_user: unknown, boardId: string) {
+      calls.push(`hardBoard:${boardId}`);
+      return {
+        board: { id: boardId, projectId: "project-1", name: "Board", boardType: "kanban", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1 },
+        taskIds: ["task-board"],
+        attachments: [makeAttachment("att-board", "task-board", boardFile)]
+      };
+    }
+  };
+  const app = createPmApp(loadPmConfig({ NODE_ENV: "development", PM_DEV_AUTH_BYPASS: "true", PM_ATTACHMENTS_DIR: attachmentsDir }), fakeStore as never);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const taskResponse = await fetch(`${baseUrl}/api/pm/tasks/task-1/permanent`, { method: "DELETE" });
+    assert.equal(taskResponse.status, 200);
+    const taskBody = await taskResponse.json();
+    assert.equal(taskBody.deletedAttachments, 1);
+    assert.equal(existsSync(taskFile), false);
+
+    const boardResponse = await fetch(`${baseUrl}/api/pm/boards/board-1/permanent`, { method: "DELETE" });
+    assert.equal(boardResponse.status, 200);
+    const boardBody = await boardResponse.json();
+    assert.deepEqual(boardBody.deletedTaskIds, ["task-board"]);
+    assert.equal(boardBody.deletedAttachments, 1);
+    assert.equal(existsSync(boardFile), false);
+    assert.deepEqual(calls, [
+      "loadTask:task-1",
+      "role:pm-user-1:project-1",
+      "hardTask:task-1",
+      "loadBoard:board-1",
+      "role:pm-user-1:project-1",
+      "hardBoard:board-1"
+    ]);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("PM API lists webhook deliveries and retries one delivery", async () => {
   let webhookCalls = 0;
   const webhookServer = http.createServer((_req, res) => {
@@ -681,6 +782,7 @@ test("PM README documents Kanban board API", () => {
   assert.match(readme, /POST `?\/api\/pm\/projects\/:projectId\/boards\/kanban`?/);
   assert.match(readme, /multiple named Kanban boards per project/);
   assert.match(readme, /GET `?\/api\/pm\/boards\/:boardId`?/);
+  assert.match(readme, /DELETE `?\/api\/pm\/boards\/:boardId\/permanent`?/);
   assert.match(readme, /drag-and-drop task movement/);
   assert.match(readme, /GET `?\/api\/pm\/projects\/:projectId\/sprints`?/);
   assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/sprint`?/);
@@ -708,6 +810,7 @@ test("PM README documents Kanban board API", () => {
   assert.doesNotMatch(readme, /No database-backed full-text search yet/);
   assert.match(readme, /POST `?\/api\/pm\/tasks\/:taskId\/archive`?/);
   assert.match(readme, /DELETE `?\/api\/pm\/tasks\/:taskId`?/);
+  assert.match(readme, /DELETE `?\/api\/pm\/tasks\/:taskId\/permanent`?/);
   assert.match(readme, /task due dates with overdue highlighting/);
   assert.match(readme, /GET `?\/api\/pm\/tasks\/:taskId\/dependencies`?/);
   assert.match(readme, /DELETE `?\/api\/pm\/tasks\/:taskId\/dependencies\/:blockingTaskId`?/);

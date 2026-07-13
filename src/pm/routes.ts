@@ -10,7 +10,7 @@ import { normalizeRole, PmPermissionError, requireProjectRole } from "./permissi
 import type { PmEvent, PmEventHub } from "./events.js";
 import { buildPmInviteEmail, sendPmMail } from "./mailer.js";
 import type { PmStore, PmConflictError } from "./postgresStore.js";
-import type { CreateBoardColumnInput, CreateEpicInput, CreateProjectInput, CreateSprintInput, CreateTaskInput, MoveTaskInput, PmHomeWidget, PmHomeWidgetKind, PmSprintStatus, PmUser, PmWidgetTemplate, UpdateProjectInput, UpdateSprintInput, UpdateTaskInput } from "./types.js";
+import type { CreateBoardColumnInput, CreateEpicInput, CreateProjectInput, CreateSprintInput, CreateTaskInput, MoveTaskInput, PmAttachment, PmHomeWidget, PmHomeWidgetKind, PmSprintStatus, PmUser, PmWidgetTemplate, UpdateProjectInput, UpdateSprintInput, UpdateTaskInput } from "./types.js";
 import type { PmWebhookDispatcher } from "./webhookDispatcher.js";
 
 export type PmAuthedRequest = express.Request & { pmIdentity?: AuthenticatedUser; pmUser?: PmUser };
@@ -710,6 +710,48 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       next(error);
     }
   });
+
+  router.delete("/tasks/:taskId/permanent", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const existing = await store.loadTask(req.params.taskId);
+      requireProjectRole(await store.getProjectRole(user.id, existing.projectId), "member");
+      const result = await store.hardDeleteTask(user, req.params.taskId);
+      const fileDeletion = await removePmAttachmentFiles(options.attachmentsDir, result.attachments);
+      emit({ type: "task.deleted", projectId: result.task.projectId, taskId: result.task.id, version: result.task.version, createdAt: new Date().toISOString(), payload: { permanent: true, attachmentCount: result.attachments.length } });
+      res.json({ ok: true, task: result.task, deletedAttachments: result.attachments.length, fileDeletion });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/boards/:boardId/permanent", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const board = await store.loadBoard(req.params.boardId);
+      requireProjectRole(await store.getProjectRole(user.id, board.projectId), "project_owner");
+      const result = await store.hardDeleteBoard(user, req.params.boardId);
+      const fileDeletion = await removePmAttachmentFiles(options.attachmentsDir, result.attachments);
+      emit({ type: "board.deleted", projectId: result.board.projectId, version: result.board.version, createdAt: new Date().toISOString(), payload: { permanent: true, boardId: result.board.id, taskIds: result.taskIds, attachmentCount: result.attachments.length } });
+      res.json({ ok: true, board: result.board, deletedTaskIds: result.taskIds, deletedAttachments: result.attachments.length, fileDeletion });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  async function removePmAttachmentFiles(attachmentsDir: string, attachments: PmAttachment[]) {
+    const results = await Promise.allSettled(attachments.map((attachment) => removePmAttachmentFile(attachmentsDir, attachment)));
+    const failed = results
+      .map((result, index) => ({ result, attachment: attachments[index] }))
+      .filter((entry) => entry.result.status === "rejected")
+      .map((entry) => ({
+        attachmentId: entry.attachment.id,
+        storagePath: entry.attachment.storagePath,
+        error: entry.result.status === "rejected" ? String(entry.result.reason instanceof Error ? entry.result.reason.message : entry.result.reason) : undefined
+      }));
+    if (failed.length) console.warn("PM hard delete could not remove some attachment files", failed);
+    return { attempted: attachments.length, deleted: attachments.length - failed.length, failed };
+  }
 
   router.post("/tasks/:taskId/move", async (req: PmAuthedRequest, res, next) => {
     try {
