@@ -40,6 +40,7 @@ const state = {
   projectSheetWidgets: [],
   projectOrder: [],
   commentMode: "fast",
+  projectDragSuppressClickUntil: 0,
   timerAlerts: new Set(),
   notifications: [],
   webhookDeliveries: [],
@@ -1690,9 +1691,10 @@ function renderProjects() {
         <div class="card-title">${escapeHtml(project.name)}${project.archivedAt ? " / archived" : ""}</div>
         ${boardTree}
         <span class="project-drop-line"></span>
-        <button class="project-edit-button" type="button" title="Edit project">Edit</button>
+        <button class="project-edit-button" type="button" title="Edit project" aria-label="Edit project">&#9881;</button>
       `;
       const activate = async () => {
+        if (Date.now() < state.projectDragSuppressClickUntil) return;
         if (card.classList.contains("project-drag-ready")) return;
         state.activeProjectId = project.id;
         state.activeEpicId = null;
@@ -1970,6 +1972,59 @@ function wireProjectDrag(button, startIndex) {
   button.addEventListener("pointerup", stop);
   button.addEventListener("pointercancel", stop);
   button.addEventListener("pointerleave", () => clearTimeout(timer));
+}
+
+function wireProjectDrag(button, startIndex) {
+  let timer = 0;
+  let dragging = false;
+  let targetIndex = startIndex;
+  const stopDrag = () => {
+    clearTimeout(timer);
+    document.removeEventListener("pointermove", moveDrag);
+    document.removeEventListener("pointerup", stopDrag);
+    document.removeEventListener("pointercancel", stopDrag);
+    if (dragging && targetIndex !== startIndex) {
+      const next = [...state.projects];
+      const [moved] = next.splice(startIndex, 1);
+      next.splice(targetIndex, 0, moved);
+      state.projects = next;
+      saveProjectOrder();
+      state.projectDragSuppressClickUntil = Date.now() + 500;
+    }
+    dragging = false;
+    button.classList.remove("project-drag-ready");
+    document.body.classList.remove("dragging-project-card");
+    clearProjectDropLines();
+    renderProjects();
+  };
+  const moveDrag = (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    const cards = Array.from(els.projectList.querySelectorAll(".project-card"));
+    const target = cards.find((card) => {
+      const rect = card.getBoundingClientRect();
+      return event.clientY >= rect.top && event.clientY <= rect.bottom;
+    });
+    if (!target) return;
+    targetIndex = cards.indexOf(target);
+    clearProjectDropLines();
+    target.classList.add("drop-before");
+  };
+  button.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.target.closest("button")) return;
+    clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      dragging = true;
+      targetIndex = startIndex;
+      button.classList.add("project-drag-ready");
+      document.body.classList.add("dragging-project-card");
+      document.addEventListener("pointermove", moveDrag);
+      document.addEventListener("pointerup", stopDrag);
+      document.addEventListener("pointercancel", stopDrag);
+    }, 500);
+  });
+  button.addEventListener("pointerup", () => clearTimeout(timer));
+  button.addEventListener("pointercancel", () => clearTimeout(timer));
 }
 
 function renderMembers() {
