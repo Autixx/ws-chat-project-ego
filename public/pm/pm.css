@@ -774,6 +774,12 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   max-height: 220px;
 }
 
+.project-sort-list {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .project-card, .epic-card, .task-card {
   border: 1px solid var(--line);
   background: var(--field);
@@ -783,7 +789,10 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .project-card {
   position: relative;
+  flex: 0 0 auto;
+  height: auto;
   min-height: 42px;
+  overflow: visible;
   padding-right: 34px;
   user-select: none;
   -webkit-user-select: none;
@@ -795,6 +804,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 }
 
 .project-board-tree {
+  position: static;
   margin-top: 7px;
   display: grid;
   gap: 3px;
