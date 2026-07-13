@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import multer from "multer";
 import type { AuthenticatedUser } from "../auth/authelia.js";
-import { removePmAttachmentFile, storePmTaskAttachment, streamPmAttachment } from "./attachmentService.js";
+import { removePmAttachmentFile, removePmProjectBackground, resolveAttachmentPath, storePmProjectBackground, storePmTaskAttachment, streamPmAttachment } from "./attachmentService.js";
 import type { PmConfig } from "./config.js";
 import { normalizeRole, PmPermissionError, requireProjectRole } from "./permissions.js";
 import type { PmEvent, PmEventHub } from "./events.js";
@@ -285,6 +285,55 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     }
   });
 
+  router.post("/projects/:projectId/background", upload.single("file"), async (req: PmAuthedRequest, res, next) => {
+    const uploadedFile = req.file;
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
+      if (!uploadedFile) throw new Error("file is required.");
+      const stored = await storePmProjectBackground({
+        attachmentsDir: options.attachmentsDir,
+        projectId: req.params.projectId,
+        tempPath: uploadedFile.path,
+        originalName: uploadedFile.originalname,
+        mimeType: uploadedFile.mimetype,
+        sizeBytes: uploadedFile.size,
+        maxBytes: options.maxAttachmentBytes
+      });
+      const url = `/api/pm/projects/${encodeURIComponent(req.params.projectId)}/background/${encodeURIComponent(stored.storedFileName)}`;
+      emit({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { backgroundImage: true } });
+      res.status(201).json({ background: { ...stored, url } });
+    } catch (error) {
+      if (uploadedFile?.path) await fs.rm(uploadedFile.path, { force: true }).catch(() => undefined);
+      next(error);
+    }
+  });
+
+  router.get("/projects/:projectId/background/:fileName", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "viewer");
+      const safeName = path.basename(req.params.fileName);
+      if (safeName !== req.params.fileName) throw Object.assign(new Error("Invalid background image path."), { statusCode: 400 });
+      const storagePath = resolveAttachmentPath(options.attachmentsDir, path.join(options.attachmentsDir, "project-backgrounds", req.params.projectId, safeName));
+      res.sendFile(storagePath);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/projects/:projectId/background", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
+      await removePmProjectBackground(options.attachmentsDir, req.params.projectId);
+      emit({ type: "project.updated", projectId: req.params.projectId, createdAt: new Date().toISOString(), payload: { backgroundImage: false } });
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/projects/:projectId/archive", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
@@ -315,6 +364,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
       const result = await store.hardDeleteProject(user, req.params.projectId);
       const fileDeletion = await removePmAttachmentFiles(options.attachmentsDir, result.attachments);
+      await removePmProjectBackground(options.attachmentsDir, req.params.projectId);
       emit({
         type: "project.updated",
         projectId: result.project.id,

@@ -2,6 +2,7 @@ const THEME_STORAGE_KEY = "projectego-pm-theme";
 const PM_HOME_GRID_STEP_KEY = "projectego-pm-home-grid-step";
 const PM_PROJECT_ORDER_KEY = "projectego-pm-project-order";
 const PM_PROJECT_SHEETS_KEY = "projectego-pm-project-sheets";
+const PM_PROJECT_BOARDS_EXPANDED_KEY = "projectego-pm-project-boards-expanded";
 const PM_COMMENT_MODE_KEY = "projectego-pm-comment-mode";
 
 const state = {
@@ -15,6 +16,8 @@ const state = {
   boards: [],
   tasks: [],
   board: null,
+  projectBoardMap: new Map(),
+  projectBoardsExpanded: false,
   columns: [],
   boardTasks: [],
   activeProjectId: null,
@@ -39,6 +42,8 @@ const state = {
   projectSheetEditing: false,
   projectSheetWidgets: [],
   projectSheetBackground: "#050808",
+  projectSheetBackgroundImage: "",
+  projectSheetBackgroundMode: "cover",
   projectOrder: [],
   commentMode: "fast",
   projectDragSuppressClickUntil: 0,
@@ -102,6 +107,7 @@ const els = {
   projectSidebarToggle: $("projectSidebarToggle"),
   projectSidebarBackdrop: $("projectSidebarBackdrop"),
   closeProjectSidebarBtn: $("closeProjectSidebarBtn"),
+  toggleProjectBoardsBtn: $("toggleProjectBoardsBtn"),
   openCreateProjectBtn: $("openCreateProjectBtn"),
   projectModal: $("projectModal"),
   projectModalTitle: $("projectModalTitle"),
@@ -157,6 +163,9 @@ const els = {
   projectSheetCreateBoardBtn: $("projectSheetCreateBoardBtn"),
   projectSheetGridStep: $("projectSheetGridStep"),
   projectSheetBgColor: $("projectSheetBgColor"),
+  projectSheetBgImage: $("projectSheetBgImage"),
+  projectSheetBgMode: $("projectSheetBgMode"),
+  projectSheetClearBgImageBtn: $("projectSheetClearBgImageBtn"),
   projectSheetWidgetKind: $("projectSheetWidgetKind"),
   projectSheetWidgetBoard: $("projectSheetWidgetBoard"),
   addProjectSheetWidgetBtn: $("addProjectSheetWidgetBtn"),
@@ -1246,11 +1255,16 @@ function loadProjectSheetWidgets(projectId) {
   if (Array.isArray(sheet)) {
     state.projectSheetWidgets = sheet;
     state.projectSheetBackground = "#050808";
+    state.projectSheetBackgroundImage = "";
+    state.projectSheetBackgroundMode = "cover";
     return;
   }
   state.projectSheetWidgets = Array.isArray(sheet?.widgets) ? sheet.widgets : [];
   state.projectSheetBackground = typeof sheet?.background === "string" ? sheet.background : "#050808";
+  state.projectSheetBackgroundImage = typeof sheet?.backgroundImage === "string" ? sheet.backgroundImage : "";
+  state.projectSheetBackgroundMode = ["cover", "stretch", "tile"].includes(sheet?.backgroundMode) ? sheet.backgroundMode : "cover";
   els.projectSheetBgColor.value = /^#[0-9a-fA-F]{6}$/.test(state.projectSheetBackground) ? state.projectSheetBackground : "#050808";
+  els.projectSheetBgMode.value = state.projectSheetBackgroundMode;
 }
 
 function loadProjectSheets() {
@@ -1266,12 +1280,42 @@ function saveProjectSheetWidgets() {
   const project = activeProject();
   if (!project) return;
   const all = loadProjectSheets();
-  all[project.id] = { background: state.projectSheetBackground, widgets: state.projectSheetWidgets };
+  all[project.id] = {
+    background: state.projectSheetBackground,
+    backgroundImage: state.projectSheetBackgroundImage,
+    backgroundMode: state.projectSheetBackgroundMode,
+    widgets: state.projectSheetWidgets
+  };
   try {
     localStorage.setItem(PM_PROJECT_SHEETS_KEY, JSON.stringify(all));
   } catch {
     // Project title sheet is local until project widgets are backed by API.
   }
+}
+
+async function uploadProjectSheetBackgroundImage() {
+  const project = activeProject();
+  const file = els.projectSheetBgImage.files?.[0];
+  if (!project || !file) return;
+  const formData = new FormData();
+  formData.append("file", file);
+  const { background } = await api(`/api/pm/projects/${encodeURIComponent(project.id)}/background`, {
+    method: "POST",
+    body: formData
+  });
+  state.projectSheetBackgroundImage = background.url;
+  saveProjectSheetWidgets();
+  els.projectSheetBgImage.value = "";
+  renderProjectTitleSheet();
+}
+
+async function clearProjectSheetBackgroundImage() {
+  const project = activeProject();
+  if (!project) return;
+  await api(`/api/pm/projects/${encodeURIComponent(project.id)}/background`, { method: "DELETE" });
+  state.projectSheetBackgroundImage = "";
+  saveProjectSheetWidgets();
+  renderProjectTitleSheet();
 }
 
 function addProjectSheetWidget() {
@@ -1293,6 +1337,7 @@ function addProjectSheetWidget() {
       y: next.y,
       width: kind === "completion_pie" ? 3 : 4,
       height: kind === "stickers" ? 4 : 3,
+      opacity: 1,
       content: kind === "stickers" ? "Project note" : ""
     }
   ];
@@ -1460,6 +1505,7 @@ async function loadOpsStatus() {
 async function loadProjects() {
   const { projects } = await api(`/api/pm/projects?includeArchived=${els.includeArchived.checked ? "true" : "false"}`);
   state.projectOrder = loadProjectOrder();
+  state.projectBoardsExpanded = loadProjectBoardsExpanded();
   state.projects = applyProjectOrder(projects);
   const route = pmRouteFromLocation();
   if (route.projectId && projects.some((project) => project.id === route.projectId)) state.activeProjectId = route.projectId;
@@ -1468,6 +1514,7 @@ async function loadProjects() {
     state.activeProjectId = projects[0]?.id || null;
   }
   renderProjects();
+  if (state.projectBoardsExpanded) await loadProjectSidebarBoards();
   await loadProjectData();
 }
 
@@ -1525,6 +1572,7 @@ async function loadProjectData() {
   state.epics = epicsBody.epics;
   state.sprints = sprintsBody.sprints;
   state.boards = boardsBody.boards;
+  state.projectBoardMap.set(project.id, state.boards);
   const route = pmRouteFromLocation();
   if (route.boardId && state.boards.some((board) => board.id === route.boardId)) state.activeBoardId = route.boardId;
   if (state.activeBoardId && !state.boards.some((board) => board.id === state.activeBoardId)) state.activeBoardId = null;
@@ -1579,6 +1627,42 @@ function saveProjectOrder() {
   } catch {
     // Project order is a local preference.
   }
+}
+
+function loadProjectBoardsExpanded() {
+  try {
+    return localStorage.getItem(PM_PROJECT_BOARDS_EXPANDED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function saveProjectBoardsExpanded() {
+  try {
+    localStorage.setItem(PM_PROJECT_BOARDS_EXPANDED_KEY, state.projectBoardsExpanded ? "true" : "false");
+  } catch {
+    // Sidebar expansion is a local preference.
+  }
+}
+
+async function toggleProjectBoardsExpanded() {
+  state.projectBoardsExpanded = !state.projectBoardsExpanded;
+  saveProjectBoardsExpanded();
+  if (state.projectBoardsExpanded) await loadProjectSidebarBoards();
+  renderProjects();
+}
+
+async function loadProjectSidebarBoards() {
+  const entries = await Promise.all(state.projects.map(async (project) => {
+    if (project.id === state.activeProjectId && state.boards.length) return [project.id, state.boards];
+    try {
+      const body = await api(`/api/pm/projects/${encodeURIComponent(project.id)}/boards`);
+      return [project.id, body.boards || []];
+    } catch {
+      return [project.id, []];
+    }
+  }));
+  state.projectBoardMap = new Map(entries);
 }
 
 async function ensureDefaultBoard(projectId) {
@@ -1640,6 +1724,7 @@ function taskSearchQuery() {
 }
 
 function renderProjects() {
+  if (els.toggleProjectBoardsBtn) els.toggleProjectBoardsBtn.textContent = state.projectBoardsExpanded ? "Collapse" : "Expand";
   els.projectList.replaceChildren(
     ...state.projects.map((project, index) => {
       const button = document.createElement("article");
@@ -1711,8 +1796,8 @@ function renderProjects() {
       card.className = `project-card ${project.id === state.activeProjectId ? "active" : ""}`;
       card.dataset.projectId = project.id;
       card.tabIndex = 0;
-      const boards = project.id === state.activeProjectId ? state.boards : [];
-      const boardTree = boards.length > 1 ? `
+      const boards = state.projectBoardsExpanded ? state.projectBoardMap.get(project.id) || [] : project.id === state.activeProjectId ? state.boards : [];
+      const boardTree = boards.length > (state.projectBoardsExpanded ? 0 : 1) ? `
         <div class="project-board-tree">
           ${boards.map((board, boardIndex) => `
             <button class="project-board-node ${board.id === state.activeBoardId ? "active" : ""}" type="button" data-board-id="${escapeHtml(board.id)}">
@@ -1793,12 +1878,19 @@ function renderProjectTitleSheet() {
   const step = projectSheetGridStep();
   els.projectSheetGrid.style.setProperty("--home-grid-step", `${step}px`);
   els.projectSheetGrid.style.setProperty("--project-sheet-bg", state.projectSheetBackground);
+  els.projectSheetGrid.style.setProperty("--project-sheet-bg-image", state.projectSheetBackgroundImage ? `url("${cssUrl(state.projectSheetBackgroundImage)}")` : "none");
+  els.projectSheetGrid.style.setProperty("--project-sheet-bg-size", state.projectSheetBackgroundMode === "stretch" ? "100% 100%" : state.projectSheetBackgroundMode === "tile" ? "auto" : "cover");
+  els.projectSheetGrid.style.setProperty("--project-sheet-bg-repeat", state.projectSheetBackgroundMode === "tile" ? "repeat" : "no-repeat");
   els.projectSheetGrid.className = `home-grid project-sheet-grid${state.projectSheetEditing ? " editing" : ""}`;
   els.projectSheetEditToggle.textContent = state.projectSheetEditing ? "Done" : "Edit";
   for (const control of document.querySelectorAll(".project-sheet-edit-control")) control.hidden = !state.projectSheetEditing;
   els.projectTitleSheetMeta.textContent = `${project.key} / ${project.name}`;
   els.projectSheetWidgetBoard.replaceChildren(option("Project", ""), ...state.boards.map((board) => option(board.name, board.id)));
   els.projectSheetGrid.replaceChildren(...state.projectSheetWidgets.map(renderProjectSheetWidget));
+}
+
+function cssUrl(value) {
+  return String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("\n", "");
 }
 
 function renderProjectSheetWidget(widget) {
@@ -1808,6 +1900,7 @@ function renderProjectSheetWidget(widget) {
   card.className = `home-widget ${state.projectSheetEditing ? "editing" : ""}`;
   card.style.gridColumn = `${position.x} / span ${size.width}`;
   card.style.gridRow = `${position.y} / span ${size.height}`;
+  card.style.setProperty("--widget-opacity", String(Math.max(0.15, Math.min(1, Number(widget.opacity ?? 1)))));
   card.dataset.widgetId = widget.id;
   card.innerHTML = `
     <header>
@@ -1915,6 +2008,7 @@ function renderProjectSheetSettings(widget) {
   const usesBoard = ["board_latest", "board_new", "completion_pie"].includes(widget.kind);
   form.innerHTML = `
     ${usesBoard ? `<select>${state.boards.map((board) => `<option value="${escapeHtml(board.id)}">${escapeHtml(board.name)}</option>`).join("")}</select>` : ""}
+    <label class="widget-opacity-control">Opacity <input type="range" min="15" max="100" value="${Math.round(Math.max(0.15, Math.min(1, Number(widget.opacity ?? 1))) * 100)}"></label>
     <button type="button">Rename</button>
     <button type="button">Delete</button>
   `;
@@ -1923,6 +2017,8 @@ function renderProjectSheetSettings(widget) {
     boardSelect.value = widget.boardId || state.boards[0]?.id || "";
     boardSelect.addEventListener("change", () => updateProjectSheetWidget(widget.id, { boardId: boardSelect.value }));
   }
+  const opacityInput = form.querySelector('input[type="range"]');
+  opacityInput?.addEventListener("input", () => updateProjectSheetWidget(widget.id, { opacity: Number(opacityInput.value) / 100 }));
   const [rename, remove] = Array.from(form.querySelectorAll("button"));
   rename.addEventListener("click", () => {
     const title = window.prompt("Widget title", widget.title || "Project widget");
@@ -1955,6 +2051,11 @@ function renderProjectSheetResizeHandle(widget) {
 
 function openProjectSidebar() {
   els.projectSidebarBackdrop.hidden = false;
+  if (state.projectBoardsExpanded) {
+    loadProjectSidebarBoards()
+      .then(renderProjects)
+      .catch((error) => setError(error.message));
+  }
 }
 
 function closeProjectSidebar() {
@@ -3985,8 +4086,16 @@ els.projectSheetBgColor.addEventListener("input", () => {
   saveProjectSheetWidgets();
   renderProjectTitleSheet();
 });
+els.projectSheetBgImage.addEventListener("change", () => uploadProjectSheetBackgroundImage().catch((error) => setError(error.message)));
+els.projectSheetBgMode.addEventListener("change", () => {
+  state.projectSheetBackgroundMode = els.projectSheetBgMode.value;
+  saveProjectSheetWidgets();
+  renderProjectTitleSheet();
+});
+els.projectSheetClearBgImageBtn.addEventListener("click", () => clearProjectSheetBackgroundImage().catch((error) => setError(error.message)));
 els.addProjectSheetWidgetBtn.addEventListener("click", addProjectSheetWidget);
 els.projectSidebarToggle.addEventListener("click", openProjectSidebar);
+els.toggleProjectBoardsBtn.addEventListener("click", () => toggleProjectBoardsExpanded().catch((error) => setError(error.message)));
 els.closeProjectSidebarBtn.addEventListener("click", closeProjectSidebar);
 els.projectSidebarBackdrop.addEventListener("click", (event) => {
   if (event.target === els.projectSidebarBackdrop) closeProjectSidebar();

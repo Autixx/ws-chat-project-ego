@@ -666,9 +666,13 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .project-pane {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) minmax(0, .8fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   gap: 10px;
   overflow: hidden;
+}
+
+.project-pane #epicList {
+  max-height: 92px;
 }
 
 .epic-bottom-form {
@@ -959,6 +963,10 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   background-color: var(--project-sheet-bg, var(--bg));
+  background-image: var(--project-sheet-bg-image, none);
+  background-size: var(--project-sheet-bg-size, cover);
+  background-repeat: var(--project-sheet-bg-repeat, no-repeat);
+  background-position: center;
 }
 
 .home-widget {
@@ -968,8 +976,23 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   border: 1px solid var(--line);
-  background: var(--panel);
+  background: transparent;
   overflow: hidden;
+}
+
+.home-widget::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--panel);
+  opacity: var(--widget-opacity, 1);
+  pointer-events: none;
+}
+
+.home-widget > * {
+  position: relative;
+  z-index: 1;
 }
 
 .home-widget.clickable {
@@ -1011,11 +1034,20 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .home-widget-settings {
   display: grid;
-  grid-template-columns: minmax(0, auto) auto auto;
+  grid-template-columns: minmax(0, auto) minmax(110px, 1fr) auto auto;
   justify-content: end;
   gap: 5px;
   padding: 7px;
   border-top: 1px solid var(--line);
+}
+
+.widget-opacity-control {
+  display: grid;
+  grid-template-columns: auto minmax(64px, 1fr);
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .project-sticker-editor {
@@ -1555,13 +1587,11 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   background: #000;
   color: #f2fbf8;
   box-shadow: -14px 14px 42px rgba(0, 0, 0, .45);
-  transform: translateX(calc(100vw + 360px));
-  transition: transform .18s ease-out;
   overflow: hidden;
 }
 
 .activity-drawer.open {
-  transform: translateX(0);
+  display: grid;
 }
 
 .activity-drawer header {

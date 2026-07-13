@@ -38,6 +38,13 @@ export type StoredPmAttachment = {
   storagePath: string;
 };
 
+export type StoredPmProjectBackground = {
+  storedFileName: string;
+  mimeType?: string;
+  sizeBytes: number;
+  storagePath: string;
+};
+
 export function sanitizePmFileName(value: string): string {
   const base = path.basename(value).replaceAll(/[^\w.\-()[\] а-яА-ЯёЁ]+/gu, "_").replaceAll(/_+/g, "_").trim();
   const cleaned = base.replaceAll(/^\.+/g, "").slice(0, 180);
@@ -50,6 +57,15 @@ export function validatePmAttachmentFile(fileName: string, sizeBytes: number, ma
   const ext = path.extname(fileName).toLowerCase();
   if (!allowedExtensions.has(ext)) {
     throw new Error(`Unsupported attachment extension: ${ext || "none"}.`);
+  }
+}
+
+export function validatePmProjectBackgroundFile(fileName: string, sizeBytes: number, maxBytes = DEFAULT_PM_MAX_ATTACHMENT_BYTES): void {
+  if (!Number.isFinite(sizeBytes) || sizeBytes < 0) throw new Error("Background image size is invalid.");
+  if (sizeBytes > maxBytes) throw new Error(`Background image exceeds ${maxBytes} bytes.`);
+  const ext = path.extname(fileName).toLowerCase();
+  if (![".jpg", ".jpeg", ".png", ".gif"].includes(ext)) {
+    throw new Error(`Unsupported background image extension: ${ext || "none"}.`);
   }
 }
 
@@ -77,6 +93,37 @@ export async function storePmTaskAttachment(input: {
     sizeBytes: input.sizeBytes,
     storagePath
   };
+}
+
+export async function storePmProjectBackground(input: {
+  attachmentsDir: string;
+  projectId: string;
+  tempPath: string;
+  originalName: string;
+  mimeType?: string;
+  sizeBytes: number;
+  maxBytes?: number;
+}): Promise<StoredPmProjectBackground> {
+  const originalFileName = sanitizePmFileName(input.originalName);
+  validatePmProjectBackgroundFile(originalFileName, input.sizeBytes, input.maxBytes);
+  const ext = path.extname(originalFileName).toLowerCase();
+  const storedFileName = `PMBG_${randomBytes(10).toString("hex")}${ext}`;
+  const projectDir = safeJoin(safeJoin(input.attachmentsDir, "project-backgrounds"), input.projectId);
+  const storagePath = safeJoin(projectDir, storedFileName);
+  await fs.rm(projectDir, { recursive: true, force: true });
+  await fs.mkdir(projectDir, { recursive: true });
+  await fs.rename(input.tempPath, storagePath);
+  return {
+    storedFileName,
+    mimeType: input.mimeType,
+    sizeBytes: input.sizeBytes,
+    storagePath
+  };
+}
+
+export async function removePmProjectBackground(attachmentsDir: string, projectId: string): Promise<void> {
+  const projectDir = safeJoin(safeJoin(attachmentsDir, "project-backgrounds"), projectId);
+  await fs.rm(projectDir, { recursive: true, force: true });
 }
 
 export async function removePmAttachmentFile(attachmentsDir: string, attachment: PmAttachment): Promise<void> {

@@ -110,6 +110,7 @@
             </div>
           <div class="panel-title">
             <label class="inline-check"><input id="includeArchived" type="checkbox" /> archived</label>
+            <button id="toggleProjectBoardsBtn" type="button">Expand</button>
             <button id="openCreateProjectBtn" type="button">Create project</button>
           </div>
           <div id="projectList" class="list project-sort-list"></div>
@@ -183,6 +184,15 @@
                 <label class="project-sheet-edit-control">BG
                   <input id="projectSheetBgColor" type="color" value="#050808" />
                 </label>
+                <label class="project-sheet-edit-control">Image
+                  <input id="projectSheetBgImage" type="file" accept=".jpg,.jpeg,.png,.gif,image/jpeg,image/png,image/gif" />
+                </label>
+                <select id="projectSheetBgMode" class="project-sheet-edit-control">
+                  <option value="cover">scale</option>
+                  <option value="stretch">stretch</option>
+                  <option value="tile">tile</option>
+                </select>
+                <button id="projectSheetClearBgImageBtn" class="project-sheet-edit-control" type="button">Clear image</button>
                 <select id="projectSheetWidgetKind" class="project-sheet-edit-control">
                   <option value="board_latest">Last board activity</option>
                   <option value="board_new">New board activity</option>
