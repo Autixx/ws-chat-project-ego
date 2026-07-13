@@ -23,6 +23,14 @@
             <label>Fields<input id="customFieldColor" type="color" value="#020606" /></label>
             <label>Text<input id="customTextColor" type="color" value="#f2fbf8" /></label>
             <label>Lines<input id="customLineColor" type="color" value="#29413f" /></label>
+            <label>Font
+              <select id="fontFamilySelect">
+                <option value="mono">Mono</option>
+                <option value="compact">Compact</option>
+                <option value="system">System</option>
+              </select>
+            </label>
+            <label>Size<input id="fontSizeInput" type="number" min="10" max="16" step="1" value="12" /></label>
           </div>
           <div class="pm-actions">
             <button id="pmHomeBtn" type="button" class="notification-toggle" hidden>Home</button>
@@ -160,7 +168,24 @@
             </div>
           </section>
 
-          <section class="boards">
+          <section id="projectTitleSheet" class="project-title-sheet">
+            <section class="home-toolbar panel">
+              <div>
+                <h2>Project title sheet</h2>
+                <p id="projectTitleSheetMeta">Select a project.</p>
+              </div>
+              <div class="home-controls">
+                <button id="projectSheetEditToggle" type="button">Edit</button>
+                <label class="project-sheet-edit-control">Grid step
+                  <input id="projectSheetGridStep" type="number" min="12" max="160" step="4" value="56" />
+                </label>
+                <button id="addProjectSheetWidgetBtn" class="project-sheet-edit-control" type="button">Add widget</button>
+              </div>
+            </section>
+            <section id="projectSheetGrid" class="home-grid project-sheet-grid"></section>
+          </section>
+
+          <section id="projectKanbanArea" class="boards">
             <section class="panel sprints-pane">
               <div class="panel-title">
                 <h2>Sprints / Backlog</h2>
@@ -408,6 +433,16 @@
             </div>
             <div id="commentList" class="drawer-list"></div>
             <form id="commentForm" class="comment-form">
+              <div class="comment-mode-row">
+                <button id="commentFastModeBtn" type="button">Fast</button>
+                <button id="commentAdvancedModeBtn" type="button">Advanced</button>
+              </div>
+              <div id="commentToolbar" class="comment-toolbar" hidden>
+                <button type="button" data-md-before="**" data-md-after="**">B</button>
+                <button type="button" data-md-before="*" data-md-after="*">I</button>
+                <button type="button" data-md-before="<u>" data-md-after="</u>">U</button>
+                <button type="button" data-md-before="[" data-md-after="](https://)">Link</button>
+              </div>
               <textarea id="commentBody" rows="3" placeholder="Write a comment"></textarea>
               <button type="submit">Add comment</button>
             </form>

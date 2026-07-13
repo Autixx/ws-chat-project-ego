@@ -1,5 +1,8 @@
 const THEME_STORAGE_KEY = "projectego-pm-theme";
 const PM_HOME_GRID_STEP_KEY = "projectego-pm-home-grid-step";
+const PM_PROJECT_ORDER_KEY = "projectego-pm-project-order";
+const PM_PROJECT_SHEETS_KEY = "projectego-pm-project-sheets";
+const PM_COMMENT_MODE_KEY = "projectego-pm-comment-mode";
 
 const state = {
   user: null,
@@ -33,6 +36,10 @@ const state = {
   homeWidgets: [],
   homeTemplates: [],
   homeData: {},
+  projectSheetEditing: false,
+  projectSheetWidgets: [],
+  projectOrder: [],
+  commentMode: "fast",
   timerAlerts: new Set(),
   notifications: [],
   webhookDeliveries: [],
@@ -57,6 +64,8 @@ const els = {
   customFieldColor: $("customFieldColor"),
   customTextColor: $("customTextColor"),
   customLineColor: $("customLineColor"),
+  fontFamilySelect: $("fontFamilySelect"),
+  fontSizeInput: $("fontSizeInput"),
   errorBanner: $("errorBanner"),
   toastStack: $("toastStack"),
   notificationToggle: $("notificationToggle"),
@@ -140,6 +149,13 @@ const els = {
   projectList: $("projectList"),
   activeProjectName: $("activeProjectName"),
   activeProjectMeta: $("activeProjectMeta"),
+  projectTitleSheet: $("projectTitleSheet"),
+  projectTitleSheetMeta: $("projectTitleSheetMeta"),
+  projectSheetEditToggle: $("projectSheetEditToggle"),
+  projectSheetGridStep: $("projectSheetGridStep"),
+  addProjectSheetWidgetBtn: $("addProjectSheetWidgetBtn"),
+  projectSheetGrid: $("projectSheetGrid"),
+  projectKanbanArea: $("projectKanbanArea"),
   refreshBtn: $("refreshBtn"),
   archiveProjectBtn: $("archiveProjectBtn"),
   epicForm: $("epicForm"),
@@ -198,6 +214,9 @@ const els = {
   commentList: $("commentList"),
   commentForm: $("commentForm"),
   commentBody: $("commentBody"),
+  commentFastModeBtn: $("commentFastModeBtn"),
+  commentAdvancedModeBtn: $("commentAdvancedModeBtn"),
+  commentToolbar: $("commentToolbar"),
   attachmentForm: $("attachmentForm"),
   attachmentFile: $("attachmentFile"),
   attachmentList: $("attachmentList"),
@@ -254,6 +273,7 @@ function setTheme(theme, { persist = true } = {}) {
   document.body.classList.add(theme);
   for (const button of els.themeButtons) button.classList.toggle("active", button.dataset.theme === theme);
   if (theme === "theme-custom") applyCustomTheme();
+  applyFontSettings();
   if (persist) saveThemeSettings(theme);
 }
 
@@ -266,9 +286,20 @@ function applyCustomTheme() {
   document.documentElement.style.setProperty("--custom-line", els.customLineColor.value);
 }
 
+function applyFontSettings() {
+  const size = Math.max(10, Math.min(16, Number(els.fontSizeInput.value || 12)));
+  const font = {
+    mono: `"Cascadia Mono", "Consolas", ui-monospace, monospace`,
+    compact: `"Arial Narrow", "Roboto Condensed", "Liberation Sans Narrow", Arial, sans-serif`,
+    system: `system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
+  }[els.fontFamilySelect.value] || `"Cascadia Mono", "Consolas", ui-monospace, monospace`;
+  document.documentElement.style.setProperty("--pm-font-family", font);
+  document.documentElement.style.setProperty("--pm-font-size", `${size}px`);
+}
+
 function saveThemeSettings(theme = activeTheme()) {
   try {
-    localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify({ theme, colors: customThemeColors() }));
+    localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify({ theme, colors: customThemeColors(), font: customFontSettings() }));
   } catch {
     // Theme persistence is best-effort.
   }
@@ -289,6 +320,11 @@ function loadThemeSettings() {
       setColorInput(els.customTextColor, saved.colors.text);
       setColorInput(els.customLineColor, saved.colors.line);
     }
+    if (saved?.font && typeof saved.font === "object") {
+      if (["mono", "compact", "system"].includes(saved.font.family)) els.fontFamilySelect.value = saved.font.family;
+      const size = Number(saved.font.size);
+      if (Number.isFinite(size)) els.fontSizeInput.value = String(Math.max(10, Math.min(16, Math.floor(size))));
+    }
     const theme = ["theme-dark", "theme-contrast", "theme-custom"].includes(saved?.theme) ? saved.theme : "theme-dark";
     setTheme(theme, { persist: false });
   } catch {
@@ -303,6 +339,13 @@ function customThemeColors() {
     field: els.customFieldColor.value,
     text: els.customTextColor.value,
     line: els.customLineColor.value
+  };
+}
+
+function customFontSettings() {
+  return {
+    family: els.fontFamilySelect.value,
+    size: Math.max(10, Math.min(16, Number(els.fontSizeInput.value || 12)))
   };
 }
 
@@ -1185,6 +1228,179 @@ function loadHomeGridStep() {
   }
 }
 
+function projectSheetGridStep() {
+  const value = Number(els.projectSheetGridStep.value || 56);
+  if (!Number.isFinite(value)) return 56;
+  return Math.max(12, Math.min(160, Math.floor(value)));
+}
+
+function loadProjectSheetWidgets(projectId) {
+  const all = loadProjectSheets();
+  state.projectSheetWidgets = Array.isArray(all[projectId]) ? all[projectId] : [];
+}
+
+function loadProjectSheets() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PM_PROJECT_SHEETS_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveProjectSheetWidgets() {
+  const project = activeProject();
+  if (!project) return;
+  const all = loadProjectSheets();
+  all[project.id] = state.projectSheetWidgets;
+  try {
+    localStorage.setItem(PM_PROJECT_SHEETS_KEY, JSON.stringify(all));
+  } catch {
+    // Project title sheet is local until project widgets are backed by API.
+  }
+}
+
+function addProjectSheetWidget() {
+  const next = nextProjectSheetWidgetPosition(4, 3);
+  if (!next) {
+    setError("No free grid space for this widget.");
+    return;
+  }
+  state.projectSheetWidgets = [
+    ...state.projectSheetWidgets,
+    { id: `project-widget-${Date.now()}`, title: "Project widget", x: next.x, y: next.y, width: 4, height: 3, content: "Reserved widget area." }
+  ];
+  saveProjectSheetWidgets();
+  renderProjectTitleSheet();
+}
+
+function updateProjectSheetWidget(id, patch) {
+  state.projectSheetWidgets = state.projectSheetWidgets.map((widget) => (widget.id === id ? { ...widget, ...patch } : widget));
+  saveProjectSheetWidgets();
+  renderProjectTitleSheet();
+}
+
+function deleteProjectSheetWidget(id) {
+  state.projectSheetWidgets = state.projectSheetWidgets.filter((widget) => widget.id !== id);
+  saveProjectSheetWidgets();
+  renderProjectTitleSheet();
+}
+
+function projectSheetGridMetrics() {
+  const step = projectSheetGridStep();
+  const rect = els.projectSheetGrid.getBoundingClientRect();
+  return {
+    columns: Math.max(1, Math.floor((rect.width - 20) / step)),
+    rows: Math.max(1, Math.floor((rect.height - 20) / step)),
+    step
+  };
+}
+
+function nextProjectSheetWidgetPosition(width = 4, height = 3) {
+  const { columns, rows } = projectSheetGridMetrics();
+  for (let y = 1; y <= Math.max(1, rows - height + 1); y += 1) {
+    for (let x = 1; x <= Math.max(1, columns - width + 1); x += 1) {
+      if (!projectSheetWidgetCollides({ x, y, width, height })) return { x, y };
+    }
+  }
+  return null;
+}
+
+function clampProjectSheetWidgetPosition(widget, x, y) {
+  const { columns, rows } = projectSheetGridMetrics();
+  return {
+    x: Math.max(1, Math.min(columns - Number(widget.width || 1) + 1, x)),
+    y: Math.max(1, Math.min(rows - Number(widget.height || 1) + 1, y))
+  };
+}
+
+function clampProjectSheetWidgetSize(widget, width, height) {
+  const { columns, rows } = projectSheetGridMetrics();
+  return {
+    width: Math.max(1, Math.min(columns - Number(widget.x || 1) + 1, width)),
+    height: Math.max(1, Math.min(rows - Number(widget.y || 1) + 1, height))
+  };
+}
+
+function projectSheetWidgetCollides(candidate) {
+  return state.projectSheetWidgets.some((widget) => {
+    if (candidate.id && widget.id === candidate.id) return false;
+    return rectanglesOverlap(normalizeWidgetRect(candidate), normalizeWidgetRect(widget));
+  });
+}
+
+function startProjectSheetWidgetMove(event, widget) {
+  event.preventDefault();
+  event.stopPropagation();
+  const card = event.currentTarget.closest(".home-widget");
+  if (!card) return;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const size = clampProjectSheetWidgetSize(widget, Number(widget.width || 1), Number(widget.height || 1));
+  const startPosition = clampProjectSheetWidgetPosition({ ...widget, width: size.width, height: size.height }, Number(widget.x || 1), Number(widget.y || 1));
+  const step = projectSheetGridStep();
+  let nextPosition = startPosition;
+  card.classList.add("moving");
+  document.body.classList.add("dragging-home-widget");
+  const move = (moveEvent) => {
+    moveEvent.preventDefault();
+    const candidate = clampProjectSheetWidgetPosition({ ...widget, width: size.width, height: size.height }, startPosition.x + Math.round((moveEvent.clientX - startX) / step), startPosition.y + Math.round((moveEvent.clientY - startY) / step));
+    if (projectSheetWidgetCollides({ id: widget.id, ...candidate, width: size.width, height: size.height })) {
+      card.classList.add("blocked");
+      return;
+    }
+    card.classList.remove("blocked");
+    nextPosition = candidate;
+    card.style.gridColumn = `${nextPosition.x} / span ${size.width}`;
+    card.style.gridRow = `${nextPosition.y} / span ${size.height}`;
+  };
+  const stop = () => {
+    card.classList.remove("moving", "blocked");
+    document.body.classList.remove("dragging-home-widget");
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", stop);
+    updateProjectSheetWidget(widget.id, nextPosition);
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", stop);
+}
+
+function startProjectSheetWidgetResize(event, widget) {
+  event.preventDefault();
+  event.stopPropagation();
+  const card = event.currentTarget.closest(".home-widget");
+  if (!card) return;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const position = clampProjectSheetWidgetPosition(widget, Number(widget.x || 1), Number(widget.y || 1));
+  const startWidth = Number(widget.width || 1);
+  const startHeight = Number(widget.height || 1);
+  const step = projectSheetGridStep();
+  let nextSize = { width: startWidth, height: startHeight };
+  document.body.classList.add("resizing-home-widget");
+  const move = (moveEvent) => {
+    moveEvent.preventDefault();
+    const candidate = clampProjectSheetWidgetSize({ ...widget, x: position.x, y: position.y }, startWidth + Math.round((moveEvent.clientX - startX) / step), startHeight + Math.round((moveEvent.clientY - startY) / step));
+    if (projectSheetWidgetCollides({ id: widget.id, x: position.x, y: position.y, width: candidate.width, height: candidate.height })) {
+      card.classList.add("blocked");
+      return;
+    }
+    card.classList.remove("blocked");
+    nextSize = candidate;
+    card.style.gridColumn = `${position.x} / span ${nextSize.width}`;
+    card.style.gridRow = `${position.y} / span ${nextSize.height}`;
+  };
+  const stop = () => {
+    card.classList.remove("blocked");
+    document.body.classList.remove("resizing-home-widget");
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", stop);
+    updateProjectSheetWidget(widget.id, nextSize);
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", stop);
+}
+
 async function loadNotifications() {
   const { notifications } = await api("/api/pm/notifications");
   state.notifications = notifications;
@@ -1207,7 +1423,8 @@ async function loadOpsStatus() {
 
 async function loadProjects() {
   const { projects } = await api(`/api/pm/projects?includeArchived=${els.includeArchived.checked ? "true" : "false"}`);
-  state.projects = projects;
+  state.projectOrder = loadProjectOrder();
+  state.projects = applyProjectOrder(projects);
   const route = pmRouteFromLocation();
   if (route.projectId && projects.some((project) => project.id === route.projectId)) state.activeProjectId = route.projectId;
   if (!state.activeProjectId && projects[0]) state.activeProjectId = projects[0].id;
@@ -1254,6 +1471,7 @@ async function loadProjectData() {
     renderSprints();
     renderTasks();
     renderBoard();
+    renderProjectTitleSheet();
     return;
   }
   const [membersBody, labelsBody, filtersBody, epicsBody, sprintsBody, tasksBody, boardsBody] = await Promise.all([
@@ -1278,17 +1496,14 @@ async function loadProjectData() {
     state.activeSprintId = "__backlog";
   }
   state.tasks = tasksBody.tasks;
-  if (!state.boards.length) {
-    const boardBody = await ensureDefaultBoard(project.id);
-    state.boards = [boardBody.board];
-    state.activeBoardId = boardBody.board.id;
-    state.board = boardBody.board;
-    state.columns = boardBody.columns;
-    await loadBoardSnapshot();
-  } else {
-    if (!state.activeBoardId) state.activeBoardId = state.boards[0].id;
+  if (state.activeBoardId) {
     await loadSelectedBoard();
+  } else {
+    state.board = null;
+    state.columns = [];
+    state.boardTasks = [];
   }
+  loadProjectSheetWidgets(project.id);
   renderActiveProject();
   renderMembers();
   renderProjectLabels();
@@ -1299,7 +1514,35 @@ async function loadProjectData() {
   renderSprints();
   renderTasks();
   renderBoard();
+  renderProjectTitleSheet();
   await openTaskFromRoute();
+}
+
+function applyProjectOrder(projects) {
+  const order = new Map(state.projectOrder.map((id, index) => [id, index]));
+  return [...projects].sort((a, b) => {
+    const left = order.has(a.id) ? order.get(a.id) : Number.MAX_SAFE_INTEGER;
+    const right = order.has(b.id) ? order.get(b.id) : Number.MAX_SAFE_INTEGER;
+    return left - right || projects.indexOf(a) - projects.indexOf(b);
+  });
+}
+
+function loadProjectOrder() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PM_PROJECT_ORDER_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveProjectOrder() {
+  state.projectOrder = state.projects.map((project) => project.id);
+  try {
+    localStorage.setItem(PM_PROJECT_ORDER_KEY, JSON.stringify(state.projectOrder));
+  } catch {
+    // Project order is a local preference.
+  }
 }
 
 async function ensureDefaultBoard(projectId) {
@@ -1425,6 +1668,73 @@ function renderProjects() {
   );
 }
 
+function renderProjects() {
+  els.projectList.replaceChildren(
+    ...state.projects.map((project, index) => {
+      const card = document.createElement("article");
+      card.className = `project-card ${project.id === state.activeProjectId ? "active" : ""}`;
+      card.dataset.projectId = project.id;
+      card.tabIndex = 0;
+      const boards = project.id === state.activeProjectId ? state.boards : [];
+      const boardTree = boards.length > 1 ? `
+        <div class="project-board-tree">
+          ${boards.map((board, boardIndex) => `
+            <button class="project-board-node ${board.id === state.activeBoardId ? "active" : ""}" type="button" data-board-id="${escapeHtml(board.id)}">
+              <span>${boardIndex === boards.length - 1 ? "\\--" : "|--"}</span>
+              <span>${escapeHtml(board.name)}${board.isDefault ? " / default" : ""}</span>
+            </button>
+          `).join("")}
+        </div>
+      ` : "";
+      card.innerHTML = `
+        <div class="card-title">${escapeHtml(project.name)}${project.archivedAt ? " / archived" : ""}</div>
+        ${boardTree}
+        <span class="project-drop-line"></span>
+        <button class="project-edit-button" type="button" title="Edit project">Edit</button>
+      `;
+      const activate = async () => {
+        if (card.classList.contains("project-drag-ready")) return;
+        state.activeProjectId = project.id;
+        state.activeEpicId = null;
+        state.activeBoardId = null;
+        state.activeSprintId = "__backlog";
+        closeProjectSidebar();
+        navigatePm(pmProjectPath(project.id));
+        await loadProjectData();
+      };
+      card.addEventListener("click", () => activate().catch((error) => setError(error.message)));
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          activate().catch((error) => setError(error.message));
+        }
+      });
+      card.querySelector(".project-edit-button").addEventListener("click", (event) => {
+        event.stopPropagation();
+        openProjectModal(project);
+      });
+      for (const boardButton of card.querySelectorAll(".project-board-node")) {
+        boardButton.addEventListener("click", (event) => {
+          event.stopPropagation();
+          state.activeBoardId = boardButton.dataset.boardId || null;
+          closeProjectSidebar();
+          navigatePm(pmBoardPath(project.id, state.activeBoardId));
+          loadSelectedBoard()
+            .then(() => {
+              renderBoardSelect();
+              renderProjects();
+              renderBoard();
+              renderProjectTitleSheet();
+            })
+            .catch((error) => setError(error.message));
+        });
+      }
+      wireProjectDrag(card, index);
+      return card;
+    })
+  );
+}
+
 function renderActiveProject() {
   const project = activeProject();
   if (!project) {
@@ -1435,6 +1745,78 @@ function renderActiveProject() {
   els.activeProjectName.textContent = `${project.key} / ${project.name}`;
   els.activeProjectMeta.textContent = `role: ${project.role || "viewer"} / version ${project.version} / updated ${formatDate(project.updatedAt)}`;
   els.archiveProjectBtn.textContent = project.archivedAt ? "Unarchive" : "Archive";
+}
+
+function renderProjectTitleSheet() {
+  const project = activeProject();
+  const showingSheet = Boolean(project && !state.activeBoardId);
+  els.projectTitleSheet.hidden = !showingSheet;
+  els.projectKanbanArea.hidden = showingSheet;
+  if (!showingSheet) return;
+  const step = projectSheetGridStep();
+  els.projectSheetGrid.style.setProperty("--home-grid-step", `${step}px`);
+  els.projectSheetGrid.className = `home-grid project-sheet-grid${state.projectSheetEditing ? " editing" : ""}`;
+  els.projectSheetEditToggle.textContent = state.projectSheetEditing ? "Done" : "Edit";
+  for (const control of document.querySelectorAll(".project-sheet-edit-control")) control.hidden = !state.projectSheetEditing;
+  els.projectTitleSheetMeta.textContent = `${project.key} / ${project.name}`;
+  els.projectSheetGrid.replaceChildren(...state.projectSheetWidgets.map(renderProjectSheetWidget));
+}
+
+function renderProjectSheetWidget(widget) {
+  const card = document.createElement("article");
+  const size = clampProjectSheetWidgetSize(widget, Number(widget.width || 4), Number(widget.height || 3));
+  const position = clampProjectSheetWidgetPosition({ ...widget, width: size.width, height: size.height }, Number(widget.x || 1), Number(widget.y || 1));
+  card.className = `home-widget ${state.projectSheetEditing ? "editing" : ""}`;
+  card.style.gridColumn = `${position.x} / span ${size.width}`;
+  card.style.gridRow = `${position.y} / span ${size.height}`;
+  card.dataset.widgetId = widget.id;
+  card.innerHTML = `
+    <header>
+      <span>${escapeHtml(widget.title || "Project widget")}</span>
+      <span>project</span>
+    </header>
+    <div class="home-widget-body"><pre class="widget-row">${escapeHtml(widget.content || "Widget area reserved for this project.")}</pre></div>
+  `;
+  if (state.projectSheetEditing) {
+    card.append(renderProjectSheetAnchor(widget));
+    card.append(renderProjectSheetSettings(widget));
+    card.append(renderProjectSheetResizeHandle(widget));
+  }
+  return card;
+}
+
+function renderProjectSheetSettings(widget) {
+  const form = document.createElement("div");
+  form.className = "home-widget-settings";
+  form.innerHTML = `<button type="button">Rename</button><button type="button">Delete</button>`;
+  const [rename, remove] = Array.from(form.querySelectorAll("button"));
+  rename.addEventListener("click", () => {
+    const title = window.prompt("Widget title", widget.title || "Project widget");
+    if (!title) return;
+    updateProjectSheetWidget(widget.id, { title: title.slice(0, 80) });
+  });
+  remove.addEventListener("click", () => deleteProjectSheetWidget(widget.id));
+  return form;
+}
+
+function renderProjectSheetAnchor(widget) {
+  const anchor = document.createElement("button");
+  anchor.type = "button";
+  anchor.className = "home-widget-anchor";
+  anchor.title = "Move widget";
+  anchor.addEventListener("dragstart", (event) => event.preventDefault());
+  anchor.addEventListener("pointerdown", (event) => startProjectSheetWidgetMove(event, widget));
+  return anchor;
+}
+
+function renderProjectSheetResizeHandle(widget) {
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "home-widget-resize";
+  handle.title = "Resize widget";
+  handle.addEventListener("dragstart", (event) => event.preventDefault());
+  handle.addEventListener("pointerdown", (event) => startProjectSheetWidgetResize(event, widget));
+  return handle;
 }
 
 function openProjectSidebar() {
@@ -1543,6 +1925,51 @@ function wireProjectDrag(button, startIndex) {
 
 function clearProjectDropLines() {
   for (const item of els.projectList.querySelectorAll(".drop-before")) item.classList.remove("drop-before");
+}
+
+function wireProjectDrag(button, startIndex) {
+  let timer = 0;
+  let dragging = false;
+  let targetIndex = startIndex;
+  button.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("button")) return;
+    timer = window.setTimeout(() => {
+      dragging = true;
+      button.classList.add("project-drag-ready");
+      document.body.classList.add("dragging-project-card");
+    }, 500);
+  });
+  button.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    const cards = Array.from(els.projectList.querySelectorAll(".project-card"));
+    const target = cards.find((card) => {
+      const rect = card.getBoundingClientRect();
+      return event.clientY >= rect.top && event.clientY <= rect.bottom;
+    });
+    if (!target) return;
+    targetIndex = cards.indexOf(target);
+    clearProjectDropLines();
+    target.classList.add("drop-before");
+  });
+  const stop = () => {
+    clearTimeout(timer);
+    if (dragging && targetIndex !== startIndex) {
+      const next = [...state.projects];
+      const [moved] = next.splice(startIndex, 1);
+      next.splice(targetIndex, 0, moved);
+      state.projects = next;
+      saveProjectOrder();
+    }
+    dragging = false;
+    button.classList.remove("project-drag-ready");
+    document.body.classList.remove("dragging-project-card");
+    clearProjectDropLines();
+    renderProjects();
+  };
+  button.addEventListener("pointerup", stop);
+  button.addEventListener("pointercancel", stop);
+  button.addEventListener("pointerleave", () => clearTimeout(timer));
 }
 
 function renderMembers() {
@@ -2157,6 +2584,20 @@ async function createBoard(event) {
   await loadProjectData();
 }
 
+async function openKanbanForActiveProject() {
+  const project = activeProject();
+  if (!project) return;
+  if (!state.boards.length) {
+    const result = await ensureDefaultBoard(project.id);
+    state.boards = [result.board];
+    state.activeBoardId = result.board.id;
+  } else {
+    state.activeBoardId = state.activeBoardId || state.boards[0].id;
+  }
+  navigatePm(pmBoardPath(project.id, state.activeBoardId));
+  await loadProjectData();
+}
+
 async function createEpic(event) {
   event.preventDefault();
   const project = activeProject();
@@ -2665,7 +3106,7 @@ function renderComments() {
           <span>${formatDate(comment.createdAt)}</span>
           ${canEdit ? `<button class="mini-button comment-delete-button" data-action="delete" type="button" title="Delete comment" aria-label="Delete comment">&#128465;</button>` : `<span></span>`}
         </div>
-        <div class="comment-body">${escapeHtml(comment.body)}</div>
+        <div class="comment-body formatted-comment">${formatCommentBody(comment.body)}</div>
         ${canEdit ? `<div class="attachment-actions comment-edit-actions" hidden></div>` : ""}
       `;
       if (canEdit) {
@@ -2675,6 +3116,15 @@ function renderComments() {
       return card;
     })
   );
+}
+
+function formatCommentBody(body) {
+  let html = escapeHtml(body);
+  html = html.replace(/\[([^\]]+)]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  html = html.replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/g, "<u>$1</u>");
+  return html.replace(/\n/g, "<br>");
 }
 
 async function editComment(comment, card) {
@@ -3040,6 +3490,37 @@ async function createComment(event) {
   renderDrawerData();
 }
 
+function setCommentMode(mode) {
+  state.commentMode = mode === "advanced" ? "advanced" : "fast";
+  els.commentToolbar.hidden = state.commentMode !== "advanced";
+  els.commentFastModeBtn.classList.toggle("active", state.commentMode === "fast");
+  els.commentAdvancedModeBtn.classList.toggle("active", state.commentMode === "advanced");
+  try {
+    localStorage.setItem(PM_COMMENT_MODE_KEY, state.commentMode);
+  } catch {
+    // Comment mode is a local preference.
+  }
+}
+
+function loadCommentMode() {
+  try {
+    setCommentMode(localStorage.getItem(PM_COMMENT_MODE_KEY) === "advanced" ? "advanced" : "fast");
+  } catch {
+    setCommentMode("fast");
+  }
+}
+
+function wrapCommentSelection(before, after) {
+  const input = els.commentBody;
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  const selected = input.value.slice(start, end);
+  input.value = `${input.value.slice(0, start)}${before}${selected}${after}${input.value.slice(end)}`;
+  const caret = start + before.length + selected.length;
+  input.focus();
+  input.setSelectionRange(caret, caret);
+}
+
 async function uploadAttachment(event) {
   event.preventDefault();
   if (!state.activeTask || !els.attachmentFile.files?.[0]) return;
@@ -3258,12 +3739,23 @@ async function boot() {
 
 loadThemeSettings();
 loadHomeGridStep();
+loadCommentMode();
 
 for (const button of els.themeButtons) button.addEventListener("click", () => setTheme(button.dataset.theme));
 for (const input of [els.customBgColor, els.customFieldColor, els.customTextColor, els.customLineColor]) {
   input.addEventListener("input", () => {
     applyCustomTheme();
     setTheme("theme-custom");
+  });
+}
+for (const input of [els.fontFamilySelect, els.fontSizeInput]) {
+  input.addEventListener("input", () => {
+    applyFontSettings();
+    saveThemeSettings();
+  });
+  input.addEventListener("change", () => {
+    applyFontSettings();
+    saveThemeSettings();
   });
 }
 
@@ -3295,6 +3787,12 @@ els.homeGridStep.addEventListener("input", () => {
 els.addHomeWidgetBtn.addEventListener("click", () => addHomeWidget().catch((error) => setError(error.message)));
 els.saveWidgetTemplateBtn.addEventListener("click", () => saveSelectedWidgetTemplate().catch((error) => setError(error.message)));
 els.useWidgetTemplateBtn.addEventListener("click", () => useSelectedWidgetTemplate().catch((error) => setError(error.message)));
+els.projectSheetEditToggle.addEventListener("click", () => {
+  state.projectSheetEditing = !state.projectSheetEditing;
+  renderProjectTitleSheet();
+});
+els.projectSheetGridStep.addEventListener("input", () => renderProjectTitleSheet());
+els.addProjectSheetWidgetBtn.addEventListener("click", addProjectSheetWidget);
 els.projectSidebarToggle.addEventListener("click", openProjectSidebar);
 els.closeProjectSidebarBtn.addEventListener("click", closeProjectSidebar);
 els.projectSidebarBackdrop.addEventListener("click", (event) => {
@@ -3319,6 +3817,11 @@ els.taskEditForm.addEventListener("submit", (event) => saveTask(event).catch((er
 els.taskLabelForm.addEventListener("submit", (event) => addTaskLabel(event).catch((error) => setError(error.message)));
 els.dependencyForm.addEventListener("submit", (event) => addDependency(event).catch((error) => setError(error.message)));
 els.commentForm.addEventListener("submit", (event) => createComment(event).catch((error) => setError(error.message)));
+els.commentFastModeBtn.addEventListener("click", () => setCommentMode("fast"));
+els.commentAdvancedModeBtn.addEventListener("click", () => setCommentMode("advanced"));
+for (const button of els.commentToolbar.querySelectorAll("button")) {
+  button.addEventListener("click", () => wrapCommentSelection(button.dataset.mdBefore || "", button.dataset.mdAfter || ""));
+}
 els.attachmentForm.addEventListener("submit", (event) => uploadAttachment(event).catch((error) => setError(error.message)));
 els.notificationToggle.addEventListener("click", () => {
   els.notificationPanel.hidden = !els.notificationPanel.hidden;
@@ -3351,7 +3854,7 @@ els.allSprintTasksBtn.addEventListener("click", () => {
 });
 els.refreshBtn.addEventListener("click", () => loadProjects().catch((error) => setError(error.message)));
 els.archiveProjectBtn.addEventListener("click", () => toggleArchive().catch((error) => setError(error.message)));
-els.ensureBoardBtn.addEventListener("click", () => loadProjectData().catch((error) => setError(error.message)));
+els.ensureBoardBtn.addEventListener("click", () => openKanbanForActiveProject().catch((error) => setError(error.message)));
 els.createBoardBtn.addEventListener("click", openBoardModal);
 els.deleteBoardBtn.addEventListener("click", () => deleteActiveBoard().catch((error) => setError(error.message)));
 els.boardSelect.addEventListener("change", () => {
