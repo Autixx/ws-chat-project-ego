@@ -38,6 +38,7 @@ const state = {
   webhookDeliveries: [],
   webhookSummary: { pending: 0, retrying: 0, delivered: 0, dead: 0 },
   opsStatus: null,
+  apiTerminalSessions: new Map(),
   ws: null,
   shouldReconnect: true
 };
@@ -599,7 +600,7 @@ function homeWidgetBody(widget) {
   if (widget.kind === "changes") return listWidgetRows(state.homeData.changes || [], "updatedAt");
   if (widget.kind === "announcement") return listAnnouncementRows(state.homeData.announcements || []);
   if (widget.kind === "timer") return [timerWidgetNode(widget)];
-  if (widget.kind === "api") return [apiWidgetNode()];
+  if (widget.kind === "api") return [apiWidgetNode(widget)];
   return [notesWidgetNode(widget)];
 }
 
@@ -672,35 +673,225 @@ function plainWidgetNode(text) {
   return node;
 }
 
-function apiWidgetNode() {
+const API_TERMINAL_COMMANDS = [
+  ["GET", "/api/pm/home", "front page widgets and data"],
+  ["GET", "/api/pm/projects?includeArchived=true", "projects visible to current user"],
+  ["GET", "/api/pm/projects/:projectId/boards", "boards for a project"],
+  ["GET", "/api/pm/boards/:boardId", "board snapshot"],
+  ["GET", "/api/pm/projects/:projectId/tasks", "tasks for a project"],
+  ["GET", "/api/pm/tasks/:taskId/comments", "task comments"],
+  ["GET", "/api/pm/tasks/:taskId/activity", "task activity log"],
+  ["GET", "/api/pm/notifications", "user notifications"],
+  ["GET", "/api/pm/operator/status", "PM DB / webhook / SMTP status"],
+  ["POST", "/api/pm/projects", "create project with JSON body"],
+  ["POST", "/api/pm/boards/:boardId/tasks", "create task on a board with JSON body"],
+  ["DELETE", "/api/pm/tasks/:taskId/permanent", "permanently delete a task"],
+  ["DELETE", "/api/pm/boards/:boardId/permanent", "permanently delete a board"]
+];
+
+function apiWidgetNode(widget) {
   const node = document.createElement("div");
   node.className = "api-terminal-widget";
-  const commands = [
-    ["GET", "/api/pm/home", "front page widgets and data"],
-    ["GET", "/api/pm/projects", "projects visible to current user"],
-    ["GET", "/api/pm/projects/:projectId/tasks", "tasks for a project"],
-    ["GET", "/api/pm/tasks/:taskId/comments", "task comments"],
-    ["GET", "/api/pm/tasks/:taskId/activity", "task activity log"],
-    ["GET", "/api/pm/notifications", "user notifications"],
-    ["GET", "/api/pm/operator/status", "PM DB / webhook / SMTP status"]
-  ];
+  const session = apiTerminalSession(widget.id);
   node.innerHTML = `
-    <div class="api-terminal-line prompt">projectego-pm api</div>
-    ${commands.map(([method, path, description]) => `
-      <button type="button" class="api-terminal-line" data-path="${escapeHtml(path)}">
-        <span>${escapeHtml(method)}</span>
-        <strong>${escapeHtml(path)}</strong>
-        <em>${escapeHtml(description)}</em>
-      </button>
-    `).join("")}
+    <div class="api-terminal-toolbar">
+      <button type="button" data-terminal-command="help">Help</button>
+      <button type="button" data-terminal-command="catalog">Catalog</button>
+      <button type="button" data-terminal-command="clear">Clear</button>
+    </div>
+    <div class="api-terminal-output" role="log" aria-live="polite"></div>
+    <form class="api-terminal-form">
+      <span class="api-terminal-prompt">pm$</span>
+      <input class="api-terminal-input" autocomplete="off" spellcheck="false" placeholder="GET /api/pm/projects?includeArchived=true">
+    </form>
   `;
-  for (const button of node.querySelectorAll("button")) {
+  const output = node.querySelector(".api-terminal-output");
+  const input = node.querySelector(".api-terminal-input");
+  renderApiTerminalOutput(session, output);
+
+  for (const button of node.querySelectorAll("[data-terminal-command]")) {
     button.addEventListener("click", () => {
-      navigator.clipboard?.writeText(button.dataset.path || "").catch(() => undefined);
-      showToast(`Copied ${button.dataset.path}`, "info");
+      const command = button.dataset.terminalCommand || "";
+      runApiTerminalCommand(session, command, output, input).catch((error) => {
+        appendApiTerminalLine(session, "error", error.message);
+        renderApiTerminalOutput(session, output);
+      });
     });
   }
+
+  node.querySelector("form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const command = input.value.trim();
+    input.value = "";
+    runApiTerminalCommand(session, command, output, input).catch((error) => {
+      appendApiTerminalLine(session, "error", error.message);
+      renderApiTerminalOutput(session, output);
+    });
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!session.history.length) return;
+      session.historyIndex = Math.max(0, session.historyIndex < 0 ? session.history.length - 1 : session.historyIndex - 1);
+      input.value = session.history[session.historyIndex] || "";
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!session.history.length) return;
+      session.historyIndex += 1;
+      if (session.historyIndex >= session.history.length) {
+        session.historyIndex = -1;
+        input.value = "";
+      } else {
+        input.value = session.history[session.historyIndex] || "";
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    }
+  });
   return node;
+}
+
+function apiTerminalSession(widgetId) {
+  const key = widgetId || "default";
+  if (!state.apiTerminalSessions.has(key)) {
+    state.apiTerminalSessions.set(key, {
+      history: [],
+      historyIndex: -1,
+      lines: [
+        { type: "system", text: "ProjectEGO PM API terminal. Type help or catalog." },
+        { type: "system", text: "Only /api/pm/* paths are executable from this widget." }
+      ]
+    });
+  }
+  return state.apiTerminalSessions.get(key);
+}
+
+async function runApiTerminalCommand(session, rawCommand, output, input) {
+  const command = rawCommand.trim();
+  if (!command) return;
+  appendApiTerminalLine(session, "input", `pm$ ${command}`);
+  session.history.push(command);
+  session.historyIndex = -1;
+
+  if (command === "clear") {
+    session.lines = [];
+    renderApiTerminalOutput(session, output);
+    input?.focus();
+    return;
+  }
+  if (command === "help") {
+    appendApiTerminalLine(session, "output", apiTerminalHelpText());
+    renderApiTerminalOutput(session, output);
+    input?.focus();
+    return;
+  }
+  if (command === "catalog") {
+    appendApiTerminalLine(session, "output", apiTerminalCatalogText());
+    renderApiTerminalOutput(session, output);
+    input?.focus();
+    return;
+  }
+
+  const request = parseApiTerminalCommand(command);
+  appendApiTerminalLine(session, "system", `${request.method} ${request.path}`);
+  renderApiTerminalOutput(session, output);
+
+  try {
+    const result = await api(request.path, {
+      method: request.method,
+      body: request.body === undefined ? undefined : JSON.stringify(request.body)
+    });
+    appendApiTerminalLine(session, "output", formatApiTerminalPayload(result));
+  } catch (error) {
+    appendApiTerminalLine(session, "error", error.message);
+  }
+  renderApiTerminalOutput(session, output);
+  input?.focus();
+}
+
+function parseApiTerminalCommand(command) {
+  const alias = parseApiTerminalAlias(command);
+  if (alias) return alias;
+  const match = command.match(/^(GET|POST|PATCH|DELETE)\s+(\S+)(?:\s+([\s\S]+))?$/i);
+  if (!match) throw new Error("Use: GET /api/pm/path or POST /api/pm/path {json}");
+  const method = match[1].toUpperCase();
+  const path = match[2];
+  const bodyText = match[3]?.trim();
+  if (!path.startsWith("/api/pm/")) throw new Error("Only /api/pm/* paths are allowed.");
+  if ((method === "POST" || method === "PATCH") && !bodyText) throw new Error(`${method} requires a JSON body.`);
+  if ((method === "GET" || method === "DELETE") && bodyText) throw new Error(`${method} does not accept a body in this terminal.`);
+  return {
+    method,
+    path,
+    body: bodyText ? parseTerminalJson(bodyText) : undefined
+  };
+}
+
+function parseApiTerminalAlias(command) {
+  const [name, ...parts] = command.split(/\s+/);
+  const first = parts[0];
+  if (name === "home") return { method: "GET", path: "/api/pm/home" };
+  if (name === "projects") return { method: "GET", path: "/api/pm/projects?includeArchived=true" };
+  if (name === "status") return { method: "GET", path: "/api/pm/operator/status" };
+  if (name === "notifications") return { method: "GET", path: "/api/pm/notifications" };
+  if (name === "boards" && first) return { method: "GET", path: `/api/pm/projects/${encodeURIComponent(first)}/boards` };
+  if (name === "board" && first) return { method: "GET", path: `/api/pm/boards/${encodeURIComponent(first)}` };
+  if (name === "tasks" && first) return { method: "GET", path: `/api/pm/projects/${encodeURIComponent(first)}/tasks` };
+  return null;
+}
+
+function parseTerminalJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("Request body must be valid JSON.");
+  }
+}
+
+function apiTerminalHelpText() {
+  return [
+    "Commands:",
+    "  help",
+    "  catalog",
+    "  clear",
+    "  home | projects | status | notifications",
+    "  boards <projectId> | board <boardId> | tasks <projectId>",
+    "  GET /api/pm/path",
+    "  POST /api/pm/path {\"title\":\"Task\"}",
+    "  PATCH /api/pm/path {\"title\":\"Updated\"}",
+    "  DELETE /api/pm/path",
+    "",
+    "The terminal uses your current PM browser session and refuses non-/api/pm paths."
+  ].join("\n");
+}
+
+function apiTerminalCatalogText() {
+  return API_TERMINAL_COMMANDS.map(([method, path, description], index) => {
+    return `${String(index + 1).padStart(2, "0")}. ${method.padEnd(6)} ${path} - ${description}`;
+  }).join("\n");
+}
+
+function appendApiTerminalLine(session, type, text) {
+  session.lines.push({ type, text });
+  if (session.lines.length > 80) session.lines.splice(0, session.lines.length - 80);
+}
+
+function renderApiTerminalOutput(session, output) {
+  output.replaceChildren(...session.lines.map((line) => {
+    const row = document.createElement("pre");
+    row.className = `api-terminal-entry ${line.type}`;
+    row.textContent = line.text;
+    return row;
+  }));
+  output.scrollTop = output.scrollHeight;
+}
+
+function formatApiTerminalPayload(payload) {
+  const text = JSON.stringify(payload, null, 2);
+  if (text.length <= 12000) return text;
+  return `${text.slice(0, 12000)}\n... truncated ${text.length - 12000} chars`;
 }
 
 async function openTaskReference(item, newTab = false) {
