@@ -785,6 +785,13 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   position: relative;
   min-height: 42px;
   padding-right: 34px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.project-card * {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .project-board-tree {
@@ -941,6 +948,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   border-left: 1px solid var(--line);
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
+  background-color: var(--project-sheet-bg, var(--bg));
 }
 
 .home-widget {
@@ -993,11 +1001,33 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .home-widget-settings {
   display: grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: minmax(0, auto) auto auto;
   justify-content: end;
   gap: 5px;
   padding: 7px;
   border-top: 1px solid var(--line);
+}
+
+.project-sticker-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
+  resize: none;
+}
+
+.project-pie-widget {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  min-height: 100%;
+}
+
+.project-pie {
+  width: min(120px, 70%);
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: conic-gradient(var(--green) 0 var(--done), var(--red) var(--done) 100%);
 }
 
 .home-widget-anchor {

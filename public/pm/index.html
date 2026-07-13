@@ -176,9 +176,23 @@
               </div>
               <div class="home-controls">
                 <button id="projectSheetEditToggle" type="button">Edit</button>
+                <button id="projectSheetCreateBoardBtn" type="button">Create board</button>
                 <label class="project-sheet-edit-control">Grid step
                   <input id="projectSheetGridStep" type="number" min="12" max="160" step="4" value="56" />
                 </label>
+                <label class="project-sheet-edit-control">BG
+                  <input id="projectSheetBgColor" type="color" value="#050808" />
+                </label>
+                <select id="projectSheetWidgetKind" class="project-sheet-edit-control">
+                  <option value="board_latest">Last board activity</option>
+                  <option value="board_new">New board activity</option>
+                  <option value="completion_pie">Done / not done</option>
+                  <option value="stickers">Stickers</option>
+                  <option value="due_soon">Due under 24h</option>
+                </select>
+                <select id="projectSheetWidgetBoard" class="project-sheet-edit-control">
+                  <option value="">Project</option>
+                </select>
                 <button id="addProjectSheetWidgetBtn" class="project-sheet-edit-control" type="button">Add widget</button>
               </div>
             </section>

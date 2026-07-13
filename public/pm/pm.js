@@ -38,6 +38,7 @@ const state = {
   homeData: {},
   projectSheetEditing: false,
   projectSheetWidgets: [],
+  projectSheetBackground: "#050808",
   projectOrder: [],
   commentMode: "fast",
   projectDragSuppressClickUntil: 0,
@@ -153,7 +154,11 @@ const els = {
   projectTitleSheet: $("projectTitleSheet"),
   projectTitleSheetMeta: $("projectTitleSheetMeta"),
   projectSheetEditToggle: $("projectSheetEditToggle"),
+  projectSheetCreateBoardBtn: $("projectSheetCreateBoardBtn"),
   projectSheetGridStep: $("projectSheetGridStep"),
+  projectSheetBgColor: $("projectSheetBgColor"),
+  projectSheetWidgetKind: $("projectSheetWidgetKind"),
+  projectSheetWidgetBoard: $("projectSheetWidgetBoard"),
   addProjectSheetWidgetBtn: $("addProjectSheetWidgetBtn"),
   projectSheetGrid: $("projectSheetGrid"),
   projectKanbanArea: $("projectKanbanArea"),
@@ -1237,7 +1242,15 @@ function projectSheetGridStep() {
 
 function loadProjectSheetWidgets(projectId) {
   const all = loadProjectSheets();
-  state.projectSheetWidgets = Array.isArray(all[projectId]) ? all[projectId] : [];
+  const sheet = all[projectId];
+  if (Array.isArray(sheet)) {
+    state.projectSheetWidgets = sheet;
+    state.projectSheetBackground = "#050808";
+    return;
+  }
+  state.projectSheetWidgets = Array.isArray(sheet?.widgets) ? sheet.widgets : [];
+  state.projectSheetBackground = typeof sheet?.background === "string" ? sheet.background : "#050808";
+  els.projectSheetBgColor.value = /^#[0-9a-fA-F]{6}$/.test(state.projectSheetBackground) ? state.projectSheetBackground : "#050808";
 }
 
 function loadProjectSheets() {
@@ -1253,7 +1266,7 @@ function saveProjectSheetWidgets() {
   const project = activeProject();
   if (!project) return;
   const all = loadProjectSheets();
-  all[project.id] = state.projectSheetWidgets;
+  all[project.id] = { background: state.projectSheetBackground, widgets: state.projectSheetWidgets };
   try {
     localStorage.setItem(PM_PROJECT_SHEETS_KEY, JSON.stringify(all));
   } catch {
@@ -1267,12 +1280,34 @@ function addProjectSheetWidget() {
     setError("No free grid space for this widget.");
     return;
   }
+  const kind = els.projectSheetWidgetKind.value;
+  const boardId = els.projectSheetWidgetBoard.value || state.activeBoardId || state.boards[0]?.id || "";
   state.projectSheetWidgets = [
     ...state.projectSheetWidgets,
-    { id: `project-widget-${Date.now()}`, title: "Project widget", x: next.x, y: next.y, width: 4, height: 3, content: "Reserved widget area." }
+    {
+      id: `project-widget-${Date.now()}`,
+      kind,
+      boardId: ["board_latest", "board_new", "completion_pie"].includes(kind) ? boardId : "",
+      title: projectSheetWidgetTitle(kind),
+      x: next.x,
+      y: next.y,
+      width: kind === "completion_pie" ? 3 : 4,
+      height: kind === "stickers" ? 4 : 3,
+      content: kind === "stickers" ? "Project note" : ""
+    }
   ];
   saveProjectSheetWidgets();
   renderProjectTitleSheet();
+}
+
+function projectSheetWidgetTitle(kind) {
+  return {
+    board_latest: "Last board activity",
+    board_new: "New board activity",
+    completion_pie: "Done / not done",
+    stickers: "Stickers",
+    due_soon: "Due under 24h"
+  }[kind] || "Project widget";
 }
 
 function updateProjectSheetWidget(id, patch) {
@@ -1757,10 +1792,12 @@ function renderProjectTitleSheet() {
   if (!showingSheet) return;
   const step = projectSheetGridStep();
   els.projectSheetGrid.style.setProperty("--home-grid-step", `${step}px`);
+  els.projectSheetGrid.style.setProperty("--project-sheet-bg", state.projectSheetBackground);
   els.projectSheetGrid.className = `home-grid project-sheet-grid${state.projectSheetEditing ? " editing" : ""}`;
   els.projectSheetEditToggle.textContent = state.projectSheetEditing ? "Done" : "Edit";
   for (const control of document.querySelectorAll(".project-sheet-edit-control")) control.hidden = !state.projectSheetEditing;
   els.projectTitleSheetMeta.textContent = `${project.key} / ${project.name}`;
+  els.projectSheetWidgetBoard.replaceChildren(option("Project", ""), ...state.boards.map((board) => option(board.name, board.id)));
   els.projectSheetGrid.replaceChildren(...state.projectSheetWidgets.map(renderProjectSheetWidget));
 }
 
@@ -1775,22 +1812,117 @@ function renderProjectSheetWidget(widget) {
   card.innerHTML = `
     <header>
       <span>${escapeHtml(widget.title || "Project widget")}</span>
-      <span>project</span>
+      <span>${escapeHtml(projectSheetWidgetScope(widget))}</span>
     </header>
-    <div class="home-widget-body"><pre class="widget-row">${escapeHtml(widget.content || "Widget area reserved for this project.")}</pre></div>
+    <div class="home-widget-body project-widget-body">${projectSheetWidgetLoadingHtml(widget)}</div>
   `;
   if (state.projectSheetEditing) {
     card.append(renderProjectSheetAnchor(widget));
     card.append(renderProjectSheetSettings(widget));
     card.append(renderProjectSheetResizeHandle(widget));
   }
+  hydrateProjectSheetWidget(card, widget).catch((error) => {
+    const body = card.querySelector(".project-widget-body");
+    if (body) body.innerHTML = `<div class="drawer-empty">${escapeHtml(error.message)}</div>`;
+  });
   return card;
+}
+
+function projectSheetWidgetScope(widget) {
+  if (!widget.boardId) return "project";
+  return state.boards.find((board) => board.id === widget.boardId)?.name || "board";
+}
+
+function projectSheetWidgetLoadingHtml(widget) {
+  if ((widget.kind || "stickers") === "stickers") {
+    return state.projectSheetEditing
+      ? `<textarea class="project-sticker-editor">${escapeHtml(widget.content || "")}</textarea>`
+      : `<pre class="widget-row">${escapeHtml(widget.content || "Empty sticker.")}</pre>`;
+  }
+  return `<div class="drawer-empty">Loading...</div>`;
+}
+
+async function hydrateProjectSheetWidget(card, widget) {
+  const kind = widget.kind || "stickers";
+  const body = card.querySelector(".project-widget-body");
+  if (!body) return;
+  if (kind === "stickers") {
+    const textarea = body.querySelector(".project-sticker-editor");
+    if (textarea) textarea.addEventListener("change", () => updateProjectSheetWidget(widget.id, { content: textarea.value }));
+    return;
+  }
+  const tasks = await projectSheetWidgetTasks(widget);
+  if (kind === "board_latest") {
+    body.replaceChildren(...taskWidgetRows(tasks.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)).slice(0, 8), "updatedAt"));
+    return;
+  }
+  if (kind === "board_new") {
+    body.replaceChildren(...taskWidgetRows(tasks.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 8), "createdAt"));
+    return;
+  }
+  if (kind === "completion_pie") {
+    body.innerHTML = completionPieHtml(tasks);
+    return;
+  }
+  if (kind === "due_soon") {
+    body.replaceChildren(...taskWidgetRows(tasks.filter(isDueWithin24h).sort((a, b) => new Date(a.dueAt || 0) - new Date(b.dueAt || 0)).slice(0, 8), "dueAt"));
+  }
+}
+
+async function projectSheetWidgetTasks(widget) {
+  if (widget.boardId) {
+    const snapshot = await api(`/api/pm/boards/${encodeURIComponent(widget.boardId)}`);
+    return snapshot.tasks || [];
+  }
+  return state.tasks || [];
+}
+
+function taskWidgetRows(tasks, dateKey) {
+  if (!tasks.length) return [plainWidgetNode("No matching tasks.")];
+  return tasks.map((task) => {
+    const row = document.createElement("div");
+    row.className = "widget-row widget-link-row";
+    row.innerHTML = `<div class="widget-row-title">${escapeHtml(task.title || "Task")}</div><div class="widget-row-meta">${escapeHtml(task.status || "")} / ${escapeHtml(task.priority || "")} / ${formatDate(task[dateKey])}</div>`;
+    row.addEventListener("click", () => openTaskReference({ ...task, projectId: task.projectId || state.activeProjectId }).catch((error) => setError(error.message)));
+    return row;
+  });
+}
+
+function completionPieHtml(tasks) {
+  const done = tasks.filter((task) => task.status === "done").length;
+  const total = tasks.length || 1;
+  const percent = Math.round((done / total) * 100);
+  return `
+    <div class="project-pie-widget">
+      <div class="project-pie" style="--done:${percent}%"></div>
+      <div class="widget-row-title">${done} done / ${tasks.length - done} not done</div>
+      <div class="widget-row-meta">${percent}% complete</div>
+    </div>
+  `;
+}
+
+function isDueWithin24h(task) {
+  if (!task.dueAt || task.status === "done") return false;
+  const due = new Date(task.dueAt).getTime();
+  if (!Number.isFinite(due)) return false;
+  const delta = due - Date.now();
+  return delta >= 0 && delta <= 24 * 60 * 60 * 1000;
 }
 
 function renderProjectSheetSettings(widget) {
   const form = document.createElement("div");
   form.className = "home-widget-settings";
-  form.innerHTML = `<button type="button">Rename</button><button type="button">Delete</button>`;
+  const usesBoard = ["board_latest", "board_new", "completion_pie"].includes(widget.kind);
+  form.innerHTML = `
+    ${usesBoard ? `<select>${state.boards.map((board) => `<option value="${escapeHtml(board.id)}">${escapeHtml(board.name)}</option>`).join("")}</select>` : ""}
+    <button type="button">Rename</button>
+    <button type="button">Delete</button>
+  `;
+  const boardSelect = form.querySelector("select");
+  if (boardSelect) {
+    boardSelect.value = widget.boardId || state.boards[0]?.id || "";
+    boardSelect.addEventListener("change", () => updateProjectSheetWidget(widget.id, { boardId: boardSelect.value }));
+  }
   const [rename, remove] = Array.from(form.querySelectorAll("button"));
   rename.addEventListener("click", () => {
     const title = window.prompt("Widget title", widget.title || "Project widget");
@@ -3846,7 +3978,13 @@ els.projectSheetEditToggle.addEventListener("click", () => {
   state.projectSheetEditing = !state.projectSheetEditing;
   renderProjectTitleSheet();
 });
+els.projectSheetCreateBoardBtn.addEventListener("click", openBoardModal);
 els.projectSheetGridStep.addEventListener("input", () => renderProjectTitleSheet());
+els.projectSheetBgColor.addEventListener("input", () => {
+  state.projectSheetBackground = els.projectSheetBgColor.value;
+  saveProjectSheetWidgets();
+  renderProjectTitleSheet();
+});
 els.addProjectSheetWidgetBtn.addEventListener("click", addProjectSheetWidget);
 els.projectSidebarToggle.addEventListener("click", openProjectSidebar);
 els.closeProjectSidebarBtn.addEventListener("click", closeProjectSidebar);
