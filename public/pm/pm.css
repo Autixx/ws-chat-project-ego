@@ -683,8 +683,19 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .project-management-buttons {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr auto;
   gap: 8px;
+}
+
+.project-management-buttons .danger {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.project-management-buttons .danger:hover,
+.project-management-buttons .danger:focus-visible {
+  background: color-mix(in srgb, var(--field) 72%, var(--red) 28%);
+  outline: none;
 }
 
 .member-form, .label-form {

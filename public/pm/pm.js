@@ -121,6 +121,7 @@ const els = {
   projectManagementFields: $("projectManagementFields"),
   openTeamModalBtn: $("openTeamModalBtn"),
   openLabelsModalBtn: $("openLabelsModalBtn"),
+  deleteProjectBtn: $("deleteProjectBtn"),
   teamModal: $("teamModal"),
   labelsModal: $("labelsModal"),
   closeTeamModalBtn: $("closeTeamModalBtn"),
@@ -686,7 +687,8 @@ const API_TERMINAL_COMMANDS = [
   ["POST", "/api/pm/projects", "create project with JSON body"],
   ["POST", "/api/pm/boards/:boardId/tasks", "create task on a board with JSON body"],
   ["DELETE", "/api/pm/tasks/:taskId/permanent", "permanently delete a task"],
-  ["DELETE", "/api/pm/boards/:boardId/permanent", "permanently delete a board"]
+  ["DELETE", "/api/pm/boards/:boardId/permanent", "permanently delete a board"],
+  ["DELETE", "/api/pm/projects/:projectId/permanent", "permanently delete a project"]
 ];
 
 function apiWidgetNode(widget) {
@@ -1450,6 +1452,7 @@ function openProjectModal(project = null) {
   els.projectName.value = project?.name || "";
   els.projectDescription.value = project?.description || "";
   if (els.projectManagementFields) els.projectManagementFields.hidden = !project;
+  if (els.deleteProjectBtn) els.deleteProjectBtn.hidden = !project;
   els.projectModal.hidden = false;
 }
 
@@ -2108,6 +2111,32 @@ async function createProject(event) {
   closeProjectModal();
   state.activeProjectId = result.project.id;
   navigatePm(pmProjectPath(result.project.id));
+  await loadProjects();
+}
+
+async function deleteCurrentProjectPermanently() {
+  const project = state.projects.find((item) => item.id === state.editingProjectId) || activeProject();
+  if (!project) return;
+  const firstConfirmed = await confirmAction({
+    title: "Delete project",
+    message: `THIS ACTION WILL DELETE THIS PROJECT PERMANENTLY!\n\nProject: ${project.key} / ${project.name}`
+  });
+  if (!firstConfirmed) return;
+  const secondConfirmed = await confirmAction({
+    title: "Delete project files",
+    message: "THIS PROJECT MAY CONTAIN TASKS, BOARDS, COMMENTS AND ATTACHED FILES. DOWNLOAD WHAT YOU NEED OR YOU WILL LOSE IT PERMANENTLY!"
+  });
+  if (!secondConfirmed) return;
+  const result = await api(`/api/pm/projects/${project.id}/permanent`, { method: "DELETE" });
+  showToast(`Project deleted. Tasks: ${result.deletedTaskIds?.length || 0}, attachments: ${result.deletedAttachments || 0}.`, "info");
+  closeProjectModal();
+  if (state.activeProjectId === project.id) {
+    state.activeProjectId = null;
+    state.activeBoardId = null;
+    state.activeTask = null;
+    closeTask({ navigate: false });
+  }
+  navigatePm("/pm/projects");
   await loadProjects();
 }
 
@@ -3275,6 +3304,7 @@ els.openCreateProjectBtn.addEventListener("click", () => openProjectModal());
 els.cancelProjectModalBtn.addEventListener("click", closeProjectModal);
 els.openTeamModalBtn.addEventListener("click", openTeamModal);
 els.openLabelsModalBtn.addEventListener("click", openLabelsModal);
+els.deleteProjectBtn.addEventListener("click", () => deleteCurrentProjectPermanently().catch((error) => setError(error.message)));
 els.closeTeamModalBtn.addEventListener("click", closeTeamModal);
 els.closeLabelsModalBtn.addEventListener("click", closeLabelsModal);
 els.projectForm.addEventListener("submit", (event) => createProject(event).catch((error) => setError(error.message)));

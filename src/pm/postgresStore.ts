@@ -274,6 +274,42 @@ export class PmStore {
     return mapProject(result.rows[0]);
   }
 
+  async hardDeleteProject(user: PmUser, projectId: string): Promise<{ project: PmProject; boardIds: string[]; taskIds: string[]; attachments: PmAttachment[] }> {
+    return this.withTransaction(async (client) => {
+      const projectResult = await client.query("SELECT * FROM pm.projects WHERE id = $1", [projectId]);
+      if (!projectResult.rows[0]) throw new Error("Project not found.");
+      const project = mapProject(projectResult.rows[0]);
+      const boardResult = await client.query("SELECT id FROM pm.boards WHERE project_id = $1", [projectId]);
+      const taskResult = await client.query("SELECT id FROM pm.tasks WHERE project_id = $1", [projectId]);
+      const taskIds = taskResult.rows.map((row) => String(row.id));
+      const attachmentResult = taskIds.length
+        ? await client.query(
+            `
+            SELECT a.*, COALESCE(u.display_name, u.username) AS uploader_name
+            FROM pm.attachments a
+            LEFT JOIN core.users u ON u.id = a.uploaded_by
+            WHERE a.task_id = ANY($1::uuid[])
+            `,
+            [taskIds]
+          )
+        : { rows: [] };
+      await client.query("DELETE FROM pm.projects WHERE id = $1", [projectId]);
+      await this.insertAudit(client, {
+        actorType: "user",
+        actorId: user.id,
+        projectId,
+        eventType: "project.hard_deleted",
+        payload: { projectId, key: project.key, name: project.name, boardCount: boardResult.rows.length, taskIds, attachmentCount: attachmentResult.rows.length }
+      });
+      return {
+        project,
+        boardIds: boardResult.rows.map((row) => String(row.id)),
+        taskIds,
+        attachments: attachmentResult.rows.map(mapAttachment)
+      };
+    });
+  }
+
   async listMembers(projectId: string): Promise<Array<PmUser & { role: PmRole }>> {
     const result = await this.pool.query(
       `

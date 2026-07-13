@@ -436,18 +436,22 @@ test("PM automation API lists projects with boards for n8n routing", async () =>
   }
 });
 
-test("PM API hard deletes tasks and boards with attachment files", async () => {
+test("PM API hard deletes projects tasks and boards with attachment files", async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), "projectego-pm-hard-delete-"));
   const attachmentsDir = path.join(root, "attachments");
   mkdirSync(attachmentsDir, { recursive: true });
   const taskDir = path.join(attachmentsDir, "task-1");
   const boardTaskDir = path.join(attachmentsDir, "task-board");
+  const projectTaskDir = path.join(attachmentsDir, "task-project");
   mkdirSync(taskDir, { recursive: true });
   mkdirSync(boardTaskDir, { recursive: true });
+  mkdirSync(projectTaskDir, { recursive: true });
   const taskFile = path.join(taskDir, "PMATT_task.txt");
   const boardFile = path.join(boardTaskDir, "PMATT_board.txt");
+  const projectFile = path.join(projectTaskDir, "PMATT_project.txt");
   writeFileSync(taskFile, "task");
   writeFileSync(boardFile, "board");
+  writeFileSync(projectFile, "project");
   const calls: string[] = [];
   const makeTask = (id: string) => ({
     id,
@@ -501,6 +505,15 @@ test("PM API hard deletes tasks and boards with attachment files", async () => {
         taskIds: ["task-board"],
         attachments: [makeAttachment("att-board", "task-board", boardFile)]
       };
+    },
+    async hardDeleteProject(_user: unknown, projectId: string) {
+      calls.push(`hardProject:${projectId}`);
+      return {
+        project: { id: projectId, key: "TEST", name: "Test", description: "", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1 },
+        boardIds: ["board-project"],
+        taskIds: ["task-project"],
+        attachments: [makeAttachment("att-project", "task-project", projectFile)]
+      };
     }
   };
   const app = createPmApp(loadPmConfig({ NODE_ENV: "development", PM_DEV_AUTH_BYPASS: "true", PM_ATTACHMENTS_DIR: attachmentsDir }), fakeStore as never);
@@ -523,13 +536,23 @@ test("PM API hard deletes tasks and boards with attachment files", async () => {
     assert.deepEqual(boardBody.deletedTaskIds, ["task-board"]);
     assert.equal(boardBody.deletedAttachments, 1);
     assert.equal(existsSync(boardFile), false);
+
+    const projectResponse = await fetch(`${baseUrl}/api/pm/projects/project-1/permanent`, { method: "DELETE" });
+    assert.equal(projectResponse.status, 200);
+    const projectBody = await projectResponse.json();
+    assert.deepEqual(projectBody.deletedBoardIds, ["board-project"]);
+    assert.deepEqual(projectBody.deletedTaskIds, ["task-project"]);
+    assert.equal(projectBody.deletedAttachments, 1);
+    assert.equal(existsSync(projectFile), false);
     assert.deepEqual(calls, [
       "loadTask:task-1",
       "role:pm-user-1:project-1",
       "hardTask:task-1",
       "loadBoard:board-1",
       "role:pm-user-1:project-1",
-      "hardBoard:board-1"
+      "hardBoard:board-1",
+      "role:pm-user-1:project-1",
+      "hardProject:project-1"
     ]);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));

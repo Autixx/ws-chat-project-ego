@@ -59,6 +59,7 @@ PM exposes:
 - `PATCH /api/pm/projects/:projectId`
 - `POST /api/pm/projects/:projectId/archive`
 - `DELETE /api/pm/projects/:projectId`
+- `DELETE /api/pm/projects/:projectId/permanent`
 - `GET /api/pm/projects/:projectId/members`
 - `POST /api/pm/projects/:projectId/members`
 - `PUT /api/pm/projects/:projectId/members/:userId`
@@ -157,7 +158,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.2.12 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.2.13 \
   node dist/pm/migrate.js
 ```
 
@@ -803,7 +804,7 @@ To update from the TrueNAS Apps UI:
 For predictable production rollouts, prefer a fixed tag such as:
 
 ```text
-ghcr.io/autixx/ws-chat-project-ego:v0.2.12
+ghcr.io/autixx/ws-chat-project-ego:v0.2.13
 ```
 
 Then update the tag in TrueNAS when moving to a newer release.

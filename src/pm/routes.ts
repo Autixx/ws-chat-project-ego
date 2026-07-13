@@ -309,6 +309,25 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
     }
   });
 
+  router.delete("/projects/:projectId/permanent", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      requireProjectRole(await store.getProjectRole(user.id, req.params.projectId), "project_owner");
+      const result = await store.hardDeleteProject(user, req.params.projectId);
+      const fileDeletion = await removePmAttachmentFiles(options.attachmentsDir, result.attachments);
+      emit({
+        type: "project.updated",
+        projectId: result.project.id,
+        version: result.project.version,
+        createdAt: new Date().toISOString(),
+        payload: { permanent: true, projectId: result.project.id, boardIds: result.boardIds, taskIds: result.taskIds, attachmentCount: result.attachments.length }
+      });
+      res.json({ ok: true, project: result.project, deletedBoardIds: result.boardIds, deletedTaskIds: result.taskIds, deletedAttachments: result.attachments.length, fileDeletion });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/projects/:projectId/members", async (req: PmAuthedRequest, res, next) => {
     try {
       const user = requirePmUser(req);
