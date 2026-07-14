@@ -2940,6 +2940,8 @@ async function createBoard(event) {
     })
   });
   closeBoardModal();
+  state.boards = [...state.boards.filter((board) => board.id !== result.board.id), result.board];
+  state.projectBoardMap.set(project.id, state.boards);
   state.activeBoardId = result.board.id;
   navigatePm(pmBoardPath(project.id, result.board.id));
   await loadProjectData();

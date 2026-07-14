@@ -1394,13 +1394,18 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 }
 
 .kanban-toolbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 180px repeat(3, max-content) 116px 150px;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
   padding: 4px 0 7px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.kanban-toolbar button,
+.kanban-toolbar select {
+  min-height: 28px;
 }
 
 .sprints-pane {

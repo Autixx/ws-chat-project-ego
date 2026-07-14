@@ -228,18 +228,19 @@ export class PmStore {
   }
 
   async updateProject(user: PmUser, projectId: string, input: UpdateProjectInput): Promise<PmProject> {
-    const values = [projectId, input.name?.trim() ?? null, input.description?.trim() ?? null, input.expectedVersion ?? null];
+    const values = [projectId, input.key ? normalizeKey(input.key) : null, input.name?.trim() ?? null, input.description?.trim() ?? null, input.expectedVersion ?? null];
     const result = await this.pool.query(
       `
       UPDATE pm.projects
       SET
-        name = COALESCE($2, name),
-        description = COALESCE($3, description),
+        key = COALESCE($2, key),
+        name = COALESCE($3, name),
+        description = COALESCE($4, description),
         version = version + 1,
         updated_at = now()
       WHERE id = $1
         AND deleted_at IS NULL
-        AND ($4::bigint IS NULL OR version = $4::bigint)
+        AND ($5::bigint IS NULL OR version = $5::bigint)
       RETURNING *
       `,
       values

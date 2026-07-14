@@ -1,6 +1,6 @@
 {
   "name": "projectego-ws-chat",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "description": "ProjectEGO Dashboard",
   "type": "module",
   "scripts": {

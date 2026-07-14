@@ -281,7 +281,7 @@ export type CreateProjectInput = {
   description?: string;
 };
 
-export type UpdateProjectInput = Partial<Pick<CreateProjectInput, "name" | "description">> & {
+export type UpdateProjectInput = Partial<Pick<CreateProjectInput, "key" | "name" | "description">> & {
   expectedVersion?: number;
 };
 

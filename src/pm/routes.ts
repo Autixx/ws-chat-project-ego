@@ -1128,6 +1128,7 @@ function parseCreateProject(body: unknown): CreateProjectInput {
 function parseUpdateProject(body: unknown): UpdateProjectInput {
   const raw = objectBody(body);
   return {
+    key: optionalString(raw.key),
     name: optionalString(raw.name),
     description: optionalString(raw.description),
     expectedVersion: optionalNumber(raw.expectedVersion)
