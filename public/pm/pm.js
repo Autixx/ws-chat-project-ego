@@ -18,6 +18,8 @@ const state = {
   board: null,
   projectBoardMap: new Map(),
   projectBoardsExpanded: false,
+  boardViewMode: "kanban",
+  boardListSort: "created_desc",
   columns: [],
   boardTasks: [],
   activeProjectId: null,
@@ -119,6 +121,8 @@ const els = {
   boardEpic: $("boardEpic"),
   createBoardBtn: $("createBoardBtn"),
   deleteBoardBtn: $("deleteBoardBtn"),
+  boardViewMode: $("boardViewMode"),
+  boardListSort: $("boardListSort"),
   cancelBoardModalBtn: $("cancelBoardModalBtn"),
   taskSidebarToggle: $("taskSidebarToggle"),
   webhookPanel: $("webhookPanel"),
@@ -174,6 +178,9 @@ const els = {
   refreshBtn: $("refreshBtn"),
   archiveProjectBtn: $("archiveProjectBtn"),
   epicForm: $("epicForm"),
+  epicModal: $("epicModal"),
+  openCreateEpicBtn: $("openCreateEpicBtn"),
+  cancelEpicModalBtn: $("cancelEpicModalBtn"),
   epicTitle: $("epicTitle"),
   epicList: $("epicList"),
   sprintForm: $("sprintForm"),
@@ -1529,7 +1536,7 @@ async function loadProjectData() {
   els.saveFilterBtn.disabled = !project;
   els.updateFilterBtn.disabled = !project || !els.savedFilterSelect.value;
   els.deleteFilterBtn.disabled = !project || !els.savedFilterSelect.value;
-  els.epicForm.querySelector("button").disabled = !project;
+  els.openCreateEpicBtn.disabled = !project;
   els.sprintForm.querySelector("button").disabled = !project;
   els.backlogFilterBtn.disabled = !project;
   els.allSprintTasksBtn.disabled = !project;
@@ -1753,7 +1760,6 @@ function renderProjects() {
         state.activeEpicId = null;
         state.activeBoardId = null;
         state.activeSprintId = "__backlog";
-        closeProjectSidebar();
         navigatePm(pmProjectPath(project.id));
         await loadProjectData();
       };
@@ -1820,7 +1826,6 @@ function renderProjects() {
         state.activeEpicId = null;
         state.activeBoardId = null;
         state.activeSprintId = "__backlog";
-        closeProjectSidebar();
         navigatePm(pmProjectPath(project.id));
         await loadProjectData();
       };
@@ -2107,6 +2112,18 @@ function openBoardModal() {
 function closeBoardModal() {
   els.boardModal.hidden = true;
   els.boardForm.reset();
+}
+
+function openEpicModal() {
+  if (!activeProject()) return;
+  els.epicForm.querySelector('button[type="submit"]').disabled = !els.epicTitle.value.trim();
+  els.epicModal.hidden = false;
+  els.epicTitle.focus();
+}
+
+function closeEpicModal() {
+  els.epicModal.hidden = true;
+  els.epicForm.reset();
 }
 
 function wireProjectDrag(button, startIndex) {
@@ -2599,9 +2616,22 @@ function renderBoard() {
   if (!state.board) {
     els.activeBoardLine.textContent = "No board";
     els.kanbanBoard.replaceChildren();
+    els.taskList.replaceChildren();
+    els.kanbanBoard.hidden = false;
+    els.taskList.style.display = "none";
     return;
   }
   els.activeBoardLine.textContent = `${state.board.name} / ${state.columns.length} columns`;
+  state.boardViewMode = els.boardViewMode.value || "kanban";
+  state.boardListSort = els.boardListSort.value || "created_desc";
+  els.kanbanBoard.hidden = state.boardViewMode === "list";
+  els.taskList.style.display = state.boardViewMode === "list" ? "grid" : "none";
+  if (state.boardViewMode === "list") {
+    els.kanbanBoard.replaceChildren();
+    renderBoardTaskList();
+    return;
+  }
+  els.taskList.replaceChildren();
   const statusFilter = els.statusFilter.value;
   const priorityFilter = els.priorityFilter.value;
   const labelFilter = els.labelFilter.value;
@@ -2642,6 +2672,49 @@ function renderBoard() {
       return columnEl;
     })
   );
+}
+
+function filteredBoardTasks() {
+  const statusFilter = els.statusFilter.value;
+  const priorityFilter = els.priorityFilter.value;
+  const labelFilter = els.labelFilter.value;
+  const dueFilter = els.dueFilter.value;
+  const search = els.taskSearch.value.trim();
+  return state.boardTasks
+    .filter((task) => !state.activeEpicId || task.epicId === state.activeEpicId)
+    .filter((task) => state.activeSprintId !== "__backlog" || !task.sprintId)
+    .filter((task) => ["__all", "__backlog"].includes(state.activeSprintId) || task.sprintId === state.activeSprintId)
+    .filter((task) => !statusFilter || task.status === statusFilter)
+    .filter((task) => !priorityFilter || task.priority === priorityFilter)
+    .filter((task) => !labelFilter || taskHasLabel(task, labelFilter))
+    .filter((task) => !dueFilter || taskMatchesDueFilter(task, dueFilter))
+    .filter((task) => !search || taskMatchesSearch(task, search));
+}
+
+function renderBoardTaskList() {
+  const sorted = [...filteredBoardTasks()].sort((a, b) => {
+    const sort = els.boardListSort.value || "created_desc";
+    const key = sort.startsWith("updated") ? "updatedAt" : "createdAt";
+    const left = new Date(a[key] || 0).getTime();
+    const right = new Date(b[key] || 0).getTime();
+    return sort.endsWith("_asc") ? left - right : right - left;
+  });
+  els.taskList.replaceChildren(...sorted.map(renderBoardTaskListRow));
+}
+
+function renderBoardTaskListRow(task) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = `board-task-row ${state.activeTask?.id === task.id ? "active" : ""}`;
+  row.innerHTML = `
+    <span class="status-badge">${escapeHtml(task.status)}</span>
+    <span class="board-task-main">
+      <span class="board-task-title">${escapeHtml(task.title)}</span>
+      <span class="board-task-meta">${escapeHtml(task.priority)} / ${escapeHtml(assigneeLabel(task.assigneeId))} / created ${formatDate(task.createdAt)} / updated ${formatDate(task.updatedAt)}</span>
+    </span>
+  `;
+  row.addEventListener("click", () => openTask(task));
+  return row;
 }
 
 function renderKanbanCard(task) {
@@ -2894,7 +2967,7 @@ async function createEpic(event) {
     method: "POST",
     body: JSON.stringify({ title: els.epicTitle.value })
   });
-  els.epicForm.reset();
+  closeEpicModal();
   state.activeEpicId = epic.id;
   await loadProjectData();
 }
@@ -3206,6 +3279,7 @@ async function deleteActiveBoard() {
   state.board = null;
   state.columns = [];
   state.boardTasks = [];
+  navigatePm(pmProjectPath(activeProject()?.id));
   await loadProjectData();
 }
 
@@ -4101,6 +4175,7 @@ els.projectSidebarBackdrop.addEventListener("click", (event) => {
   if (event.target === els.projectSidebarBackdrop) closeProjectSidebar();
 });
 els.openCreateProjectBtn.addEventListener("click", () => openProjectModal());
+els.openCreateEpicBtn.addEventListener("click", openEpicModal);
 els.cancelProjectModalBtn.addEventListener("click", closeProjectModal);
 els.openTeamModalBtn.addEventListener("click", openTeamModal);
 els.openLabelsModalBtn.addEventListener("click", openLabelsModal);
@@ -4110,6 +4185,12 @@ els.closeLabelsModalBtn.addEventListener("click", closeLabelsModal);
 els.projectForm.addEventListener("submit", (event) => createProject(event).catch((error) => setError(error.message)));
 els.boardForm.addEventListener("submit", (event) => createBoard(event).catch((error) => setError(error.message)));
 els.cancelBoardModalBtn.addEventListener("click", closeBoardModal);
+els.cancelEpicModalBtn.addEventListener("click", closeEpicModal);
+els.epicTitle.addEventListener("input", () => {
+  els.epicForm.querySelector('button[type="submit"]').disabled = !els.epicTitle.value.trim() || !activeProject();
+});
+els.boardViewMode.addEventListener("change", renderBoard);
+els.boardListSort.addEventListener("change", renderBoard);
 els.memberForm.querySelector("button").addEventListener("click", (event) => addMember(event).catch((error) => setError(error.message)));
 els.labelForm.querySelector("button").addEventListener("click", (event) => createLabel(event).catch((error) => setError(error.message)));
 els.epicForm.addEventListener("submit", (event) => createEpic(event).catch((error) => setError(error.message)));

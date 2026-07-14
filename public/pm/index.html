@@ -99,26 +99,25 @@
 
       <section id="pmGrid" class="pm-grid" hidden>
         <nav class="pm-left-rail">
-          <button id="projectSidebarToggle" class="rail-button" type="button" title="Projects">P</button>
+          <button id="projectSidebarToggle" class="rail-button" type="button" title="Projects">&gt;</button>
         </nav>
 
         <aside id="projectSidebarBackdrop" class="sidebar-backdrop" hidden>
           <section class="project-pane panel pm-left-drawer">
             <div class="drawer-mini-header">
               <h2>Projects</h2>
-              <button id="closeProjectSidebarBtn" type="button">x</button>
+              <label class="inline-check"><input id="includeArchived" type="checkbox" /> archived</label>
+              <button id="closeProjectSidebarBtn" type="button">&lt;</button>
             </div>
-          <div class="panel-title">
-            <label class="inline-check"><input id="includeArchived" type="checkbox" /> archived</label>
+          <div class="project-sidebar-tools">
             <button id="toggleProjectBoardsBtn" type="button">Expand</button>
-            <button id="openCreateProjectBtn" type="button">Create project</button>
           </div>
           <div id="projectList" class="list project-sort-list"></div>
           <div id="epicList" class="list compact"></div>
-          <form id="epicForm" class="inline-form epic-bottom-form">
-            <input id="epicTitle" placeholder="Epic title" />
-            <button type="submit" disabled>Create epic</button>
-          </form>
+          <div class="project-sidebar-actions epic-bottom-form">
+            <button id="openCreateProjectBtn" type="button">Create project</button>
+            <button id="openCreateEpicBtn" type="button" disabled>Create epic</button>
+          </div>
           </section>
         </aside>
 
@@ -287,6 +286,16 @@
                 <button id="createBoardBtn" type="button" disabled>Create board</button>
                 <button id="deleteBoardBtn" type="button" disabled>Delete board</button>
                 <button id="ensureBoardBtn" type="button" disabled>Open Kanban</button>
+                <select id="boardViewMode">
+                  <option value="kanban">Kanban</option>
+                  <option value="list">List</option>
+                </select>
+                <select id="boardListSort">
+                  <option value="created_desc">Created newest</option>
+                  <option value="created_asc">Created oldest</option>
+                  <option value="updated_desc">Updated newest</option>
+                  <option value="updated_asc">Updated oldest</option>
+                </select>
               </div>
               <div id="kanbanBoard" class="kanban-board"></div>
               <div id="taskList" class="task-list"></div>
@@ -369,6 +378,17 @@
           <div class="pm-modal-actions">
             <button id="cancelBoardModalBtn" type="button">Cancel</button>
             <button type="submit">Create</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="epicModal" class="pm-modal-backdrop" hidden>
+        <form id="epicForm" class="pm-modal project-modal">
+          <h2>Create epic</h2>
+          <input id="epicTitle" maxlength="160" placeholder="Epic title" />
+          <div class="pm-modal-actions">
+            <button id="cancelEpicModalBtn" type="button">Cancel</button>
+            <button type="submit" disabled>Create</button>
           </div>
         </form>
       </section>

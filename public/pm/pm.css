@@ -671,6 +671,23 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   overflow: hidden;
 }
 
+.project-sidebar-tools {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.project-sidebar-tools button {
+  width: 100%;
+}
+
+.project-sidebar-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .project-pane #epicList {
   max-height: 92px;
 }
@@ -1070,6 +1087,16 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   border: 1px solid var(--line);
   border-radius: 50%;
   background: conic-gradient(var(--green) 0 var(--done), var(--red) var(--done) 100%);
+  position: relative;
+}
+
+.project-pie::after {
+  content: "";
+  position: absolute;
+  inset: 24%;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
 }
 
 .home-widget-anchor {
@@ -1383,6 +1410,59 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .task-list {
   display: none;
+}
+
+.board-task-row {
+  width: 100%;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--field);
+  padding: 5px;
+}
+
+.board-task-row:hover,
+.board-task-row.active {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+
+.status-badge {
+  width: 96px;
+  min-height: 30px;
+  display: grid;
+  place-items: center;
+  align-self: center;
+  border: 1px solid var(--line);
+  background: #10201d;
+  color: var(--text);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.board-task-main {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+
+.board-task-title {
+  min-width: 0;
+  color: var(--text);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.board-task-meta {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .sprint-toolbar {
