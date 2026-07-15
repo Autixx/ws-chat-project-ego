@@ -12,6 +12,10 @@ const state = {
   labels: [],
   savedFilters: [],
   epics: [],
+  globalEpics: [],
+  epicTaskPool: [],
+  epicTaskBoards: [],
+  epicTaskTargetTaskId: null,
   sprints: [],
   boards: [],
   tasks: [],
@@ -107,8 +111,11 @@ const els = {
   useWidgetTemplateBtn: $("useWidgetTemplateBtn"),
   homeGrid: $("homeGrid"),
   projectSidebarToggle: $("projectSidebarToggle"),
+  epicSidebarToggle: $("epicSidebarToggle"),
   projectSidebarBackdrop: $("projectSidebarBackdrop"),
+  epicSidebarBackdrop: $("epicSidebarBackdrop"),
   closeProjectSidebarBtn: $("closeProjectSidebarBtn"),
+  closeEpicSidebarBtn: $("closeEpicSidebarBtn"),
   toggleProjectBoardsBtn: $("toggleProjectBoardsBtn"),
   openCreateProjectBtn: $("openCreateProjectBtn"),
   projectModal: $("projectModal"),
@@ -159,6 +166,7 @@ const els = {
   labelColor: $("labelColor"),
   labelList: $("labelList"),
   projectList: $("projectList"),
+  globalEpicList: $("globalEpicList"),
   activeProjectName: $("activeProjectName"),
   activeProjectMeta: $("activeProjectMeta"),
   projectTitleSheet: $("projectTitleSheet"),
@@ -189,11 +197,22 @@ const els = {
   backlogFilterBtn: $("backlogFilterBtn"),
   allSprintTasksBtn: $("allSprintTasksBtn"),
   sprintList: $("sprintList"),
-  taskForm: $("taskForm"),
-  taskTitle: $("taskTitle"),
-  taskPriority: $("taskPriority"),
-  taskAssignee: $("taskAssignee"),
-  taskDueAt: $("taskDueAt"),
+  openTaskCreateModalBtn: $("openTaskCreateModalBtn"),
+  taskCreateModal: $("taskCreateModal"),
+  taskCreateForm: $("taskCreateForm"),
+  taskCreateTitle: $("taskCreateTitle"),
+  taskCreatePriority: $("taskCreatePriority"),
+  taskCreateAssignee: $("taskCreateAssignee"),
+  taskCreateDueAt: $("taskCreateDueAt"),
+  taskCreateEpic: $("taskCreateEpic"),
+  cancelTaskCreateModalBtn: $("cancelTaskCreateModalBtn"),
+  epicTaskModal: $("epicTaskModal"),
+  epicTaskEpicFilter: $("epicTaskEpicFilter"),
+  epicTaskSearch: $("epicTaskSearch"),
+  epicTaskProjectFilter: $("epicTaskProjectFilter"),
+  epicTaskBoardFilter: $("epicTaskBoardFilter"),
+  epicTaskList: $("epicTaskList"),
+  cancelEpicTaskModalBtn: $("cancelEpicTaskModalBtn"),
   taskList: $("taskList"),
   activeBoardLine: $("activeBoardLine"),
   ensureBoardBtn: $("ensureBoardBtn"),
@@ -215,6 +234,7 @@ const els = {
   activityDrawer: $("activityDrawer"),
   closeActivityDrawerBtn: $("closeActivityDrawerBtn"),
   archiveTaskBtn: $("archiveTaskBtn"),
+  addTaskToEpicBtn: $("addTaskToEpicBtn"),
   deleteTaskBtn: $("deleteTaskBtn"),
   drawerTitle: $("drawerTitle"),
   drawerMeta: $("drawerMeta"),
@@ -475,6 +495,7 @@ function applyPmRouteState() {
   state.currentView = route.view;
   if (route.projectId !== undefined) state.activeProjectId = route.projectId;
   if (route.boardId !== undefined) state.activeBoardId = route.boardId;
+  if (route.epicId !== undefined) state.activeEpicId = route.epicId;
   state.routeTaskId = route.taskId || null;
 }
 
@@ -488,6 +509,9 @@ function pmRouteFromLocation() {
   if (!projectId) return { view: "kanban", projectId: null };
   if (route[2] === "boards") {
     return { view: "kanban", projectId, boardId: route[3] || null, taskId: route[4] === "tasks" ? route[5] || null : null };
+  }
+  if (route[2] === "epics") {
+    return { view: "kanban", projectId, epicId: route[3] || null, taskId: route[4] === "tasks" ? route[5] || null : null };
   }
   if (route[2] === "tasks") return { view: "kanban", projectId, taskId: route[3] || null };
   return { view: "kanban", projectId };
@@ -664,10 +688,37 @@ function renderHomeWidget(widget) {
 function homeWidgetBody(widget) {
   if (widget.kind === "activity") return listWidgetRows(state.homeData.activity || [], "createdAt");
   if (widget.kind === "changes") return listWidgetRows(state.homeData.changes || [], "updatedAt");
+  if (widget.kind === "my_epics") return listEpicWidgetRows(state.homeData.myEpics || []);
   if (widget.kind === "announcement") return listAnnouncementRows(state.homeData.announcements || []);
   if (widget.kind === "timer") return [timerWidgetNode(widget)];
   if (widget.kind === "api") return [apiWidgetNode(widget)];
   return [notesWidgetNode(widget)];
+}
+
+function listEpicWidgetRows(items) {
+  if (!items.length) return [plainWidgetNode("No epics.")];
+  return items.slice(0, 8).map((item) => {
+    const row = document.createElement("div");
+    row.className = "widget-row widget-link-row";
+    row.tabIndex = 0;
+    row.innerHTML = `<div class="widget-row-title">${escapeHtml(item.title || "Epic")}</div><div class="widget-row-meta">${escapeHtml(item.projectName || "")} / ${escapeHtml(item.status || "")} / ${Number(item.taskCount || 0)} tasks</div>`;
+    const open = (newTab = false) => {
+      const url = pmEpicPath(item.projectId, item.id);
+      if (newTab) window.open(url, "_blank", "noopener");
+      else navigatePm(url);
+    };
+    row.addEventListener("click", (event) => open(event.ctrlKey || event.metaKey));
+    row.addEventListener("auxclick", (event) => {
+      if (event.button === 1) {
+        event.preventDefault();
+        open(true);
+      }
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") open(event.ctrlKey || event.metaKey);
+    });
+    return row;
+  });
 }
 
 function listWidgetRows(items, dateKey) {
@@ -991,8 +1042,13 @@ function pmBoardPath(projectId, boardId) {
   return projectId && boardId ? `/pm/projects/${encodeURIComponent(projectId)}/boards/${encodeURIComponent(boardId)}` : pmProjectPath(projectId);
 }
 
+function pmEpicPath(projectId, epicId) {
+  return projectId && epicId ? `/pm/projects/${encodeURIComponent(projectId)}/epics/${encodeURIComponent(epicId)}` : pmProjectPath(projectId);
+}
+
 function pmTaskPath(projectId, boardId, taskId) {
   if (!projectId || !taskId) return pmProjectPath(projectId);
+  if (!boardId && state.activeEpicId) return `${pmEpicPath(projectId, state.activeEpicId)}/tasks/${encodeURIComponent(taskId)}`;
   if (!boardId) return `/pm/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`;
   return `${pmBoardPath(projectId, boardId)}/tasks/${encodeURIComponent(taskId)}`;
 }
@@ -1010,6 +1066,12 @@ async function openTaskFromRoute() {
     state.activeProjectId = route.projectId;
     if (route.boardId) state.activeBoardId = route.boardId;
     state.activeSprintId = "__all";
+    await loadProjectData();
+    return;
+  }
+  if (route.epicId && state.activeEpicId !== route.epicId) {
+    state.activeEpicId = route.epicId;
+    state.activeBoardId = null;
     await loadProjectData();
     return;
   }
@@ -1540,7 +1602,8 @@ async function loadProjectData() {
   els.sprintForm.querySelector("button").disabled = !project;
   els.backlogFilterBtn.disabled = !project;
   els.allSprintTasksBtn.disabled = !project;
-  els.taskForm.querySelector("button").disabled = !project;
+  els.openTaskCreateModalBtn.disabled = !project;
+  els.openTaskCreateModalBtn.textContent = state.activeEpicId ? "Add task" : "Create task";
   if (!project) {
     state.members = [];
     state.labels = [];
@@ -1582,6 +1645,8 @@ async function loadProjectData() {
   state.projectBoardMap.set(project.id, state.boards);
   const route = pmRouteFromLocation();
   if (route.boardId && state.boards.some((board) => board.id === route.boardId)) state.activeBoardId = route.boardId;
+  if (route.epicId && state.epics.some((epic) => epic.id === route.epicId)) state.activeEpicId = route.epicId;
+  if (state.activeEpicId && !state.epics.some((epic) => epic.id === state.activeEpicId)) state.activeEpicId = null;
   if (state.activeBoardId && !state.boards.some((board) => board.id === state.activeBoardId)) state.activeBoardId = null;
   if (state.activeSprintId && !["__all", "__backlog"].includes(state.activeSprintId) && !state.sprints.some((sprint) => sprint.id === state.activeSprintId)) {
     state.activeSprintId = "__backlog";
@@ -1869,14 +1934,17 @@ function renderActiveProject() {
     els.activeProjectMeta.textContent = "Create or select a project.";
     return;
   }
-  els.activeProjectName.textContent = `${project.key} / ${project.name}`;
-  els.activeProjectMeta.textContent = `role: ${project.role || "viewer"} / version ${project.version} / updated ${formatDate(project.updatedAt)}`;
+  const epic = state.epics.find((item) => item.id === state.activeEpicId);
+  els.activeProjectName.textContent = epic ? `EPIC / ${epic.title}` : `${project.key} / ${project.name}`;
+  els.activeProjectMeta.textContent = epic
+    ? `${project.key} / ${project.name} / ${epic.status} / ${epic.priority} / updated ${formatDate(epic.updatedAt)}`
+    : `role: ${project.role || "viewer"} / version ${project.version} / updated ${formatDate(project.updatedAt)}`;
   els.archiveProjectBtn.textContent = project.archivedAt ? "Unarchive" : "Archive";
 }
 
 function renderProjectTitleSheet() {
   const project = activeProject();
-  const showingSheet = Boolean(project && !state.activeBoardId);
+  const showingSheet = Boolean(project && !state.activeBoardId && !state.activeEpicId);
   els.projectTitleSheet.hidden = !showingSheet;
   els.projectKanbanArea.hidden = showingSheet;
   if (!showingSheet) return;
@@ -2065,6 +2133,52 @@ function openProjectSidebar() {
 
 function closeProjectSidebar() {
   els.projectSidebarBackdrop.hidden = true;
+}
+
+async function openEpicSidebar() {
+  els.epicSidebarBackdrop.hidden = false;
+  await loadGlobalEpics();
+}
+
+function closeEpicSidebar() {
+  els.epicSidebarBackdrop.hidden = true;
+}
+
+async function loadGlobalEpics() {
+  const epics = [];
+  for (const project of state.projects) {
+    try {
+      const { epics: projectEpics } = await api(`/api/pm/projects/${project.id}/epics`);
+      for (const epic of projectEpics || []) epics.push({ ...epic, projectName: project.name, projectKey: project.key });
+    } catch (error) {
+      console.debug("Failed to load project epics", { projectId: project.id, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  state.globalEpics = epics;
+  renderGlobalEpics();
+}
+
+function renderGlobalEpics() {
+  if (!els.globalEpicList) return;
+  if (!state.globalEpics.length) {
+    els.globalEpicList.innerHTML = `<div class="drawer-empty">No epics.</div>`;
+    return;
+  }
+  els.globalEpicList.replaceChildren(...state.globalEpics.map((epic) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `project-card ${epic.id === state.activeEpicId ? "active" : ""}`;
+    button.innerHTML = `<div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.projectKey || "")} / ${escapeHtml(epic.status || "")}</div>`;
+    button.addEventListener("click", () => {
+      closeEpicSidebar();
+      state.activeProjectId = epic.projectId;
+      state.activeEpicId = epic.id;
+      state.activeBoardId = null;
+      navigatePm(pmEpicPath(epic.projectId, epic.id));
+      loadProjects().catch((error) => setError(error.message));
+    });
+    return button;
+  }));
 }
 
 function openProjectModal(project = null) {
@@ -2279,7 +2393,7 @@ function wireProjectDrag(button, startIndex) {
 
 function renderMembers() {
   const options = [optionEl("", "unassigned"), ...state.members.map((member) => optionEl(member.id, memberLabel(member)))];
-  els.taskAssignee.replaceChildren(...options.map((option) => option.cloneNode(true)));
+  els.taskCreateAssignee.replaceChildren(...options.map((option) => option.cloneNode(true)));
   els.editTaskAssignee.replaceChildren(...options.map((option) => option.cloneNode(true)));
   if (state.members.length === 0) {
     els.memberList.innerHTML = `<div class="drawer-empty">No project selected.</div>`;
@@ -2370,9 +2484,10 @@ function renderEpics() {
       button.className = `epic-card ${epic.id === state.activeEpicId ? "active" : ""}`;
       button.innerHTML = `<div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.status)} / ${escapeHtml(epic.priority)}</div>`;
       button.addEventListener("click", async () => {
-        state.activeEpicId = state.activeEpicId === epic.id ? null : epic.id;
+        state.activeEpicId = epic.id;
         state.activeBoardId = null;
         state.activeSprintId = "__backlog";
+        navigatePm(pmEpicPath(activeProject()?.id, epic.id));
         await loadProjectData();
       });
       return button;
@@ -2614,6 +2729,14 @@ function renderTasks() {
 
 function renderBoard() {
   if (!state.board) {
+    if (state.activeEpicId) {
+      const epic = state.epics.find((item) => item.id === state.activeEpicId);
+      els.activeBoardLine.textContent = `${epic?.title || "Epic"} / task list`;
+      els.kanbanBoard.replaceChildren();
+      els.kanbanBoard.hidden = true;
+      els.taskList.style.display = "grid";
+      return;
+    }
     els.activeBoardLine.textContent = "No board";
     els.kanbanBoard.replaceChildren();
     els.taskList.replaceChildren();
@@ -2812,10 +2935,11 @@ function closeTask(options = {}) {
   const navigate = options?.navigate !== false;
   const projectId = state.activeTask?.projectId || state.activeProjectId;
   const boardId = state.activeBoardId;
+  const epicId = state.activeEpicId;
   state.activeTask = null;
   els.taskDrawer.classList.remove("open");
   closeActivityDrawer();
-  if (navigate && projectId) navigatePm(pmBoardPath(projectId, boardId));
+  if (navigate && projectId) navigatePm(epicId ? pmEpicPath(projectId, epicId) : pmBoardPath(projectId, boardId));
   window.setTimeout(() => {
     if (!state.activeTask) els.taskDrawer.hidden = true;
   }, 180);
@@ -2835,6 +2959,8 @@ function renderTaskDrawerMode() {
   if (els.taskViewPanel) els.taskViewPanel.hidden = editing;
   if (els.taskEditForm) els.taskEditForm.hidden = !editing;
   if (els.deleteTaskBtn) els.deleteTaskBtn.hidden = !editing;
+  if (els.archiveTaskBtn) els.archiveTaskBtn.hidden = !editing;
+  if (els.addTaskToEpicBtn) els.addTaskToEpicBtn.hidden = editing;
   if (els.editTaskModeBtn) els.editTaskModeBtn.textContent = editing ? "View" : "Edit";
 }
 
@@ -2943,6 +3069,7 @@ async function createBoard(event) {
   state.boards = [...state.boards.filter((board) => board.id !== result.board.id), result.board];
   state.projectBoardMap.set(project.id, state.boards);
   state.activeBoardId = result.board.id;
+  state.activeEpicId = null;
   navigatePm(pmBoardPath(project.id, result.board.id));
   await loadProjectData();
 }
@@ -2957,6 +3084,7 @@ async function openKanbanForActiveProject() {
   } else {
     state.activeBoardId = state.activeBoardId || state.boards[0].id;
   }
+  state.activeEpicId = null;
   navigatePm(pmBoardPath(project.id, state.activeBoardId));
   await loadProjectData();
 }
@@ -3176,18 +3304,15 @@ async function createTask(event) {
   let { task } = await api(`/api/pm/projects/${project.id}/tasks`, {
     method: "POST",
     body: JSON.stringify({
-      title: els.taskTitle.value,
-      priority: els.taskPriority.value,
-      assigneeId: els.taskAssignee.value || undefined,
-      epicId: state.activeEpicId || undefined,
+      title: els.taskCreateTitle.value,
+      priority: els.taskCreatePriority.value,
+      assigneeId: els.taskCreateAssignee.value || undefined,
+      epicId: els.taskCreateEpic.value || undefined,
       sprintId: selectedSprintIdForNewTask(),
-      dueAt: els.taskDueAt.value || undefined
+      dueAt: els.taskCreateDueAt.value || undefined
     })
   });
-  els.taskForm.reset();
-  els.taskPriority.value = "medium";
-  els.taskAssignee.value = "";
-  els.taskDueAt.value = "";
+  closeTaskCreateModal();
   if (state.board) {
     const todoColumn = state.columns.find((column) => column.statusKey === "todo") || state.columns[0];
     if (todoColumn) {
@@ -3206,6 +3331,115 @@ async function createTask(event) {
   }
   await loadProjectData();
   openTask(task);
+}
+
+function openTaskCreateModal() {
+  if (!activeProject()) return;
+  if (state.activeEpicId) {
+    openEpicTaskModal();
+    return;
+  }
+  els.taskCreateForm.reset();
+  els.taskCreatePriority.value = "medium";
+  els.taskCreateAssignee.replaceChildren(option("unassigned", ""), ...state.members.map((member) => option(member.displayName || member.username, member.id)));
+  els.taskCreateEpic.replaceChildren(option("No epic", ""), ...state.epics.map((epic) => option(epic.title, epic.id)));
+  els.taskCreateForm.querySelector("button[type='submit']").disabled = false;
+  els.taskCreateModal.hidden = false;
+  window.setTimeout(() => els.taskCreateTitle.focus(), 0);
+}
+
+function closeTaskCreateModal() {
+  els.taskCreateModal.hidden = true;
+  els.taskCreateForm.reset();
+}
+
+async function openEpicTaskModal(task = null) {
+  state.epicTaskTargetTaskId = task?.id || null;
+  els.epicTaskModal.hidden = false;
+  await loadEpicTaskPool();
+  const selectedEpicId = state.activeEpicId || task?.epicId || "";
+  els.epicTaskEpicFilter.replaceChildren(option("Select epic", ""), ...state.globalEpics.map((epic) => option(`${epic.projectKey || ""} / ${epic.title}`, epic.id)));
+  els.epicTaskEpicFilter.value = selectedEpicId;
+  els.epicTaskProjectFilter.replaceChildren(option("All projects", ""), ...state.projects.map((project) => option(`${project.key} / ${project.name}`, project.id)));
+  els.epicTaskBoardFilter.replaceChildren(option("All boards", ""), ...state.epicTaskBoards.map((board) => option(`${board.projectKey} / ${board.name}`, board.id)));
+  els.epicTaskSearch.value = "";
+  renderEpicTaskList();
+  window.setTimeout(() => els.epicTaskSearch.focus(), 0);
+}
+
+function closeEpicTaskModal() {
+  state.epicTaskTargetTaskId = null;
+  els.epicTaskModal.hidden = true;
+}
+
+async function loadEpicTaskPool() {
+  await loadGlobalEpics();
+  const tasks = [];
+  const boards = [];
+  for (const project of state.projects) {
+    const [{ tasks: projectTasks }, { boards: projectBoards }] = await Promise.all([
+      api(`/api/pm/projects/${project.id}/tasks`),
+      api(`/api/pm/projects/${project.id}/boards`)
+    ]);
+    const boardByTask = new Map();
+    for (const board of projectBoards || []) {
+      boards.push({ ...board, projectId: project.id, projectKey: project.key });
+      try {
+        const snapshot = await api(`/api/pm/boards/${board.id}`);
+        for (const task of snapshot.tasks || []) boardByTask.set(task.id, board.id);
+      } catch (error) {
+        console.debug("Failed to load board tasks for epic picker", { boardId: board.id, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    for (const task of projectTasks || []) {
+      tasks.push({ ...task, projectName: project.name, projectKey: project.key, boardId: boardByTask.get(task.id) || "" });
+    }
+  }
+  state.epicTaskPool = tasks;
+  state.epicTaskBoards = boards;
+}
+
+function renderEpicTaskList() {
+  const epicId = els.epicTaskEpicFilter.value;
+  const search = els.epicTaskSearch.value.trim().toLowerCase();
+  const projectId = els.epicTaskProjectFilter.value;
+  const boardId = els.epicTaskBoardFilter.value;
+  const targetTaskId = state.epicTaskTargetTaskId;
+  const items = state.epicTaskPool.filter((task) => {
+    if (targetTaskId && task.id !== targetTaskId) return false;
+    if (projectId && task.projectId !== projectId) return false;
+    if (boardId && task.boardId !== boardId) return false;
+    if (search && !`${task.id} ${task.title} ${task.description || ""} ${task.projectKey || ""}`.toLowerCase().includes(search)) return false;
+    return true;
+  });
+  if (!items.length) {
+    els.epicTaskList.innerHTML = `<div class="drawer-empty">No matching tasks.</div>`;
+    return;
+  }
+  els.epicTaskList.replaceChildren(...items.map((task) => {
+    const row = document.createElement("div");
+    row.className = "epic-task-row";
+    row.innerHTML = `
+      <div>
+        <div class="card-title">${escapeHtml(task.title)}</div>
+        <div class="card-meta">${escapeHtml(task.projectKey || "")} / ${escapeHtml(task.status || "")} / ${escapeHtml(task.priority || "")}</div>
+      </div>
+      <button type="button" ${epicId ? "" : "disabled"}>${task.epicId === epicId && epicId ? "Linked" : "Add"}</button>
+    `;
+    row.querySelector("button").addEventListener("click", () => attachTaskToEpic(task, epicId).catch((error) => setError(error.message)));
+    return row;
+  }));
+}
+
+async function attachTaskToEpic(task, epicId) {
+  if (!task?.id || !epicId) throw new Error("Select an epic first.");
+  const { task: updated } = await api(`/api/pm/tasks/${task.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ epicId, expectedVersion: task.version })
+  });
+  closeEpicTaskModal();
+  await loadProjectData();
+  if (state.activeTask?.id === updated.id) openTask(updated, state.taskDrawerMode, { navigate: false });
 }
 
 async function saveTask(event) {
@@ -4171,10 +4405,15 @@ els.projectSheetBgMode.addEventListener("change", () => {
 els.projectSheetClearBgImageBtn.addEventListener("click", () => clearProjectSheetBackgroundImage().catch((error) => setError(error.message)));
 els.addProjectSheetWidgetBtn.addEventListener("click", addProjectSheetWidget);
 els.projectSidebarToggle.addEventListener("click", openProjectSidebar);
+els.epicSidebarToggle.addEventListener("click", () => openEpicSidebar().catch((error) => setError(error.message)));
 els.toggleProjectBoardsBtn.addEventListener("click", () => toggleProjectBoardsExpanded().catch((error) => setError(error.message)));
 els.closeProjectSidebarBtn.addEventListener("click", closeProjectSidebar);
+els.closeEpicSidebarBtn.addEventListener("click", closeEpicSidebar);
 els.projectSidebarBackdrop.addEventListener("click", (event) => {
   if (event.target === els.projectSidebarBackdrop) closeProjectSidebar();
+});
+els.epicSidebarBackdrop.addEventListener("click", (event) => {
+  if (event.target === els.epicSidebarBackdrop) closeEpicSidebar();
 });
 els.openCreateProjectBtn.addEventListener("click", () => openProjectModal());
 els.openCreateEpicBtn.addEventListener("click", openEpicModal);
@@ -4197,7 +4436,15 @@ els.memberForm.querySelector("button").addEventListener("click", (event) => addM
 els.labelForm.querySelector("button").addEventListener("click", (event) => createLabel(event).catch((error) => setError(error.message)));
 els.epicForm.addEventListener("submit", (event) => createEpic(event).catch((error) => setError(error.message)));
 els.sprintForm.addEventListener("submit", (event) => createSprint(event).catch((error) => setError(error.message)));
-els.taskForm.addEventListener("submit", (event) => createTask(event).catch((error) => setError(error.message)));
+els.openTaskCreateModalBtn.addEventListener("click", openTaskCreateModal);
+els.taskCreateForm.addEventListener("submit", (event) => createTask(event).catch((error) => setError(error.message)));
+els.cancelTaskCreateModalBtn.addEventListener("click", closeTaskCreateModal);
+els.addTaskToEpicBtn.addEventListener("click", () => openEpicTaskModal(state.activeTask).catch((error) => setError(error.message)));
+els.cancelEpicTaskModalBtn.addEventListener("click", closeEpicTaskModal);
+for (const control of [els.epicTaskEpicFilter, els.epicTaskSearch, els.epicTaskProjectFilter, els.epicTaskBoardFilter]) {
+  control.addEventListener("input", renderEpicTaskList);
+  control.addEventListener("change", renderEpicTaskList);
+}
 els.taskEditForm.addEventListener("submit", (event) => saveTask(event).catch((error) => setError(error.message)));
 els.taskLabelForm.addEventListener("submit", (event) => addTaskLabel(event).catch((error) => setError(error.message)));
 els.dependencyForm.addEventListener("submit", (event) => addDependency(event).catch((error) => setError(error.message)));
@@ -4244,6 +4491,7 @@ els.createBoardBtn.addEventListener("click", openBoardModal);
 els.deleteBoardBtn.addEventListener("click", () => deleteActiveBoard().catch((error) => setError(error.message)));
 els.boardSelect.addEventListener("change", () => {
   state.activeBoardId = els.boardSelect.value || null;
+  state.activeEpicId = null;
   if (state.activeProjectId) navigatePm(pmBoardPath(state.activeProjectId, state.activeBoardId));
   loadProjectData().catch((error) => setError(error.message));
 });

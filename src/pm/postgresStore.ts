@@ -525,7 +525,7 @@ export class PmStore {
   }
 
   async listHomeWidgetData(user: PmUser): Promise<Record<string, unknown>> {
-    const [activity, changes, announcements] = await Promise.all([
+    const [activity, changes, announcements, myEpics] = await Promise.all([
       this.pool.query(
         `
         SELECT t.id, t.project_id, t.title, t.status, t.priority, t.created_at, p.name AS project_name
@@ -553,12 +553,28 @@ export class PmStore {
         `,
         [user.id]
       ),
-      this.pool.query("SELECT * FROM pm.announcements ORDER BY created_at DESC LIMIT 5")
+      this.pool.query("SELECT * FROM pm.announcements ORDER BY created_at DESC LIMIT 5"),
+      this.pool.query(
+        `
+        SELECT e.id, e.project_id, e.title, e.status, e.priority, e.updated_at, p.name AS project_name, COUNT(t.id)::int AS task_count
+        FROM pm.epics e
+        JOIN pm.projects p ON p.id = e.project_id
+        LEFT JOIN pm.project_members m ON m.project_id = e.project_id AND m.user_id = $1
+        LEFT JOIN pm.tasks t ON t.epic_id = e.id AND t.deleted_at IS NULL
+        WHERE e.deleted_at IS NULL
+          AND (e.created_by = $1 OR m.user_id = $1 OR t.creator_id = $1 OR t.assignee_id = $1)
+        GROUP BY e.id, e.project_id, e.title, e.status, e.priority, e.updated_at, p.name
+        ORDER BY e.updated_at DESC
+        LIMIT 20
+        `,
+        [user.id]
+      )
     ]);
     return {
       activity: activity.rows.map((row) => ({ id: String(row.id), projectId: String(row.project_id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), createdAt: asIso(row.created_at) })),
       changes: changes.rows.map((row) => ({ id: String(row.id), projectId: String(row.project_id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), updatedAt: asIso(row.updated_at) })),
-      announcements: announcements.rows.map(mapAnnouncement)
+      announcements: announcements.rows.map(mapAnnouncement),
+      myEpics: myEpics.rows.map((row) => ({ id: String(row.id), projectId: String(row.project_id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), taskCount: Number(row.task_count ?? 0), updatedAt: asIso(row.updated_at) }))
     };
   }
 
@@ -1695,7 +1711,7 @@ function normalizeSearch(value: string | undefined): string | null {
 
 function normalizeWidgetKind(value: unknown): PmHomeWidgetKind {
   const kind = String(value || "notes");
-  return ["activity", "changes", "announcement", "notes", "timer", "api"].includes(kind) ? (kind as PmHomeWidgetKind) : "notes";
+  return ["activity", "changes", "announcement", "notes", "timer", "api", "my_epics"].includes(kind) ? (kind as PmHomeWidgetKind) : "notes";
 }
 
 function normalizeWidgetTitle(value: unknown, kind: PmHomeWidgetKind): string {
@@ -1705,7 +1721,8 @@ function normalizeWidgetTitle(value: unknown, kind: PmHomeWidgetKind): string {
     announcement: "Announcements",
     notes: "Notes",
     timer: "Timer",
-    api: "API widget"
+    api: "API widget",
+    my_epics: "My Epics"
   };
   return String(value || fallback[kind]).trim().slice(0, 120) || fallback[kind];
 }

@@ -226,7 +226,7 @@ export type PmBoardTask = PmTask & {
   boardPosition?: number;
 };
 
-export type PmHomeWidgetKind = "activity" | "changes" | "announcement" | "notes" | "timer" | "api";
+export type PmHomeWidgetKind = "activity" | "changes" | "announcement" | "notes" | "timer" | "api" | "my_epics";
 
 export type PmHomeWidget = {
   id: string;

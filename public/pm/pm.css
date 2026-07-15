@@ -1369,7 +1369,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .tasks-pane {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   padding: 8px;
 }
 
@@ -1379,11 +1379,6 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .tasks-pane > .panel-title h2 {
   display: none;
-}
-
-.task-form {
-  grid-template-columns: minmax(0, 1fr) 120px 150px 130px auto;
-  padding: 5px 0;
 }
 
 .task-card {
@@ -1609,6 +1604,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   top: var(--topbar-height);
   right: 34px;
   bottom: 0;
+  height: calc(100vh - var(--topbar-height));
   width: min(1320px, calc(100vw - 34px));
   z-index: 55;
   border: 1px solid var(--line);
@@ -1909,9 +1905,10 @@ body.no-text-select * {
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);
   gap: 10px;
-  align-items: baseline;
+  align-items: center;
   border-bottom: 1px solid var(--line);
-  padding: 5px 0;
+  min-height: 28px;
+  padding: 2px 0;
 }
 
 .task-info-label {
@@ -1928,6 +1925,41 @@ body.no-text-select * {
 
 .task-info-row.wide {
   align-items: start;
+}
+
+.epic-task-modal {
+  width: min(880px, calc(100vw - 80px));
+  max-height: min(760px, calc(100vh - 80px));
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.epic-task-filters {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 180px 180px;
+  gap: 8px;
+}
+
+.epic-task-list {
+  min-height: 240px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.epic-task-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: var(--field);
+  padding: 7px;
+}
+
+.epic-task-row:hover {
+  border-color: var(--accent);
+  background: var(--panel-2);
 }
 
 .drawer-danger-actions {

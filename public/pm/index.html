@@ -100,6 +100,7 @@
       <section id="pmGrid" class="pm-grid" hidden>
         <nav class="pm-left-rail">
           <button id="projectSidebarToggle" class="rail-button" type="button" title="Projects">&gt;</button>
+          <button id="epicSidebarToggle" class="rail-button" type="button" title="Epics">E</button>
         </nav>
 
         <aside id="projectSidebarBackdrop" class="sidebar-backdrop" hidden>
@@ -118,6 +119,16 @@
             <button id="openCreateProjectBtn" type="button">Create project</button>
             <button id="openCreateEpicBtn" type="button" disabled>Create epic</button>
           </div>
+          </section>
+        </aside>
+
+        <aside id="epicSidebarBackdrop" class="sidebar-backdrop" hidden>
+          <section class="project-pane panel pm-left-drawer">
+            <div class="drawer-mini-header">
+              <h2>Epics</h2>
+              <button id="closeEpicSidebarBtn" type="button">&lt;</button>
+            </div>
+            <div id="globalEpicList" class="list project-sort-list"></div>
           </section>
         </aside>
 
@@ -140,6 +151,7 @@
                   <option value="notes">Notes</option>
                   <option value="timer">Timer</option>
                   <option value="api">API widget</option>
+                  <option value="my_epics">My Epics</option>
                 </select>
                 <button id="addHomeWidgetBtn" class="home-edit-control" type="button">Add widget</button>
                 <button id="saveWidgetTemplateBtn" class="home-edit-control" type="button">Save template</button>
@@ -261,23 +273,9 @@
                   <button id="saveFilterBtn" type="button" disabled>Save filter</button>
                   <button id="updateFilterBtn" type="button" disabled>Update filter</button>
                   <button id="deleteFilterBtn" type="button" disabled>Delete filter</button>
+                  <button id="openTaskCreateModalBtn" type="button" disabled>Create task</button>
                 </div>
               </div>
-              <form id="taskForm" class="task-form">
-                <input id="taskTitle" placeholder="Task title" />
-                <select id="taskPriority">
-                  <option value="medium">medium</option>
-                  <option value="high">high</option>
-                  <option value="urgent">urgent</option>
-                  <option value="low">low</option>
-                  <option value="none">none</option>
-                </select>
-                <select id="taskAssignee">
-                  <option value="">unassigned</option>
-                </select>
-                <input id="taskDueAt" type="date" />
-                <button type="submit" disabled>Create task</button>
-              </form>
               <div class="kanban-toolbar">
                 <span id="activeBoardLine">No board</span>
                 <select id="boardSelect">
@@ -393,6 +391,53 @@
         </form>
       </section>
 
+      <section id="taskCreateModal" class="pm-modal-backdrop" hidden>
+        <form id="taskCreateForm" class="pm-modal project-modal">
+          <h2>Create task</h2>
+          <input id="taskCreateTitle" maxlength="180" placeholder="Task title" />
+          <select id="taskCreatePriority">
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+            <option value="urgent">urgent</option>
+            <option value="low">low</option>
+            <option value="none">none</option>
+          </select>
+          <select id="taskCreateAssignee">
+            <option value="">unassigned</option>
+          </select>
+          <input id="taskCreateDueAt" type="date" />
+          <select id="taskCreateEpic">
+            <option value="">No epic</option>
+          </select>
+          <div class="pm-modal-actions">
+            <button id="cancelTaskCreateModalBtn" type="button">Cancel</button>
+            <button type="submit" disabled>Create task</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="epicTaskModal" class="pm-modal-backdrop" hidden>
+        <section class="pm-modal epic-task-modal">
+          <h2>Add task to Epic</h2>
+          <div class="epic-task-filters">
+            <select id="epicTaskEpicFilter">
+              <option value="">Select epic</option>
+            </select>
+            <input id="epicTaskSearch" maxlength="120" placeholder="Search tasks" />
+            <select id="epicTaskProjectFilter">
+              <option value="">All projects</option>
+            </select>
+            <select id="epicTaskBoardFilter">
+              <option value="">All boards</option>
+            </select>
+          </div>
+          <div id="epicTaskList" class="epic-task-list"></div>
+          <div class="pm-modal-actions">
+            <button id="cancelEpicTaskModalBtn" type="button">Cancel</button>
+          </div>
+        </section>
+      </section>
+
       <aside id="taskDrawer" class="task-drawer" hidden>
         <header>
           <div>
@@ -401,6 +446,7 @@
           </div>
           <div class="drawer-header-actions">
             <button id="activityDrawerBtn" type="button">Activity</button>
+            <button id="addTaskToEpicBtn" type="button">Add to Epic</button>
             <button id="archiveTaskBtn" type="button">Archive task</button>
             <button id="editTaskModeBtn" type="button">Edit</button>
             <button id="closeDrawerBtn" type="button">x</button>

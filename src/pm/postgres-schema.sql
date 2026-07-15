@@ -244,7 +244,7 @@ CREATE TABLE IF NOT EXISTS pm.home_widgets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES core.users(id) ON DELETE CASCADE,
   template_id UUID,
-  kind TEXT NOT NULL CHECK (kind IN ('activity', 'changes', 'announcement', 'notes', 'timer', 'api')),
+  kind TEXT NOT NULL CHECK (kind IN ('activity', 'changes', 'announcement', 'notes', 'timer', 'api', 'my_epics')),
   title TEXT NOT NULL,
   x INTEGER NOT NULL DEFAULT 1,
   y INTEGER NOT NULL DEFAULT 1,
@@ -264,7 +264,7 @@ CREATE TABLE IF NOT EXISTS pm.home_widgets (
 CREATE TABLE IF NOT EXISTS pm.widget_templates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_id UUID REFERENCES core.users(id) ON DELETE SET NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('activity', 'changes', 'announcement', 'notes', 'timer', 'api')),
+  kind TEXT NOT NULL CHECK (kind IN ('activity', 'changes', 'announcement', 'notes', 'timer', 'api', 'my_epics')),
   name TEXT NOT NULL,
   visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN ('private', 'public')),
   config JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -311,6 +311,11 @@ CREATE INDEX IF NOT EXISTS idx_pm_webhook_deliveries_due ON pm.webhook_deliverie
 CREATE INDEX IF NOT EXISTS idx_pm_webhook_deliveries_status ON pm.webhook_deliveries(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pm_home_widgets_user ON pm.home_widgets(user_id, y, x);
 CREATE INDEX IF NOT EXISTS idx_pm_widget_templates_visible ON pm.widget_templates(visibility, kind, updated_at DESC);
+
+ALTER TABLE pm.home_widgets DROP CONSTRAINT IF EXISTS home_widgets_kind_check;
+ALTER TABLE pm.home_widgets ADD CONSTRAINT home_widgets_kind_check CHECK (kind IN ('activity', 'changes', 'announcement', 'notes', 'timer', 'api', 'my_epics'));
+ALTER TABLE pm.widget_templates DROP CONSTRAINT IF EXISTS widget_templates_kind_check;
+ALTER TABLE pm.widget_templates ADD CONSTRAINT widget_templates_kind_check CHECK (kind IN ('activity', 'changes', 'announcement', 'notes', 'timer', 'api', 'my_epics'));
 CREATE INDEX IF NOT EXISTS idx_pm_announcements_created ON pm.announcements(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_project_created ON audit.events(project_id, created_at DESC);
 
