@@ -819,6 +819,11 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   -webkit-user-select: none;
 }
 
+.epic-card {
+  position: relative;
+  padding-right: 34px;
+}
+
 .project-card * {
   user-select: none;
   -webkit-user-select: none;

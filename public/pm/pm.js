@@ -2224,8 +2224,8 @@ function renderGlobalEpics() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `project-card ${epic.id === state.activeEpicId ? "active" : ""}`;
-    button.innerHTML = `<div><div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.projectKey || "")} / ${escapeHtml(epic.key || "")} / ${escapeHtml(epic.status || "")}</div></div><button class="project-settings-btn" type="button" title="Edit epic">⚙</button>`;
-    button.querySelector(".project-settings-btn").addEventListener("click", (event) => {
+    button.innerHTML = `<div><div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.projectKey || "")} / ${escapeHtml(epic.key || "")} / ${escapeHtml(epic.status || "")}</div></div><button class="project-edit-button" type="button" title="Edit epic">⚙</button>`;
+    button.querySelector(".project-edit-button").addEventListener("click", (event) => {
       event.stopPropagation();
       state.activeProjectId = epic.projectId;
       openEpicModal(epic);
@@ -2557,9 +2557,9 @@ function renderEpics() {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `epic-card ${epic.id === state.activeEpicId ? "active" : ""}`;
-      button.innerHTML = `<div><div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.key || "")} / ${escapeHtml(epic.status)} / ${escapeHtml(epic.priority)}</div></div><span class="project-settings-btn" data-action="edit">⚙</span>`;
+      button.innerHTML = `<div><div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.key || "")} / ${escapeHtml(epic.status)} / ${escapeHtml(epic.priority)}</div></div><button class="project-edit-button" type="button" data-action="edit" title="Edit epic">⚙</button>`;
       button.addEventListener("click", async (event) => {
-        if (event.target?.dataset?.action === "edit") {
+        if (event.target?.closest?.("[data-action='edit']")) {
           openEpicModal(epic);
           return;
         }
