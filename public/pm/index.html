@@ -106,29 +106,23 @@
         <aside id="projectSidebarBackdrop" class="sidebar-backdrop" hidden>
           <section class="project-pane panel pm-left-drawer">
             <div class="drawer-mini-header">
-              <h2>Projects</h2>
-              <label class="inline-check"><input id="includeArchived" type="checkbox" /> archived</label>
+              <h2 id="leftSidebarTitle">Projects</h2>
+              <div class="sidebar-mode-switch">
+                <button id="sidebarProjectsModeBtn" type="button">Projects</button>
+                <button id="sidebarEpicsModeBtn" type="button">Epics</button>
+              </div>
               <button id="closeProjectSidebarBtn" type="button">&lt;</button>
             </div>
           <div class="project-sidebar-tools">
             <button id="toggleProjectBoardsBtn" type="button">Expand</button>
           </div>
           <div id="projectList" class="list project-sort-list"></div>
-          <div id="epicList" class="list compact"></div>
+          <div id="globalEpicList" class="list project-sort-list" hidden></div>
           <div class="project-sidebar-actions epic-bottom-form">
             <button id="openCreateProjectBtn" type="button">Create project</button>
             <button id="openCreateEpicBtn" type="button" disabled>Create epic</button>
+            <label class="inline-check archived-bottom"><input id="includeArchived" type="checkbox" /> archived</label>
           </div>
-          </section>
-        </aside>
-
-        <aside id="epicSidebarBackdrop" class="sidebar-backdrop" hidden>
-          <section class="project-pane panel pm-left-drawer">
-            <div class="drawer-mini-header">
-              <h2>Epics</h2>
-              <button id="closeEpicSidebarBtn" type="button">&lt;</button>
-            </div>
-            <div id="globalEpicList" class="list project-sort-list"></div>
           </section>
         </aside>
 

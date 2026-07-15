@@ -664,6 +664,23 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   font-size: 12px;
 }
 
+.sidebar-mode-switch {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.sidebar-mode-switch button {
+  min-height: 24px;
+  padding: 2px 7px;
+}
+
+.sidebar-mode-switch button.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--field) 78%, var(--accent) 22%);
+  color: var(--text);
+}
+
 .project-pane {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto auto;
@@ -686,10 +703,14 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+  align-items: center;
 }
 
-.project-pane #epicList {
-  max-height: 92px;
+.archived-bottom {
+  justify-content: center;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  background: var(--field);
 }
 
 .epic-bottom-form {

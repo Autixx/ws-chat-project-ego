@@ -22,6 +22,7 @@ const state = {
   board: null,
   projectBoardMap: new Map(),
   projectBoardsExpanded: false,
+  leftSidebarMode: "projects",
   boardViewMode: "kanban",
   boardListSort: "created_desc",
   columns: [],
@@ -114,9 +115,10 @@ const els = {
   projectSidebarToggle: $("projectSidebarToggle"),
   epicSidebarToggle: $("epicSidebarToggle"),
   projectSidebarBackdrop: $("projectSidebarBackdrop"),
-  epicSidebarBackdrop: $("epicSidebarBackdrop"),
   closeProjectSidebarBtn: $("closeProjectSidebarBtn"),
-  closeEpicSidebarBtn: $("closeEpicSidebarBtn"),
+  leftSidebarTitle: $("leftSidebarTitle"),
+  sidebarProjectsModeBtn: $("sidebarProjectsModeBtn"),
+  sidebarEpicsModeBtn: $("sidebarEpicsModeBtn"),
   toggleProjectBoardsBtn: $("toggleProjectBoardsBtn"),
   openCreateProjectBtn: $("openCreateProjectBtn"),
   projectModal: $("projectModal"),
@@ -2178,9 +2180,24 @@ function renderProjectSheetResizeHandle(widget) {
   return handle;
 }
 
-function openProjectSidebar() {
+function setLeftSidebarMode(mode) {
+  state.leftSidebarMode = mode === "epics" ? "epics" : "projects";
+  els.leftSidebarTitle.textContent = state.leftSidebarMode === "epics" ? "Epics" : "Projects";
+  els.sidebarProjectsModeBtn.classList.toggle("active", state.leftSidebarMode === "projects");
+  els.sidebarEpicsModeBtn.classList.toggle("active", state.leftSidebarMode === "epics");
+  els.projectList.hidden = state.leftSidebarMode !== "projects";
+  els.globalEpicList.hidden = state.leftSidebarMode !== "epics";
+  els.toggleProjectBoardsBtn.hidden = state.leftSidebarMode !== "projects";
+  els.openCreateProjectBtn.hidden = state.leftSidebarMode !== "projects";
+  els.includeArchived.closest("label").hidden = state.leftSidebarMode !== "projects";
+  els.openCreateEpicBtn.hidden = state.leftSidebarMode !== "epics";
+  if (state.leftSidebarMode === "epics") loadGlobalEpics().catch((error) => setError(error.message));
+}
+
+function openProjectSidebar(mode = "projects") {
+  setLeftSidebarMode(mode);
   els.projectSidebarBackdrop.hidden = false;
-  if (state.projectBoardsExpanded) {
+  if (state.leftSidebarMode === "projects" && state.projectBoardsExpanded) {
     loadProjectSidebarBoards()
       .then(renderProjects)
       .catch((error) => setError(error.message));
@@ -2192,12 +2209,11 @@ function closeProjectSidebar() {
 }
 
 async function openEpicSidebar() {
-  els.epicSidebarBackdrop.hidden = false;
-  await loadGlobalEpics();
+  openProjectSidebar("epics");
 }
 
 function closeEpicSidebar() {
-  els.epicSidebarBackdrop.hidden = true;
+  closeProjectSidebar();
 }
 
 async function loadGlobalEpics() {
@@ -2231,7 +2247,7 @@ function renderGlobalEpics() {
       openEpicModal(epic);
     });
     button.addEventListener("click", () => {
-      closeEpicSidebar();
+      closeProjectSidebar();
       state.activeProjectId = epic.projectId;
       state.activeEpicId = epic.id;
       state.activeBoardId = null;
@@ -2552,6 +2568,7 @@ function renderSavedFilters() {
 }
 
 function renderEpics() {
+  if (!els.epicList) return;
   els.epicList.replaceChildren(
     ...state.epics.map((epic) => {
       const button = document.createElement("button");
@@ -2823,7 +2840,7 @@ function renderBoard() {
     els.taskList.style.display = "none";
     return;
   }
-  els.activeBoardLine.textContent = `${state.columns.length} columns`;
+  els.activeBoardLine.textContent = "";
   state.boardViewMode = els.boardViewMode.value || "kanban";
   state.boardListSort = els.boardListSort.value || "created_desc";
   els.kanbanBoard.hidden = state.boardViewMode === "list";
@@ -4187,9 +4204,13 @@ async function createComment(event) {
 
 function setCommentMode(mode) {
   state.commentMode = mode === "advanced" ? "advanced" : "fast";
-  els.commentToolbar.hidden = state.commentMode !== "advanced";
+  const advanced = state.commentMode === "advanced";
+  els.commentToolbar.hidden = !advanced;
+  els.commentToolbar.classList.toggle("visible", advanced);
   els.commentFastModeBtn.classList.toggle("active", state.commentMode === "fast");
   els.commentAdvancedModeBtn.classList.toggle("active", state.commentMode === "advanced");
+  els.commentFastModeBtn.setAttribute("aria-pressed", state.commentMode === "fast" ? "true" : "false");
+  els.commentAdvancedModeBtn.setAttribute("aria-pressed", advanced ? "true" : "false");
   try {
     localStorage.setItem(PM_COMMENT_MODE_KEY, state.commentMode);
   } catch {
@@ -4506,19 +4527,17 @@ els.projectSheetBgMode.addEventListener("change", () => {
 });
 els.projectSheetClearBgImageBtn.addEventListener("click", () => clearProjectSheetBackgroundImage().catch((error) => setError(error.message)));
 els.addProjectSheetWidgetBtn.addEventListener("click", addProjectSheetWidget);
-els.projectSidebarToggle.addEventListener("click", openProjectSidebar);
+els.projectSidebarToggle.addEventListener("click", () => openProjectSidebar("projects"));
 els.epicSidebarToggle.addEventListener("click", () => openEpicSidebar().catch((error) => setError(error.message)));
 els.toggleProjectBoardsBtn.addEventListener("click", () => toggleProjectBoardsExpanded().catch((error) => setError(error.message)));
 els.closeProjectSidebarBtn.addEventListener("click", closeProjectSidebar);
-els.closeEpicSidebarBtn.addEventListener("click", closeEpicSidebar);
+els.sidebarProjectsModeBtn.addEventListener("click", () => setLeftSidebarMode("projects"));
+els.sidebarEpicsModeBtn.addEventListener("click", () => setLeftSidebarMode("epics"));
 els.projectSidebarBackdrop.addEventListener("click", (event) => {
   if (event.target === els.projectSidebarBackdrop) closeProjectSidebar();
 });
 els.projectInfoModal.addEventListener("click", (event) => {
   if (event.target === els.projectInfoModal) closeProjectInfoModal();
-});
-els.epicSidebarBackdrop.addEventListener("click", (event) => {
-  if (event.target === els.epicSidebarBackdrop) closeEpicSidebar();
 });
 els.openCreateProjectBtn.addEventListener("click", () => openProjectModal());
 els.openCreateEpicBtn.addEventListener("click", openEpicModal);
