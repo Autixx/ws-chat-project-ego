@@ -25,6 +25,7 @@ export type PmProject = {
 export type PmEpic = {
   id: string;
   projectId: string;
+  key: string;
   title: string;
   description: string;
   status: string;
@@ -287,11 +288,16 @@ export type UpdateProjectInput = Partial<Pick<CreateProjectInput, "key" | "name"
 
 export type CreateEpicInput = {
   projectId: string;
+  key?: string;
   title: string;
   description?: string;
   status?: string;
   priority?: string;
   position?: number;
+};
+
+export type UpdateEpicInput = Partial<Omit<CreateEpicInput, "projectId">> & {
+  expectedVersion?: number;
 };
 
 export type CreateTaskInput = {

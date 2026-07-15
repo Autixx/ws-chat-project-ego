@@ -170,9 +170,22 @@
 
           <section id="pmKanbanView" class="kanban-view">
           <section class="project-header panel">
-            <div>
+            <button id="projectInfoBtn" class="square-button" type="button" disabled title="Project info">i</button>
+            <div class="project-heading">
               <h2 id="activeProjectName">No project selected</h2>
               <p id="activeProjectMeta">Create or select a project.</p>
+            </div>
+            <div class="header-view-controls">
+              <select id="boardViewMode">
+                <option value="kanban">Kanban</option>
+                <option value="list">List</option>
+              </select>
+              <select id="boardListSort">
+                <option value="created_desc">Created newest</option>
+                <option value="created_asc">Created oldest</option>
+                <option value="updated_desc">Updated newest</option>
+                <option value="updated_asc">Updated oldest</option>
+              </select>
             </div>
             <div class="header-actions">
               <button id="refreshBtn" type="button">Refresh</button>
@@ -188,7 +201,7 @@
               </div>
               <div class="home-controls">
                 <button id="projectSheetEditToggle" type="button">Edit</button>
-                <button id="projectSheetCreateBoardBtn" type="button">Create board</button>
+                <button id="projectSheetCreateBoardBtn" type="button">Boards</button>
                 <label class="project-sheet-edit-control">Grid step
                   <input id="projectSheetGridStep" type="number" min="12" max="160" step="4" value="56" />
                 </label>
@@ -278,22 +291,6 @@
               </div>
               <div class="kanban-toolbar">
                 <span id="activeBoardLine">No board</span>
-                <select id="boardSelect">
-                  <option value="">Boards</option>
-                </select>
-                <button id="createBoardBtn" type="button" disabled>Create board</button>
-                <button id="deleteBoardBtn" type="button" disabled>Delete board</button>
-                <button id="ensureBoardBtn" type="button" disabled>Open Kanban</button>
-                <select id="boardViewMode">
-                  <option value="kanban">Kanban</option>
-                  <option value="list">List</option>
-                </select>
-                <select id="boardListSort">
-                  <option value="created_desc">Created newest</option>
-                  <option value="created_asc">Created oldest</option>
-                  <option value="updated_desc">Updated newest</option>
-                  <option value="updated_asc">Updated oldest</option>
-                </select>
               </div>
               <div id="kanbanBoard" class="kanban-board"></div>
               <div id="taskList" class="task-list"></div>
@@ -368,27 +365,47 @@
 
       <section id="boardModal" class="pm-modal-backdrop" hidden>
         <form id="boardForm" class="pm-modal project-modal">
-          <h2>Create board</h2>
+          <h2>Boards</h2>
           <input id="boardName" maxlength="120" placeholder="Board name" />
           <select id="boardEpic">
             <option value="">Project board</option>
           </select>
+          <button type="submit">Create board</button>
+          <div class="board-delete-row">
+            <select id="boardDeleteSelect">
+              <option value="">Select board to delete</option>
+            </select>
+            <button id="deleteBoardBtn" type="button" disabled>Delete board</button>
+          </div>
           <div class="pm-modal-actions">
             <button id="cancelBoardModalBtn" type="button">Cancel</button>
-            <button type="submit">Create</button>
           </div>
         </form>
       </section>
 
       <section id="epicModal" class="pm-modal-backdrop" hidden>
         <form id="epicForm" class="pm-modal project-modal">
-          <h2>Create epic</h2>
+          <h2 id="epicModalTitle">Create epic</h2>
+          <input id="epicKey" maxlength="32" placeholder="Epic key" />
           <input id="epicTitle" maxlength="160" placeholder="Epic title" />
+          <div class="drawer-danger-actions">
+            <button id="deleteEpicBtn" type="button" hidden>Delete epic</button>
+          </div>
           <div class="pm-modal-actions">
             <button id="cancelEpicModalBtn" type="button">Cancel</button>
-            <button type="submit" disabled>Create</button>
+            <button type="submit" disabled>Apply</button>
           </div>
         </form>
+      </section>
+
+      <section id="projectInfoModal" class="pm-modal-backdrop" hidden>
+        <section class="pm-modal project-modal">
+          <div class="panel-title">
+            <h2>Entity info</h2>
+            <button id="closeProjectInfoBtn" type="button">x</button>
+          </div>
+          <div id="projectInfoList" class="task-view-panel"></div>
+        </section>
       </section>
 
       <section id="taskCreateModal" class="pm-modal-backdrop" hidden>

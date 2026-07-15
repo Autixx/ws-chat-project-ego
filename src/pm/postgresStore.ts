@@ -40,6 +40,7 @@ import type {
   PmWebhookDeliveryRecord,
   PmWebhookDeliverySummary,
   UpdateProjectInput,
+  UpdateEpicInput,
   UpdateCommentInput,
   UpdateLabelInput,
   UpdateSavedFilterInput,
@@ -644,18 +645,68 @@ export class PmStore {
     return result.rows.map(mapEpic);
   }
 
+  async loadEpic(epicId: string): Promise<PmEpic> {
+    const result = await this.pool.query("SELECT * FROM pm.epics WHERE id = $1 AND deleted_at IS NULL", [epicId]);
+    if (!result.rows[0]) throw new Error("Epic not found.");
+    return mapEpic(result.rows[0]);
+  }
+
   async createEpic(user: PmUser, input: CreateEpicInput): Promise<PmEpic> {
+    const key = normalizeEpicKey(input.key || input.title);
     const result = await this.pool.query(
       `
-      INSERT INTO pm.epics (project_id, title, description, status, priority, position, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO pm.epics (project_id, key, title, description, status, priority, position, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
       `,
-      [input.projectId, input.title.trim(), input.description?.trim() ?? "", input.status ?? "open", input.priority ?? "medium", input.position ?? 1000, user.id]
+      [input.projectId, key, input.title.trim(), input.description?.trim() ?? "", input.status ?? "open", input.priority ?? "medium", input.position ?? 1000, user.id]
     );
     const epic = mapEpic(result.rows[0]);
     await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: input.projectId, eventType: "epic.created", payload: { epicId: epic.id } });
     return epic;
+  }
+
+  async updateEpic(user: PmUser, epicId: string, input: UpdateEpicInput): Promise<PmEpic> {
+    const result = await this.pool.query(
+      `
+      UPDATE pm.epics
+      SET
+        key = COALESCE($2, key),
+        title = COALESCE($3, title),
+        description = COALESCE($4, description),
+        status = COALESCE($5, status),
+        priority = COALESCE($6, priority),
+        position = COALESCE($7, position),
+        version = version + 1,
+        updated_at = now()
+      WHERE id = $1
+        AND deleted_at IS NULL
+        AND ($8::bigint IS NULL OR version = $8::bigint)
+      RETURNING *
+      `,
+      [
+        epicId,
+        input.key ? normalizeEpicKey(input.key) : null,
+        input.title?.trim() ?? null,
+        input.description?.trim() ?? null,
+        input.status ?? null,
+        input.priority ?? null,
+        input.position ?? null,
+        input.expectedVersion ?? null
+      ]
+    );
+    if (!result.rows[0]) throw new PmConflictError("Epic was updated by another client or does not exist.");
+    const epic = mapEpic(result.rows[0]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: epic.projectId, eventType: "epic.updated", payload: { epicId: epic.id } });
+    return epic;
+  }
+
+  async deleteEpic(user: PmUser, epicId: string): Promise<void> {
+    const current = await this.pool.query("SELECT * FROM pm.epics WHERE id = $1 AND deleted_at IS NULL", [epicId]);
+    if (!current.rows[0]) throw new Error("Epic not found.");
+    const epic = mapEpic(current.rows[0]);
+    await this.pool.query("DELETE FROM pm.epics WHERE id = $1", [epicId]);
+    await this.insertAudit(this.pool, { actorType: "user", actorId: user.id, projectId: epic.projectId, eventType: "epic.deleted", payload: { epicId } });
   }
 
   async listSprints(projectId: string, filters: { epicId?: string; includeCompleted?: boolean } = {}): Promise<PmSprint[]> {
@@ -1709,6 +1760,16 @@ function normalizeSearch(value: string | undefined): string | null {
   return search || null;
 }
 
+function normalizeEpicKey(value: string): string {
+  const key = value
+    .trim()
+    .toUpperCase()
+    .replaceAll(/[^A-Z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")
+    .slice(0, 32);
+  return key || "EPIC";
+}
+
 function normalizeWidgetKind(value: unknown): PmHomeWidgetKind {
   const kind = String(value || "notes");
   return ["activity", "changes", "announcement", "notes", "timer", "api", "my_epics"].includes(kind) ? (kind as PmHomeWidgetKind) : "notes";
@@ -1763,6 +1824,7 @@ function mapEpic(row: Row): PmEpic {
   return {
     id: String(row.id),
     projectId: String(row.project_id),
+    key: String(row.key || ""),
     title: String(row.title),
     description: String(row.description ?? ""),
     status: String(row.status),

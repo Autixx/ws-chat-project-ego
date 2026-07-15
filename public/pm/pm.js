@@ -30,6 +30,7 @@ const state = {
   activeEpicId: null,
   activeBoardId: null,
   editingProjectId: null,
+  editingEpicId: null,
   activeSprintId: "__backlog",
   activeTask: null,
   taskDrawerMode: "view",
@@ -121,12 +122,11 @@ const els = {
   projectModal: $("projectModal"),
   projectModalTitle: $("projectModalTitle"),
   cancelProjectModalBtn: $("cancelProjectModalBtn"),
-  boardSelect: $("boardSelect"),
   boardModal: $("boardModal"),
   boardForm: $("boardForm"),
   boardName: $("boardName"),
   boardEpic: $("boardEpic"),
-  createBoardBtn: $("createBoardBtn"),
+  boardDeleteSelect: $("boardDeleteSelect"),
   deleteBoardBtn: $("deleteBoardBtn"),
   boardViewMode: $("boardViewMode"),
   boardListSort: $("boardListSort"),
@@ -169,6 +169,10 @@ const els = {
   globalEpicList: $("globalEpicList"),
   activeProjectName: $("activeProjectName"),
   activeProjectMeta: $("activeProjectMeta"),
+  projectInfoBtn: $("projectInfoBtn"),
+  projectInfoModal: $("projectInfoModal"),
+  closeProjectInfoBtn: $("closeProjectInfoBtn"),
+  projectInfoList: $("projectInfoList"),
   projectTitleSheet: $("projectTitleSheet"),
   projectTitleSheetMeta: $("projectTitleSheetMeta"),
   projectSheetEditToggle: $("projectSheetEditToggle"),
@@ -187,9 +191,12 @@ const els = {
   archiveProjectBtn: $("archiveProjectBtn"),
   epicForm: $("epicForm"),
   epicModal: $("epicModal"),
+  epicModalTitle: $("epicModalTitle"),
+  epicKey: $("epicKey"),
   openCreateEpicBtn: $("openCreateEpicBtn"),
   cancelEpicModalBtn: $("cancelEpicModalBtn"),
   epicTitle: $("epicTitle"),
+  deleteEpicBtn: $("deleteEpicBtn"),
   epicList: $("epicList"),
   sprintForm: $("sprintForm"),
   sprintName: $("sprintName"),
@@ -215,7 +222,6 @@ const els = {
   cancelEpicTaskModalBtn: $("cancelEpicTaskModalBtn"),
   taskList: $("taskList"),
   activeBoardLine: $("activeBoardLine"),
-  ensureBoardBtn: $("ensureBoardBtn"),
   kanbanBoard: $("kanbanBoard"),
   statusFilter: $("statusFilter"),
   priorityFilter: $("priorityFilter"),
@@ -503,6 +509,9 @@ function pmRouteFromLocation() {
   const parts = window.location.pathname.split("/").filter(Boolean);
   const pmIndex = parts[0] === "pm" ? 0 : -1;
   const route = pmIndex >= 0 ? parts.slice(1) : parts;
+  if (pmIndex < 0 && route.length > 0 && route[0] !== "projects" && route[0] !== "home") {
+    return { view: "kanban", projectKey: route[0] || null, boardId: route[1] || null, taskId: route[2] || null };
+  }
   if (route[0] === "home" || route.length === 0) return { view: "home" };
   if (route[0] !== "projects") return legacyHashRoute() || { view: "home" };
   const projectId = route[1] || null;
@@ -1035,11 +1044,12 @@ function pmHomePath() {
 }
 
 function pmProjectPath(projectId) {
-  return projectId ? `/pm/projects/${encodeURIComponent(projectId)}` : "/pm/projects";
+  const project = projectById(projectId);
+  return project ? `/${encodeURIComponent(project.key)}` : "/pm/projects";
 }
 
 function pmBoardPath(projectId, boardId) {
-  return projectId && boardId ? `/pm/projects/${encodeURIComponent(projectId)}/boards/${encodeURIComponent(boardId)}` : pmProjectPath(projectId);
+  return projectId && boardId ? `${pmProjectPath(projectId)}/${encodeURIComponent(boardId)}` : pmProjectPath(projectId);
 }
 
 function pmEpicPath(projectId, epicId) {
@@ -1050,7 +1060,7 @@ function pmTaskPath(projectId, boardId, taskId) {
   if (!projectId || !taskId) return pmProjectPath(projectId);
   if (!boardId && state.activeEpicId) return `${pmEpicPath(projectId, state.activeEpicId)}/tasks/${encodeURIComponent(taskId)}`;
   if (!boardId) return `/pm/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`;
-  return `${pmBoardPath(projectId, boardId)}/tasks/${encodeURIComponent(taskId)}`;
+  return `${pmBoardPath(projectId, boardId)}/${encodeURIComponent(taskId)}`;
 }
 
 function pmHashParams() {
@@ -1577,6 +1587,10 @@ async function loadProjects() {
   state.projectBoardsExpanded = loadProjectBoardsExpanded();
   state.projects = applyProjectOrder(projects);
   const route = pmRouteFromLocation();
+  if (route.projectKey) {
+    const matched = projects.find((project) => project.key.toLowerCase() === String(route.projectKey).toLowerCase());
+    if (matched) state.activeProjectId = matched.id;
+  }
   if (route.projectId && projects.some((project) => project.id === route.projectId)) state.activeProjectId = route.projectId;
   if (!state.activeProjectId && projects[0]) state.activeProjectId = projects[0].id;
   if (state.activeProjectId && !projects.some((project) => project.id === state.activeProjectId)) {
@@ -1590,11 +1604,8 @@ async function loadProjects() {
 async function loadProjectData() {
   const project = activeProject();
   els.archiveProjectBtn.disabled = !project;
-  els.ensureBoardBtn.disabled = !project;
   els.memberForm.querySelector("button").disabled = !project;
   els.labelForm.querySelector("button").disabled = !project;
-  els.createBoardBtn.disabled = !project;
-  els.deleteBoardBtn.disabled = !project || !state.activeBoardId;
   els.saveFilterBtn.disabled = !project;
   els.updateFilterBtn.disabled = !project || !els.savedFilterSelect.value;
   els.deleteFilterBtn.disabled = !project || !els.savedFilterSelect.value;
@@ -1769,10 +1780,6 @@ async function loadBoardSnapshot() {
 }
 
 function renderBoardSelect() {
-  els.boardSelect.replaceChildren(
-    ...state.boards.map((board) => option(board.name, board.id))
-  );
-  els.boardSelect.value = state.activeBoardId || "";
   els.boardEpic.replaceChildren(
     option("Project board", ""),
     ...state.epics.map((epic) => option(epic.title, epic.id))
@@ -1788,6 +1795,10 @@ function option(label, value) {
 
 function activeProject() {
   return state.projects.find((project) => project.id === state.activeProjectId) || null;
+}
+
+function projectById(projectId) {
+  return state.projects.find((project) => project.id === projectId) || null;
 }
 
 function taskSearchQuery() {
@@ -1929,17 +1940,62 @@ function renderProjects() {
 
 function renderActiveProject() {
   const project = activeProject();
+  els.projectInfoBtn.disabled = !project;
   if (!project) {
     els.activeProjectName.textContent = "No project selected";
     els.activeProjectMeta.textContent = "Create or select a project.";
     return;
   }
   const epic = state.epics.find((item) => item.id === state.activeEpicId);
-  els.activeProjectName.textContent = epic ? `EPIC / ${epic.title}` : `${project.key} / ${project.name}`;
-  els.activeProjectMeta.textContent = epic
-    ? `${project.key} / ${project.name} / ${epic.status} / ${epic.priority} / updated ${formatDate(epic.updatedAt)}`
-    : `role: ${project.role || "viewer"} / version ${project.version} / updated ${formatDate(project.updatedAt)}`;
+  const board = state.boards.find((item) => item.id === state.activeBoardId);
+  els.activeProjectName.textContent = epic
+    ? `Epic / ${epic.title}`
+    : board
+      ? `${project.name} / ${truncateText(board.name, 16)}`
+      : project.name;
+  els.activeProjectMeta.textContent = "";
   els.archiveProjectBtn.textContent = project.archivedAt ? "Unarchive" : "Archive";
+  els.archiveProjectBtn.hidden = Boolean(epic);
+  els.boardViewMode.hidden = Boolean(epic);
+  els.boardListSort.hidden = Boolean(epic) || els.boardViewMode.value !== "list";
+}
+
+function openProjectInfoModal() {
+  const project = activeProject();
+  if (!project) return;
+  const epic = state.epics.find((item) => item.id === state.activeEpicId);
+  const board = state.boards.find((item) => item.id === state.activeBoardId);
+  const rows = epic
+    ? [
+        ["Type", "Epic"],
+        ["Title", epic.title],
+        ["Key", epic.key || "-"],
+        ["ID", epic.id],
+        ["Project", `${project.key} / ${project.name}`],
+        ["Status", epic.status],
+        ["Priority", epic.priority],
+        ["Version", epic.version],
+        ["Created by", epic.createdBy || "-"],
+        ["Updated", formatDate(epic.updatedAt)]
+      ]
+    : [
+        ["Type", board ? "Board" : "Project"],
+        ["Project", project.name],
+        ["Key", project.key],
+        ["Project ID", project.id],
+        ["Board", board?.name || "-"],
+        ["Board ID", board?.id || "-"],
+        ["Role", project.role || "viewer"],
+        ["Version", project.version],
+        ["Created by", project.createdBy || "-"],
+        ["Updated", formatDate(project.updatedAt)]
+      ];
+  els.projectInfoList.replaceChildren(...rows.map(([label, value]) => taskInfoRow(label, value)));
+  els.projectInfoModal.hidden = false;
+}
+
+function closeProjectInfoModal() {
+  els.projectInfoModal.hidden = true;
 }
 
 function renderProjectTitleSheet() {
@@ -2168,7 +2224,12 @@ function renderGlobalEpics() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `project-card ${epic.id === state.activeEpicId ? "active" : ""}`;
-    button.innerHTML = `<div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.projectKey || "")} / ${escapeHtml(epic.status || "")}</div>`;
+    button.innerHTML = `<div><div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.projectKey || "")} / ${escapeHtml(epic.key || "")} / ${escapeHtml(epic.status || "")}</div></div><button class="project-settings-btn" type="button" title="Edit epic">⚙</button>`;
+    button.querySelector(".project-settings-btn").addEventListener("click", (event) => {
+      event.stopPropagation();
+      state.activeProjectId = epic.projectId;
+      openEpicModal(epic);
+    });
     button.addEventListener("click", () => {
       closeEpicSidebar();
       state.activeProjectId = epic.projectId;
@@ -2218,8 +2279,9 @@ function closeLabelsModal() {
 
 function openBoardModal() {
   if (!activeProject()) return;
+  if (state.activeBoardId || state.activeEpicId) return;
   els.boardName.value = "";
-  els.boardEpic.value = state.activeEpicId || "";
+  renderBoardManagementModal();
   els.boardModal.hidden = false;
 }
 
@@ -2228,14 +2290,27 @@ function closeBoardModal() {
   els.boardForm.reset();
 }
 
-function openEpicModal() {
+function renderBoardManagementModal() {
+  els.boardEpic.replaceChildren(option("Project board", ""), ...state.epics.map((epic) => option(`${epic.key || ""} / ${epic.title}`, epic.id)));
+  els.boardEpic.value = "";
+  els.boardDeleteSelect.replaceChildren(option("Select board to delete", ""), ...state.boards.map((board) => option(board.name, board.id)));
+  els.deleteBoardBtn.disabled = true;
+}
+
+function openEpicModal(epic = null) {
   if (!activeProject()) return;
+  state.editingEpicId = epic?.id || null;
+  els.epicModalTitle.textContent = epic ? "Edit epic" : "Create epic";
+  els.epicKey.value = epic?.key || "";
+  els.epicTitle.value = epic?.title || "";
+  els.deleteEpicBtn.hidden = !epic;
   els.epicForm.querySelector('button[type="submit"]').disabled = !els.epicTitle.value.trim();
   els.epicModal.hidden = false;
-  els.epicTitle.focus();
+  (epic ? els.epicTitle : els.epicKey).focus();
 }
 
 function closeEpicModal() {
+  state.editingEpicId = null;
   els.epicModal.hidden = true;
   els.epicForm.reset();
 }
@@ -2482,8 +2557,12 @@ function renderEpics() {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `epic-card ${epic.id === state.activeEpicId ? "active" : ""}`;
-      button.innerHTML = `<div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.status)} / ${escapeHtml(epic.priority)}</div>`;
-      button.addEventListener("click", async () => {
+      button.innerHTML = `<div><div class="card-title">${escapeHtml(epic.title)}</div><div class="card-meta">${escapeHtml(epic.key || "")} / ${escapeHtml(epic.status)} / ${escapeHtml(epic.priority)}</div></div><span class="project-settings-btn" data-action="edit">⚙</span>`;
+      button.addEventListener("click", async (event) => {
+        if (event.target?.dataset?.action === "edit") {
+          openEpicModal(epic);
+          return;
+        }
         state.activeEpicId = epic.id;
         state.activeBoardId = null;
         state.activeSprintId = "__backlog";
@@ -2744,7 +2823,7 @@ function renderBoard() {
     els.taskList.style.display = "none";
     return;
   }
-  els.activeBoardLine.textContent = `${state.board.name} / ${state.columns.length} columns`;
+  els.activeBoardLine.textContent = `${state.columns.length} columns`;
   state.boardViewMode = els.boardViewMode.value || "kanban";
   state.boardListSort = els.boardListSort.value || "created_desc";
   els.kanbanBoard.hidden = state.boardViewMode === "list";
@@ -3093,12 +3172,27 @@ async function createEpic(event) {
   event.preventDefault();
   const project = activeProject();
   if (!project) return;
-  const { epic } = await api(`/api/pm/projects/${project.id}/epics`, {
-    method: "POST",
-    body: JSON.stringify({ title: els.epicTitle.value })
-  });
+  const payload = { key: els.epicKey.value, title: els.epicTitle.value };
+  const { epic } = state.editingEpicId
+    ? await api(`/api/pm/epics/${state.editingEpicId}`, { method: "PATCH", body: JSON.stringify({ ...payload, expectedVersion: state.epics.find((item) => item.id === state.editingEpicId)?.version }) })
+    : await api(`/api/pm/projects/${project.id}/epics`, { method: "POST", body: JSON.stringify(payload) });
   closeEpicModal();
   state.activeEpicId = epic.id;
+  await loadProjectData();
+}
+
+async function deleteCurrentEpic() {
+  const epic = state.epics.find((item) => item.id === state.editingEpicId || item.id === state.activeEpicId);
+  if (!epic) return;
+  const confirmed = await confirmAction({
+    title: "Delete epic",
+    message: `THIS ACTION WILL DELETE THIS EPIC PERMANENTLY!\n\nTasks assigned to this Epic will stay intact and only lose the Epic link.\n\nEpic: ${epic.key || ""} / ${epic.title}`
+  });
+  if (!confirmed) return;
+  await api(`/api/pm/epics/${epic.id}`, { method: "DELETE" });
+  closeEpicModal();
+  if (state.activeEpicId === epic.id) state.activeEpicId = null;
+  navigatePm(pmProjectPath(epic.projectId));
   await loadProjectData();
 }
 
@@ -3503,18 +3597,21 @@ async function deleteActiveTask() {
 }
 
 async function deleteActiveBoard() {
-  if (!state.activeBoardId || !state.board) return;
+  const boardId = els.boardDeleteSelect?.value || state.activeBoardId;
+  const board = state.boards.find((item) => item.id === boardId) || state.board;
+  if (!boardId || !board) return;
   const confirmed = await confirmAction({
     title: "Delete board permanently",
-    message: `This will permanently delete board "${state.board.name}", every task positioned on it, and attachments used by those tasks. This cannot be undone.`
+    message: `This will permanently delete board "${board.name}", every task positioned on it, and attachments used by those tasks. This cannot be undone.`
   });
   if (!confirmed) return;
-  await api(`/api/pm/boards/${state.activeBoardId}/permanent`, { method: "DELETE" });
+  await api(`/api/pm/boards/${boardId}/permanent`, { method: "DELETE" });
   if (state.activeTask) closeTask({ navigate: false });
-  state.activeBoardId = null;
+  if (state.activeBoardId === boardId) state.activeBoardId = null;
   state.board = null;
   state.columns = [];
   state.boardTasks = [];
+  closeBoardModal();
   navigatePm(pmProjectPath(activeProject()?.id));
   await loadProjectData();
 }
@@ -4202,6 +4299,11 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function truncateText(value, maxLength) {
+  const text = String(value ?? "");
+  return text.length > maxLength ? `${text.slice(0, Math.max(0, maxLength - 1))}...` : text;
+}
+
 function formatDate(value) {
   return value ? new Date(value).toLocaleString() : "unknown";
 }
@@ -4412,6 +4514,9 @@ els.closeEpicSidebarBtn.addEventListener("click", closeEpicSidebar);
 els.projectSidebarBackdrop.addEventListener("click", (event) => {
   if (event.target === els.projectSidebarBackdrop) closeProjectSidebar();
 });
+els.projectInfoModal.addEventListener("click", (event) => {
+  if (event.target === els.projectInfoModal) closeProjectInfoModal();
+});
 els.epicSidebarBackdrop.addEventListener("click", (event) => {
   if (event.target === els.epicSidebarBackdrop) closeEpicSidebar();
 });
@@ -4430,11 +4535,19 @@ els.cancelEpicModalBtn.addEventListener("click", closeEpicModal);
 els.epicTitle.addEventListener("input", () => {
   els.epicForm.querySelector('button[type="submit"]').disabled = !els.epicTitle.value.trim() || !activeProject();
 });
-els.boardViewMode.addEventListener("change", renderBoard);
+els.boardViewMode.addEventListener("change", () => {
+  renderActiveProject();
+  renderBoard();
+});
 els.boardListSort.addEventListener("change", renderBoard);
+els.projectInfoBtn.addEventListener("click", openProjectInfoModal);
+els.closeProjectInfoBtn.addEventListener("click", closeProjectInfoModal);
 els.memberForm.querySelector("button").addEventListener("click", (event) => addMember(event).catch((error) => setError(error.message)));
 els.labelForm.querySelector("button").addEventListener("click", (event) => createLabel(event).catch((error) => setError(error.message)));
 els.epicForm.addEventListener("submit", (event) => createEpic(event).catch((error) => setError(error.message)));
+els.epicKey.addEventListener("input", () => {
+  els.epicForm.querySelector('button[type="submit"]').disabled = !els.epicTitle.value.trim();
+});
 els.sprintForm.addEventListener("submit", (event) => createSprint(event).catch((error) => setError(error.message)));
 els.openTaskCreateModalBtn.addEventListener("click", openTaskCreateModal);
 els.taskCreateForm.addEventListener("submit", (event) => createTask(event).catch((error) => setError(error.message)));
@@ -4486,15 +4599,11 @@ els.allSprintTasksBtn.addEventListener("click", () => {
 });
 els.refreshBtn.addEventListener("click", () => loadProjects().catch((error) => setError(error.message)));
 els.archiveProjectBtn.addEventListener("click", () => toggleArchive().catch((error) => setError(error.message)));
-els.ensureBoardBtn.addEventListener("click", () => openKanbanForActiveProject().catch((error) => setError(error.message)));
-els.createBoardBtn.addEventListener("click", openBoardModal);
 els.deleteBoardBtn.addEventListener("click", () => deleteActiveBoard().catch((error) => setError(error.message)));
-els.boardSelect.addEventListener("change", () => {
-  state.activeBoardId = els.boardSelect.value || null;
-  state.activeEpicId = null;
-  if (state.activeProjectId) navigatePm(pmBoardPath(state.activeProjectId, state.activeBoardId));
-  loadProjectData().catch((error) => setError(error.message));
+els.boardDeleteSelect.addEventListener("change", () => {
+  els.deleteBoardBtn.disabled = !els.boardDeleteSelect.value;
 });
+els.deleteEpicBtn.addEventListener("click", () => deleteCurrentEpic().catch((error) => setError(error.message)));
 els.taskSidebarToggle.addEventListener("click", () => {
   if (!state.activeTask) return;
   if (els.taskDrawer.hidden) {

@@ -6,6 +6,7 @@ export type PmEventType =
   | "project.archived"
   | "epic.created"
   | "epic.updated"
+  | "epic.deleted"
   | "board.created"
   | "board.updated"
   | "board.deleted"

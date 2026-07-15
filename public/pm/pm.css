@@ -1323,18 +1323,44 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 }
 
 .project-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   min-height: 38px;
   padding: 6px 10px;
 }
 
+.project-heading {
+  min-width: 0;
+}
+
+.project-header h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-header p {
+  display: none;
   margin-top: 4px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.square-button {
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.header-view-controls {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  justify-self: center;
 }
 
 .header-actions, .filters {
@@ -1390,7 +1416,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .kanban-toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 180px repeat(3, max-content) 116px 150px;
+  grid-template-columns: minmax(180px, 1fr);
   align-items: center;
   gap: 4px;
   padding: 4px 0 7px;
@@ -1604,7 +1630,9 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   top: var(--topbar-height);
   right: 34px;
   bottom: 0;
-  height: calc(100vh - var(--topbar-height));
+  height: calc(100vh - var(--topbar-height)) !important;
+  min-height: calc(100vh - var(--topbar-height));
+  max-height: calc(100vh - var(--topbar-height));
   width: min(1320px, calc(100vw - 34px));
   z-index: 55;
   border: 1px solid var(--line);
@@ -1612,7 +1640,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   box-shadow: -14px 14px 42px rgba(0, 0, 0, .5);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  resize: both;
+  resize: horizontal;
   overflow: hidden;
   transform: translateX(calc(100% + 64px));
   transition: transform .18s ease-out, box-shadow .18s ease-out;
@@ -1907,8 +1935,9 @@ body.no-text-select * {
   gap: 10px;
   align-items: center;
   border-bottom: 1px solid var(--line);
-  min-height: 28px;
-  padding: 2px 0;
+  min-height: 22px;
+  padding: 1px 0;
+  line-height: 1.15;
 }
 
 .task-info-label {
@@ -1960,6 +1989,13 @@ body.no-text-select * {
 .epic-task-row:hover {
   border-color: var(--accent);
   background: var(--panel-2);
+}
+
+.board-delete-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 
 .drawer-danger-actions {

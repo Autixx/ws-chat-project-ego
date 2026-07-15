@@ -10,7 +10,7 @@ import { normalizeRole, PmPermissionError, requireProjectRole } from "./permissi
 import type { PmEvent, PmEventHub } from "./events.js";
 import { buildPmInviteEmail, sendPmMail } from "./mailer.js";
 import type { PmStore, PmConflictError } from "./postgresStore.js";
-import type { CreateBoardColumnInput, CreateEpicInput, CreateProjectInput, CreateSprintInput, CreateTaskInput, MoveTaskInput, PmAttachment, PmHomeWidget, PmHomeWidgetKind, PmSprintStatus, PmUser, PmWidgetTemplate, UpdateProjectInput, UpdateSprintInput, UpdateTaskInput } from "./types.js";
+import type { CreateBoardColumnInput, CreateEpicInput, CreateProjectInput, CreateSprintInput, CreateTaskInput, MoveTaskInput, PmAttachment, PmHomeWidget, PmHomeWidgetKind, PmSprintStatus, PmUser, PmWidgetTemplate, UpdateEpicInput, UpdateProjectInput, UpdateSprintInput, UpdateTaskInput } from "./types.js";
 import type { PmWebhookDispatcher } from "./webhookDispatcher.js";
 
 export type PmAuthedRequest = express.Request & { pmIdentity?: AuthenticatedUser; pmUser?: PmUser };
@@ -558,6 +558,32 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const epic = await store.createEpic(user, { ...parseCreateEpic(req.body), projectId: req.params.projectId });
       emit({ type: "epic.created", projectId: req.params.projectId, version: epic.version, createdAt: new Date().toISOString(), payload: { epic } });
       res.status(201).json({ epic });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/epics/:epicId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const current = await store.loadEpic(req.params.epicId);
+      requireProjectRole(await store.getProjectRole(user.id, current.projectId), "member");
+      const epic = await store.updateEpic(user, req.params.epicId, parseUpdateEpic(req.body));
+      emit({ type: "epic.updated", projectId: epic.projectId, version: epic.version, createdAt: new Date().toISOString(), payload: { epic } });
+      res.json({ epic });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/epics/:epicId", async (req: PmAuthedRequest, res, next) => {
+    try {
+      const user = requirePmUser(req);
+      const current = await store.loadEpic(req.params.epicId);
+      requireProjectRole(await store.getProjectRole(user.id, current.projectId), "admin");
+      await store.deleteEpic(user, req.params.epicId);
+      emit({ type: "epic.deleted", projectId: current.projectId, createdAt: new Date().toISOString(), payload: { epicId: req.params.epicId } });
+      res.status(204).end();
     } catch (error) {
       next(error);
     }
@@ -1138,11 +1164,25 @@ function parseUpdateProject(body: unknown): UpdateProjectInput {
 function parseCreateEpic(body: unknown): Omit<CreateEpicInput, "projectId"> {
   const raw = objectBody(body);
   return {
+    key: optionalString(raw.key),
     title: requiredString(raw.title, "title"),
     description: optionalString(raw.description),
     status: optionalString(raw.status),
     priority: optionalString(raw.priority),
     position: optionalNumber(raw.position)
+  };
+}
+
+function parseUpdateEpic(body: unknown): UpdateEpicInput {
+  const raw = objectBody(body);
+  return {
+    key: optionalString(raw.key),
+    title: optionalString(raw.title),
+    description: optionalString(raw.description),
+    status: optionalString(raw.status),
+    priority: optionalString(raw.priority),
+    position: optionalNumber(raw.position),
+    expectedVersion: optionalNumber(raw.expectedVersion)
   };
 }
 

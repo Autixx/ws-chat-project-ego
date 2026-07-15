@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS pm.project_members (
 CREATE TABLE IF NOT EXISTS pm.epics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES pm.projects(id) ON DELETE CASCADE,
+  key TEXT NOT NULL DEFAULT '',
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'open',
@@ -77,6 +78,9 @@ CREATE TABLE IF NOT EXISTS pm.epics (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   version BIGINT NOT NULL DEFAULT 1
 );
+
+ALTER TABLE pm.epics ADD COLUMN IF NOT EXISTS key TEXT NOT NULL DEFAULT '';
+UPDATE pm.epics SET key = upper(substr(regexp_replace(title, '[^A-Za-z0-9]+', '-', 'g'), 1, 24)) WHERE key = '';
 
 CREATE TABLE IF NOT EXISTS pm.boards (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
