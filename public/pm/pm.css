@@ -2117,7 +2117,6 @@ body.no-text-select * {
   align-items: center;
 }
 
-.comment-advanced-action,
 .comment-toolbar button {
   min-height: 24px;
   padding: 2px 8px;
@@ -2127,28 +2126,23 @@ body.no-text-select * {
   flex-wrap: wrap;
 }
 
-.comment-advanced-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 92px;
-  border: 1px solid var(--line);
-  background: var(--field);
-  color: var(--text);
-  cursor: pointer;
-  user-select: none;
-}
-
 .comment-mode-hint {
   flex: 1 1 100%;
   color: var(--muted);
   font-size: 11px;
 }
 
-.comment-advanced-action.active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--field) 78%, var(--accent) 22%);
+.comment-advanced-inline {
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+}
+
+.comment-advanced-inline:hover,
+.comment-advanced-inline:focus-visible,
+.comment-advanced-inline.active {
   color: var(--text);
+  outline: none;
 }
 
 .attachment-form, .dependency-form {

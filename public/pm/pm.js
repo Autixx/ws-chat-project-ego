@@ -4261,7 +4261,7 @@ function setCommentMode(mode) {
   els.commentAdvancedModeBtn.classList.toggle("active", state.commentMode === "advanced");
   els.commentAdvancedModeBtn.setAttribute("aria-pressed", advanced ? "true" : "false");
   els.commentAdvancedModeBtn.setAttribute("aria-expanded", advanced ? "true" : "false");
-  els.commentAdvancedModeBtn.textContent = advanced ? "Advanced: on" : "Advanced";
+  els.commentAdvancedModeBtn.textContent = advanced ? "Advanced: on | Fast mode is default (ver 0.2.31)." : "Advanced | Fast mode is default (ver 0.2.31).";
   try {
     localStorage.setItem(PM_COMMENT_MODE_KEY, state.commentMode);
   } catch {
