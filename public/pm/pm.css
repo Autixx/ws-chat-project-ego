@@ -2127,9 +2127,10 @@ body.no-text-select * {
   flex-wrap: wrap;
 }
 
-.comment-advanced-toggle {
-  flex: 1 1 120px;
-  min-width: 120px;
+.drawer-section-title .comment-advanced-toggle {
+  min-width: 92px;
+  min-height: 24px;
+  padding: 2px 8px;
 }
 
 .comment-mode-hint {
