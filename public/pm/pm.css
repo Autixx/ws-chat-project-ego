@@ -2117,6 +2117,7 @@ body.no-text-select * {
   align-items: center;
 }
 
+.comment-format-toggle,
 .comment-toolbar button {
   min-height: 24px;
   padding: 2px 8px;
@@ -2132,17 +2133,14 @@ body.no-text-select * {
   font-size: 11px;
 }
 
-.comment-advanced-inline {
-  cursor: pointer;
-  user-select: none;
-  padding: 2px 0;
+.comment-format-toggle {
+  min-width: 92px;
 }
 
-.comment-advanced-inline:hover,
-.comment-advanced-inline:focus-visible,
-.comment-advanced-inline.active {
+.comment-format-toggle.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--field) 78%, var(--accent) 22%);
   color: var(--text);
-  outline: none;
 }
 
 .attachment-form, .dependency-form {

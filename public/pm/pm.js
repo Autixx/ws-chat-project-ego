@@ -267,7 +267,7 @@ const els = {
   commentList: $("commentList"),
   commentForm: $("commentForm"),
   commentBody: $("commentBody"),
-  commentAdvancedModeBtn: $("commentAdvancedModeBtn"),
+  commentFormatToggleBtn: $("commentFormatToggleBtn"),
   commentToolbar: $("commentToolbar"),
   attachmentForm: $("attachmentForm"),
   attachmentFile: $("attachmentFile"),
@@ -4258,10 +4258,10 @@ function setCommentMode(mode) {
   els.commentToolbar.hidden = !advanced;
   els.commentToolbar.style.display = advanced ? "flex" : "none";
   els.commentToolbar.classList.toggle("visible", advanced);
-  els.commentAdvancedModeBtn.classList.toggle("active", state.commentMode === "advanced");
-  els.commentAdvancedModeBtn.setAttribute("aria-pressed", advanced ? "true" : "false");
-  els.commentAdvancedModeBtn.setAttribute("aria-expanded", advanced ? "true" : "false");
-  els.commentAdvancedModeBtn.textContent = advanced ? "Advanced: on | Fast mode is default (ver 0.2.31)." : "Advanced | Fast mode is default (ver 0.2.31).";
+  els.commentFormatToggleBtn.classList.toggle("active", state.commentMode === "advanced");
+  els.commentFormatToggleBtn.setAttribute("aria-pressed", advanced ? "true" : "false");
+  els.commentFormatToggleBtn.setAttribute("aria-expanded", advanced ? "true" : "false");
+  els.commentFormatToggleBtn.textContent = advanced ? "Advanced: on" : "Advanced";
   try {
     localStorage.setItem(PM_COMMENT_MODE_KEY, state.commentMode);
   } catch {
@@ -4640,8 +4640,8 @@ els.commentForm.addEventListener("submit", (event) => createComment(event).catch
 function toggleCommentAdvancedMode() {
   setCommentMode(state.commentMode === "advanced" ? "fast" : "advanced");
 }
-els.commentAdvancedModeBtn.addEventListener("click", toggleCommentAdvancedMode);
-els.commentAdvancedModeBtn.addEventListener("keydown", (event) => {
+els.commentFormatToggleBtn.addEventListener("click", toggleCommentAdvancedMode);
+els.commentFormatToggleBtn.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
   toggleCommentAdvancedMode();
