@@ -267,7 +267,7 @@ const els = {
   commentList: $("commentList"),
   commentForm: $("commentForm"),
   commentBody: $("commentBody"),
-  commentFastModeBtn: $("commentFastModeBtn"),
+  commentFastModeLabel: $("commentFastModeLabel"),
   commentAdvancedModeBtn: $("commentAdvancedModeBtn"),
   commentToolbar: $("commentToolbar"),
   attachmentForm: $("attachmentForm"),
@@ -4259,10 +4259,10 @@ function setCommentMode(mode) {
   els.commentToolbar.hidden = !advanced;
   els.commentToolbar.style.display = advanced ? "flex" : "none";
   els.commentToolbar.classList.toggle("visible", advanced);
-  els.commentFastModeBtn.classList.toggle("active", state.commentMode === "fast");
+  els.commentFastModeLabel.classList.toggle("active", !advanced);
   els.commentAdvancedModeBtn.classList.toggle("active", state.commentMode === "advanced");
-  els.commentFastModeBtn.setAttribute("aria-pressed", state.commentMode === "fast" ? "true" : "false");
   els.commentAdvancedModeBtn.setAttribute("aria-pressed", advanced ? "true" : "false");
+  els.commentAdvancedModeBtn.setAttribute("aria-expanded", advanced ? "true" : "false");
   try {
     localStorage.setItem(PM_COMMENT_MODE_KEY, state.commentMode);
   } catch {
@@ -4638,8 +4638,7 @@ els.taskEditForm.addEventListener("submit", (event) => saveTask(event).catch((er
 els.taskLabelForm.addEventListener("submit", (event) => addTaskLabel(event).catch((error) => setError(error.message)));
 els.dependencyForm.addEventListener("submit", (event) => addDependency(event).catch((error) => setError(error.message)));
 els.commentForm.addEventListener("submit", (event) => createComment(event).catch((error) => setError(error.message)));
-els.commentFastModeBtn.addEventListener("click", () => setCommentMode("fast"));
-els.commentAdvancedModeBtn.addEventListener("click", () => setCommentMode("advanced"));
+els.commentAdvancedModeBtn.addEventListener("click", () => setCommentMode(state.commentMode === "advanced" ? "fast" : "advanced"));
 for (const button of els.commentToolbar.querySelectorAll("button")) {
   button.addEventListener("click", () => wrapCommentSelection(button.dataset.mdBefore || "", button.dataset.mdAfter || ""));
 }

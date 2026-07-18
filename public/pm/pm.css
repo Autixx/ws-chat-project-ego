@@ -2117,15 +2117,27 @@ body.no-text-select * {
   align-items: center;
 }
 
+.comment-mode-label,
 .comment-mode-row button,
 .comment-toolbar button {
   min-height: 24px;
   padding: 2px 8px;
 }
 
+.comment-mode-label {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: var(--field);
+  color: var(--muted);
+  user-select: none;
+}
+
+.comment-mode-label.active,
 .comment-mode-row button.active {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--field) 78%, var(--accent) 22%);
+  color: var(--text);
 }
 
 .attachment-form, .dependency-form {
