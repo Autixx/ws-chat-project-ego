@@ -2117,7 +2117,7 @@ body.no-text-select * {
   align-items: center;
 }
 
-.comment-mode-row button,
+.comment-advanced-action,
 .comment-toolbar button {
   min-height: 24px;
   padding: 2px 8px;
@@ -2127,10 +2127,16 @@ body.no-text-select * {
   flex-wrap: wrap;
 }
 
-.drawer-section-title .comment-advanced-toggle {
+.comment-advanced-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 92px;
-  min-height: 24px;
-  padding: 2px 8px;
+  border: 1px solid var(--line);
+  background: var(--field);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
 }
 
 .comment-mode-hint {
@@ -2139,7 +2145,7 @@ body.no-text-select * {
   font-size: 11px;
 }
 
-.comment-mode-row button.active {
+.comment-advanced-action.active {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--field) 78%, var(--accent) 22%);
   color: var(--text);

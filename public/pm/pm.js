@@ -4637,7 +4637,15 @@ els.taskEditForm.addEventListener("submit", (event) => saveTask(event).catch((er
 els.taskLabelForm.addEventListener("submit", (event) => addTaskLabel(event).catch((error) => setError(error.message)));
 els.dependencyForm.addEventListener("submit", (event) => addDependency(event).catch((error) => setError(error.message)));
 els.commentForm.addEventListener("submit", (event) => createComment(event).catch((error) => setError(error.message)));
-els.commentAdvancedModeBtn.addEventListener("click", () => setCommentMode(state.commentMode === "advanced" ? "fast" : "advanced"));
+function toggleCommentAdvancedMode() {
+  setCommentMode(state.commentMode === "advanced" ? "fast" : "advanced");
+}
+els.commentAdvancedModeBtn.addEventListener("click", toggleCommentAdvancedMode);
+els.commentAdvancedModeBtn.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  toggleCommentAdvancedMode();
+});
 for (const button of els.commentToolbar.querySelectorAll("button")) {
   button.addEventListener("click", () => wrapCommentSelection(button.dataset.mdBefore || "", button.dataset.mdAfter || ""));
 }
