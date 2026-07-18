@@ -267,7 +267,6 @@ const els = {
   commentList: $("commentList"),
   commentForm: $("commentForm"),
   commentBody: $("commentBody"),
-  commentFastModeLabel: $("commentFastModeLabel"),
   commentAdvancedModeBtn: $("commentAdvancedModeBtn"),
   commentToolbar: $("commentToolbar"),
   attachmentForm: $("attachmentForm"),
@@ -4259,10 +4258,10 @@ function setCommentMode(mode) {
   els.commentToolbar.hidden = !advanced;
   els.commentToolbar.style.display = advanced ? "flex" : "none";
   els.commentToolbar.classList.toggle("visible", advanced);
-  els.commentFastModeLabel.classList.toggle("active", !advanced);
   els.commentAdvancedModeBtn.classList.toggle("active", state.commentMode === "advanced");
   els.commentAdvancedModeBtn.setAttribute("aria-pressed", advanced ? "true" : "false");
   els.commentAdvancedModeBtn.setAttribute("aria-expanded", advanced ? "true" : "false");
+  els.commentAdvancedModeBtn.textContent = advanced ? "Advanced: on" : "Advanced";
   try {
     localStorage.setItem(PM_COMMENT_MODE_KEY, state.commentMode);
   } catch {

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ProjectEGO PM</title>
-    <link rel="stylesheet" href="/pm.css" />
+    <link rel="stylesheet" href="/pm.css?v=0.2.27" />
   </head>
   <body class="theme-dark">
     <main class="pm-shell">
@@ -543,8 +543,8 @@
             <div id="commentList" class="drawer-list"></div>
             <form id="commentForm" class="comment-form">
               <div class="comment-mode-row">
-                <span id="commentFastModeLabel" class="comment-mode-label active">Fast</span>
-                <button id="commentAdvancedModeBtn" type="button" aria-expanded="false">Advanced</button>
+                <button id="commentAdvancedModeBtn" class="comment-advanced-toggle" type="button" aria-expanded="false">Advanced</button>
+                <span class="comment-mode-hint">Fast mode is default.</span>
               </div>
               <div id="commentToolbar" class="comment-toolbar" hidden>
                 <button type="button" data-md-before="**" data-md-after="**">B</button>
@@ -598,6 +598,6 @@
         <div id="mediaContent" class="pm-media-content"></div>
       </section>
     </main>
-    <script src="/pm.js" defer></script>
+    <script src="/pm.js?v=0.2.27" defer></script>
   </body>
 </html>
