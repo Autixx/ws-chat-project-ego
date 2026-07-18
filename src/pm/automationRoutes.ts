@@ -45,15 +45,15 @@ export function createPmAutomationRouter(store: PmStore, events: PmEventHub, opt
 
   router.get("/projects/boards", async (_req, res, next) => {
     try {
-      const actor = await store.ensureAutomationUser("n8n");
-      const projects = await store.listProjects(actor.id, true);
-      const projectsWithBoards = await Promise.all(
-        projects.map(async (project) => ({
-          ...project,
-          boards: await store.listBoards(project.id)
-        }))
-      );
-      res.json({ projects: projectsWithBoards });
+      res.json({ projects: await buildProjectBoardRoutingMap() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/routing-map", async (_req, res, next) => {
+    try {
+      res.json({ projects: await buildProjectBoardRoutingMap() });
     } catch (error) {
       next(error);
     }
@@ -113,6 +113,30 @@ export function createPmAutomationRouter(store: PmStore, events: PmEventHub, opt
       status: taskInput.status || column.statusKey || task.status,
       expectedVersion: task.version
     });
+  }
+
+  async function buildProjectBoardRoutingMap() {
+    const actor = await store.ensureAutomationUser("n8n");
+    const projects = await store.listProjects(actor.id, true);
+    return Promise.all(
+      projects.map(async (project) => {
+        const projectPath = `/${encodeURIComponent(project.key)}`;
+        const boards = await store.listBoards(project.id);
+        return {
+          ...project,
+          path: projectPath,
+          apiCreateTaskPath: `/api/pm/automation/projects/${project.id}/tasks`,
+          defaultBoardTaskPath: `/api/pm/automation/projects/${project.id}/boards/default/tasks`,
+          boards: boards.map((board) => ({
+            ...board,
+            path: `${projectPath}/${encodeURIComponent(board.id)}`,
+            taskPathTemplate: `${projectPath}/${encodeURIComponent(board.id)}/{taskId}`,
+            apiBoardPath: `/api/pm/boards/${board.id}`,
+            apiCreateTaskPath: `/api/pm/automation/boards/${board.id}/tasks`
+          }))
+        };
+      })
+    );
   }
 
   router.patch("/tasks/:taskId", async (req, res, next) => {

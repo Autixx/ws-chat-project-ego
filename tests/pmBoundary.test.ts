@@ -429,8 +429,29 @@ test("PM automation API lists projects with boards for n8n routing", async () =>
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.projects.length, 2);
+    assert.equal(body.projects[0].path, "/DASH");
+    assert.equal(body.projects[0].apiCreateTaskPath, "/api/pm/automation/projects/project-1/tasks");
+    assert.equal(body.projects[0].defaultBoardTaskPath, "/api/pm/automation/projects/project-1/boards/default/tasks");
     assert.equal(body.projects[0].boards[0].id, "project-1-board");
-    assert.deepEqual(calls, ["actor:n8n", "projects:automation-user:true", "boards:project-1", "boards:project-2"]);
+    assert.equal(body.projects[0].boards[0].path, "/DASH/project-1-board");
+    assert.equal(body.projects[0].boards[0].taskPathTemplate, "/DASH/project-1-board/{taskId}");
+    assert.equal(body.projects[0].boards[0].apiCreateTaskPath, "/api/pm/automation/boards/project-1-board/tasks");
+    const routingResponse = await fetch(`http://127.0.0.1:${address.port}/api/pm/automation/routing-map`, {
+      headers: { authorization: "Bearer pm-auto-secret" }
+    });
+    assert.equal(routingResponse.status, 200);
+    const routingBody = await routingResponse.json();
+    assert.equal(routingBody.projects[1].boards[0].path, "/PM/project-2-board");
+    assert.deepEqual(calls, [
+      "actor:n8n",
+      "projects:automation-user:true",
+      "boards:project-1",
+      "boards:project-2",
+      "actor:n8n",
+      "projects:automation-user:true",
+      "boards:project-1",
+      "boards:project-2"
+    ]);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }

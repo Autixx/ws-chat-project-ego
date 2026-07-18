@@ -627,15 +627,19 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 }
 
 .drawer-mini-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 26px;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
 }
 
 .drawer-mini-header button {
-  width: 26px;
   min-height: 26px;
+  padding: 0 6px;
+}
+
+.drawer-mini-header #closeProjectSidebarBtn {
+  width: 26px;
   padding: 0;
 }
 
@@ -664,18 +668,15 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   font-size: 12px;
 }
 
-.sidebar-mode-switch {
-  display: flex;
-  gap: 4px;
-  align-items: center;
+.sidebar-title-button {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  font-size: 11px;
 }
 
-.sidebar-mode-switch button {
-  min-height: 24px;
-  padding: 2px 7px;
-}
-
-.sidebar-mode-switch button.active {
+.sidebar-title-button.active {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--field) 78%, var(--accent) 22%);
   color: var(--text);
@@ -748,7 +749,7 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
 
 .project-management-buttons {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   gap: 8px;
 }
 
@@ -767,6 +768,40 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) 120px auto;
   gap: 7px;
+}
+
+.boards-management-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(560px, calc(100vh - 190px));
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.board-management-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: var(--field);
+  padding: 8px;
+}
+
+.board-management-row .card-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-stat {
+  color: var(--muted);
+  text-align: right;
+}
+
+.board-management-row .danger {
+  border-color: var(--red);
+  color: var(--red);
 }
 
 .label-form {

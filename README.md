@@ -158,7 +158,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.2.24 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.2.25 \
   node dist/pm/migrate.js
 ```
 
@@ -346,6 +346,7 @@ n8n should call these routes with `Authorization: Bearer <PM_AUTOMATION_TOKEN>`:
 
 - `GET /api/pm/automation/status`
 - `GET /api/pm/automation/projects/boards`
+- `GET /api/pm/automation/routing-map`
 - `POST /api/pm/automation/projects/:projectId/tasks`
 - `POST /api/pm/automation/boards/:boardId/tasks`
 - `POST /api/pm/automation/projects/:projectId/boards/default/tasks`
@@ -354,6 +355,8 @@ n8n should call these routes with `Authorization: Bearer <PM_AUTOMATION_TOKEN>`:
 - `POST /api/pm/automation/tasks/:taskId/comments`
 - `POST /api/pm/automation/tasks/:taskId/dependencies`
 - `GET /api/pm/automation/projects/:projectId/tasks/next`
+
+`GET /api/pm/automation/routing-map` and `GET /api/pm/automation/projects/boards` return all visible projects with nested boards, browser paths, and direct automation task-create paths. Use `boards[].apiCreateTaskPath` when n8n needs to create a task on a specific board.
 
 The automation API goes through PM backend authorization and audit paths. n8n should use this API instead of direct PostgreSQL writes for ordinary task operations.
 
@@ -804,7 +807,7 @@ To update from the TrueNAS Apps UI:
 For predictable production rollouts, prefer a fixed tag such as:
 
 ```text
-ghcr.io/autixx/ws-chat-project-ego:v0.2.24
+ghcr.io/autixx/ws-chat-project-ego:v0.2.25
 ```
 
 Then update the tag in TrueNAS when moving to a newer release.

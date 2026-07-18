@@ -116,7 +116,6 @@ const els = {
   epicSidebarToggle: $("epicSidebarToggle"),
   projectSidebarBackdrop: $("projectSidebarBackdrop"),
   closeProjectSidebarBtn: $("closeProjectSidebarBtn"),
-  leftSidebarTitle: $("leftSidebarTitle"),
   sidebarProjectsModeBtn: $("sidebarProjectsModeBtn"),
   sidebarEpicsModeBtn: $("sidebarEpicsModeBtn"),
   toggleProjectBoardsBtn: $("toggleProjectBoardsBtn"),
@@ -151,11 +150,15 @@ const els = {
   projectManagementFields: $("projectManagementFields"),
   openTeamModalBtn: $("openTeamModalBtn"),
   openLabelsModalBtn: $("openLabelsModalBtn"),
+  openBoardsModalBtn: $("openBoardsModalBtn"),
   deleteProjectBtn: $("deleteProjectBtn"),
   teamModal: $("teamModal"),
   labelsModal: $("labelsModal"),
+  projectBoardsModal: $("projectBoardsModal"),
   closeTeamModalBtn: $("closeTeamModalBtn"),
   closeLabelsModalBtn: $("closeLabelsModalBtn"),
+  closeBoardsModalBtn: $("closeBoardsModalBtn"),
+  projectBoardsList: $("projectBoardsList"),
   projectKey: $("projectKey"),
   projectName: $("projectName"),
   projectDescription: $("projectDescription"),
@@ -1822,7 +1825,7 @@ function renderProjects() {
           ${activeProjectBoards.map((board, boardIndex) => `
             <button class="project-board-node ${board.id === state.activeBoardId ? "active" : ""}" type="button" data-board-id="${escapeHtml(board.id)}">
               <span>${boardIndex === activeProjectBoards.length - 1 ? "└──" : "├──"}</span>
-              <span>${escapeHtml(board.name)}${board.isDefault ? " / default" : ""}</span>
+              <span>${escapeHtml(board.name)}</span>
             </button>
           `).join("")}
         </div>
@@ -1886,7 +1889,7 @@ function renderProjects() {
           ${boards.map((board, boardIndex) => `
             <button class="project-board-node ${board.id === state.activeBoardId ? "active" : ""}" type="button" data-board-id="${escapeHtml(board.id)}">
               <span>${boardIndex === boards.length - 1 ? "\\--" : "|--"}</span>
-              <span>${escapeHtml(board.name)}${board.isDefault ? " / default" : ""}</span>
+              <span>${escapeHtml(board.name)}</span>
             </button>
           `).join("")}
         </div>
@@ -1959,7 +1962,8 @@ function renderActiveProject() {
   els.archiveProjectBtn.textContent = project.archivedAt ? "Unarchive" : "Archive";
   els.archiveProjectBtn.hidden = Boolean(epic);
   els.boardViewMode.hidden = Boolean(epic);
-  els.boardListSort.hidden = Boolean(epic) || els.boardViewMode.value !== "list";
+  els.boardListSort.hidden = Boolean(epic);
+  els.boardListSort.style.visibility = !epic && els.boardViewMode.value === "list" ? "visible" : "hidden";
 }
 
 function openProjectInfoModal() {
@@ -2182,7 +2186,6 @@ function renderProjectSheetResizeHandle(widget) {
 
 function setLeftSidebarMode(mode) {
   state.leftSidebarMode = mode === "epics" ? "epics" : "projects";
-  els.leftSidebarTitle.textContent = state.leftSidebarMode === "epics" ? "Epics" : "Projects";
   els.sidebarProjectsModeBtn.classList.toggle("active", state.leftSidebarMode === "projects");
   els.sidebarEpicsModeBtn.classList.toggle("active", state.leftSidebarMode === "epics");
   els.projectList.hidden = state.leftSidebarMode !== "projects";
@@ -2291,6 +2294,49 @@ function openLabelsModal() {
 
 function closeLabelsModal() {
   els.labelsModal.hidden = true;
+}
+
+async function openBoardsManagementModal() {
+  if (!activeProject()) return;
+  els.projectBoardsModal.hidden = false;
+  await renderBoardsManagementList();
+}
+
+function closeBoardsManagementModal() {
+  els.projectBoardsModal.hidden = true;
+}
+
+async function renderBoardsManagementList() {
+  if (!els.projectBoardsList) return;
+  const project = activeProject();
+  if (!project) return;
+  els.projectBoardsList.innerHTML = `<div class="drawer-empty">Loading boards...</div>`;
+  const rows = await Promise.all(state.boards.map(async (board) => {
+    try {
+      const snapshot = await api(`/api/pm/boards/${board.id}`);
+      return { board: snapshot.board || board, taskCount: (snapshot.tasks || []).length };
+    } catch {
+      return { board, taskCount: 0 };
+    }
+  }));
+  if (!rows.length) {
+    els.projectBoardsList.innerHTML = `<div class="drawer-empty">No boards.</div>`;
+    return;
+  }
+  els.projectBoardsList.replaceChildren(...rows.map(({ board, taskCount }) => {
+    const row = document.createElement("div");
+    row.className = "board-management-row";
+    row.innerHTML = `
+      <div>
+        <div class="card-title">${escapeHtml(board.name)}</div>
+        <div class="card-meta">${escapeHtml(board.id)}</div>
+      </div>
+      <div class="board-stat">${taskCount} tasks</div>
+      <button type="button" class="danger">Delete</button>
+    `;
+    row.querySelector("button").addEventListener("click", () => deleteBoardById(board.id, board.name).catch((error) => setError(error.message)));
+    return row;
+  }));
 }
 
 function openBoardModal() {
@@ -3617,9 +3663,13 @@ async function deleteActiveBoard() {
   const boardId = els.boardDeleteSelect?.value || state.activeBoardId;
   const board = state.boards.find((item) => item.id === boardId) || state.board;
   if (!boardId || !board) return;
+  await deleteBoardById(boardId, board.name);
+}
+
+async function deleteBoardById(boardId, boardName) {
   const confirmed = await confirmAction({
     title: "Delete board permanently",
-    message: `This will permanently delete board "${board.name}", every task positioned on it, and attachments used by those tasks. This cannot be undone.`
+    message: `This will permanently delete board "${boardName}", every task positioned on it, and attachments used by those tasks. This cannot be undone.`
   });
   if (!confirmed) return;
   await api(`/api/pm/boards/${boardId}/permanent`, { method: "DELETE" });
@@ -3629,6 +3679,7 @@ async function deleteActiveBoard() {
   state.columns = [];
   state.boardTasks = [];
   closeBoardModal();
+  closeBoardsManagementModal();
   navigatePm(pmProjectPath(activeProject()?.id));
   await loadProjectData();
 }
@@ -4206,6 +4257,7 @@ function setCommentMode(mode) {
   state.commentMode = mode === "advanced" ? "advanced" : "fast";
   const advanced = state.commentMode === "advanced";
   els.commentToolbar.hidden = !advanced;
+  els.commentToolbar.style.display = advanced ? "flex" : "none";
   els.commentToolbar.classList.toggle("visible", advanced);
   els.commentFastModeBtn.classList.toggle("active", state.commentMode === "fast");
   els.commentAdvancedModeBtn.classList.toggle("active", state.commentMode === "advanced");
@@ -4544,9 +4596,14 @@ els.openCreateEpicBtn.addEventListener("click", openEpicModal);
 els.cancelProjectModalBtn.addEventListener("click", closeProjectModal);
 els.openTeamModalBtn.addEventListener("click", openTeamModal);
 els.openLabelsModalBtn.addEventListener("click", openLabelsModal);
+els.openBoardsModalBtn.addEventListener("click", () => openBoardsManagementModal().catch((error) => setError(error.message)));
 els.deleteProjectBtn.addEventListener("click", () => deleteCurrentProjectPermanently().catch((error) => setError(error.message)));
 els.closeTeamModalBtn.addEventListener("click", closeTeamModal);
 els.closeLabelsModalBtn.addEventListener("click", closeLabelsModal);
+els.closeBoardsModalBtn.addEventListener("click", closeBoardsManagementModal);
+els.projectBoardsModal.addEventListener("click", (event) => {
+  if (event.target === els.projectBoardsModal) closeBoardsManagementModal();
+});
 els.projectForm.addEventListener("submit", (event) => createProject(event).catch((error) => setError(error.message)));
 els.boardForm.addEventListener("submit", (event) => createBoard(event).catch((error) => setError(error.message)));
 els.cancelBoardModalBtn.addEventListener("click", closeBoardModal);

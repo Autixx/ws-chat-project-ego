@@ -106,11 +106,8 @@
         <aside id="projectSidebarBackdrop" class="sidebar-backdrop" hidden>
           <section class="project-pane panel pm-left-drawer">
             <div class="drawer-mini-header">
-              <h2 id="leftSidebarTitle">Projects</h2>
-              <div class="sidebar-mode-switch">
-                <button id="sidebarProjectsModeBtn" type="button">Projects</button>
-                <button id="sidebarEpicsModeBtn" type="button">Epics</button>
-              </div>
+              <button id="sidebarProjectsModeBtn" class="sidebar-title-button" type="button">Projects</button>
+              <button id="sidebarEpicsModeBtn" class="sidebar-title-button" type="button">Epics</button>
               <button id="closeProjectSidebarBtn" type="button">&lt;</button>
             </div>
           <div class="project-sidebar-tools">
@@ -170,15 +167,15 @@
               <p id="activeProjectMeta">Create or select a project.</p>
             </div>
             <div class="header-view-controls">
-              <select id="boardViewMode">
-                <option value="kanban">Kanban</option>
-                <option value="list">List</option>
-              </select>
               <select id="boardListSort">
                 <option value="created_desc">Created newest</option>
                 <option value="created_asc">Created oldest</option>
                 <option value="updated_desc">Updated newest</option>
                 <option value="updated_asc">Updated oldest</option>
+              </select>
+              <select id="boardViewMode">
+                <option value="kanban">Kanban</option>
+                <option value="list">List</option>
               </select>
             </div>
             <div class="header-actions">
@@ -313,6 +310,7 @@
           <div id="projectManagementFields" class="project-management-buttons">
             <button id="openTeamModalBtn" type="button">Team</button>
             <button id="openLabelsModalBtn" type="button">Labels</button>
+            <button id="openBoardsModalBtn" type="button">Boards</button>
             <button id="deleteProjectBtn" type="button" class="danger">Delete project</button>
           </div>
           <div class="pm-modal-actions">
@@ -354,6 +352,16 @@
             <button type="button" disabled>Add</button>
           </div>
           <div id="labelList" class="list compact"></div>
+        </section>
+      </section>
+
+      <section id="projectBoardsModal" class="pm-modal-backdrop" hidden>
+        <section class="pm-modal project-modal boards-management-modal">
+          <div class="panel-title">
+            <h2>Boards</h2>
+            <button id="closeBoardsModalBtn" type="button">x</button>
+          </div>
+          <div id="projectBoardsList" class="boards-management-list"></div>
         </section>
       </section>
 
