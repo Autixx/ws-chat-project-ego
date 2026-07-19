@@ -1,14 +1,25 @@
 import type { AppConfig } from "../config.js";
 import type { DraftItem, DraftResult } from "../drafts/types.js";
 import { MockProvider } from "./mockProvider.js";
-import type { LlmProvider, LlmStreamEvent, LlmTaskInput } from "./provider.js";
+import { normalizeCodexClientRequestId, normalizeCodexThreadId } from "./codexTrace.js";
+import type { CodexTrace, LlmProvider, LlmStreamEvent, LlmTaskInput } from "./provider.js";
 
 type CodexAgentEnvelope = {
+  client_request_id?: string;
   job_id?: string;
   status?: string;
+  thread_id?: string;
+  session?: {
+    id?: unknown;
+    codex_session_id?: unknown;
+    turn_count?: unknown;
+    max_turns?: unknown;
+    rotated?: unknown;
+  };
   result?: unknown;
   eventlog?: unknown[];
   warnings?: unknown[];
+  error?: unknown;
 };
 
 type DraftItemType = DraftItem["type"];
@@ -25,53 +36,93 @@ export class CodexProvider implements LlmProvider {
   constructor(private readonly config: AppConfig) {}
 
   async *runProjectEgoTask(input: LlmTaskInput): AsyncGenerator<LlmStreamEvent> {
+    const clientRequestId = normalizeCodexClientRequestId(input.clientRequestId);
+    const threadId = normalizeCodexThreadId(input.threadId);
+    const traceBase: CodexTrace = {
+      clientRequestId,
+      threadId,
+      source: input.source,
+      mode: input.mode,
+      inputText: input.text,
+      status: "started"
+    };
+
     if (!this.config.codexAgentUrl) {
       if (this.config.codexFallbackToMock) {
         yield { type: "status", message: "CODEX_AGENT_URL is not configured; falling back to MockProvider." };
         yield* this.fallback.runProjectEgoTask(input);
         return;
       }
-      yield { type: "error", message: "Codex provider is not configured. Set CODEX_AGENT_URL or enable CODEX_FALLBACK_TO_MOCK." };
+      const message = "Codex provider is not configured. Set CODEX_AGENT_URL or enable CODEX_FALLBACK_TO_MOCK.";
+      yield { type: "error", message, trace: { ...traceBase, status: "error", error: message, completedAt: new Date().toISOString() } };
       return;
     }
 
-    const response = await fetch(this.config.codexAgentUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(this.config.codexAgentToken ? { "x-codex-agent-token": this.config.codexAgentToken } : {})
-      },
-      body: JSON.stringify({
-        mode: input.mode,
-        text: input.text,
-        source: input.source,
-        ...(input.fileName ? { fileName: input.fileName } : {}),
-        ...(input.attachments?.length ? { attachments: input.attachments } : {})
-      })
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60_000);
+    let response: Response;
+    try {
+      response = await fetch(this.config.codexAgentUrl, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "content-type": "application/json",
+          ...(this.config.codexAgentToken ? { "x-codex-agent-token": this.config.codexAgentToken } : {})
+        },
+        body: JSON.stringify({
+          client_request_id: clientRequestId,
+          thread_id: threadId,
+          mode: input.mode,
+          text: input.text,
+          source: input.source,
+          ...(input.fileName ? { fileName: input.fileName } : {}),
+          attachments: input.attachments ?? []
+        })
+      });
+    } catch (error) {
+      const message = error instanceof Error && error.name === "AbortError"
+        ? "Codex provider request timed out."
+        : `Codex provider request failed: ${error instanceof Error ? error.message : String(error)}.`;
+      yield { type: "error", message, trace: { ...traceBase, status: "error", error: message, completedAt: new Date().toISOString() } };
+      return;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      yield { type: "error", message: `Codex provider returned HTTP ${response.status}${body ? `: ${body.slice(0, 300)}` : ""}.` };
+        const body = await response.text().catch(() => "");
+        const message = `Codex provider returned HTTP ${response.status}${body ? `: ${body.slice(0, 300)}` : ""}.`;
+        yield { type: "error", message, trace: { ...traceBase, status: "error", error: message, completedAt: new Date().toISOString() } };
+        return;
+      }
+
+    let envelope: CodexAgentEnvelope;
+    try {
+      envelope = (await response.json()) as CodexAgentEnvelope;
+    } catch (error) {
+      const message = `Codex provider returned malformed JSON: ${error instanceof Error ? error.message : String(error)}.`;
+      yield { type: "error", message, trace: { ...traceBase, status: "error", error: message, completedAt: new Date().toISOString() } };
       return;
     }
-
-    const envelope = (await response.json()) as CodexAgentEnvelope;
+    const responseTrace = buildTrace(traceBase, envelope);
     if (Array.isArray(envelope.warnings)) {
       for (const warning of envelope.warnings) {
         yield { type: "status", message: `Codex warning: ${typeof warning === "string" ? warning : JSON.stringify(warning)}` };
       }
     }
     if (envelope.status !== "done") {
-      yield { type: "error", message: `Codex provider returned status ${envelope.status ?? "unknown"}${envelope.job_id ? ` for job ${envelope.job_id}` : ""}.` };
+      const detail = typeof envelope.error === "string" ? `: ${envelope.error}` : "";
+      const message = `Codex provider returned status ${envelope.status ?? "unknown"}${envelope.job_id ? ` for job ${envelope.job_id}` : ""}${detail}.`;
+      yield { type: "error", message, trace: { ...responseTrace, status: "error", error: message, completedAt: new Date().toISOString() } };
       return;
     }
     const normalized = normalizeDraftResult(envelope.result);
     if (!normalized.ok) {
-      yield { type: "error", message: buildInvalidResultMessage(envelope, normalized.failures) };
+      const message = buildInvalidResultMessage(envelope, normalized.failures);
+      yield { type: "error", message, trace: { ...responseTrace, status: "error", error: message, completedAt: new Date().toISOString() } };
       return;
     }
-    yield { type: "result", result: normalized.result };
+    yield { type: "result", result: normalized.result, trace: { ...responseTrace, status: "done", result: envelope.result, completedAt: new Date().toISOString() } };
     yield { type: "done" };
   }
 }
@@ -113,16 +164,14 @@ function normalizeDraftItem(value: unknown, index: number, failures: string[]): 
   const title = requireString(value, "title", `${path}.title`, failures);
   const summary = requireString(value, "summary", `${path}.summary`, failures);
   const details = requireString(value, "details", `${path}.details`, failures);
-  const project = requireString(value, "project", `${path}.project`, failures);
-  const module = requireString(value, "module", `${path}.module`, failures);
+  const project = optionalString(value, "project") ?? optionalString(value, "domain_hint") ?? "ProjectEGO";
+  const module = optionalString(value, "module") ?? optionalString(value, "module_hint") ?? optionalString(value, "domain_hint") ?? "General";
   const sourceText = requireString(value, "source_text", `${path}.source_text`, failures);
 
   if (
     title === undefined ||
     summary === undefined ||
     details === undefined ||
-    project === undefined ||
-    module === undefined ||
     sourceText === undefined
   ) {
     return undefined;
@@ -134,7 +183,7 @@ function normalizeDraftItem(value: unknown, index: number, failures: string[]): 
     details,
     project,
     module,
-    type: draftItemTypes.has(value.type as DraftItemType) ? (value.type as DraftItemType) : "idea",
+    type: normalizeDraftItemType(value.type),
     priority: draftPriorities.has(value.priority as DraftItemPriority) ? (value.priority as DraftItemPriority) : "medium",
     routing_confidence: draftRoutingConfidence.has(value.routing_confidence as DraftRoutingConfidence) ? (value.routing_confidence as DraftRoutingConfidence) : "medium",
     labels: toStringArray(value.labels),
@@ -143,6 +192,29 @@ function normalizeDraftItem(value: unknown, index: number, failures: string[]): 
     needs_clarification: toStringArray(value.needs_clarification),
     source_text: sourceText
   };
+}
+
+function buildTrace(base: CodexTrace, envelope: CodexAgentEnvelope): CodexTrace {
+  const warnings = Array.isArray(envelope.warnings) ? envelope.warnings : undefined;
+  return {
+    ...base,
+    clientRequestId: typeof envelope.client_request_id === "string" ? envelope.client_request_id : base.clientRequestId,
+    threadId: typeof envelope.thread_id === "string" ? envelope.thread_id : base.threadId,
+    status: envelope.status ?? "unknown",
+    codexJobId: envelope.job_id,
+    codexInternalSessionId: typeof envelope.session?.id === "string" ? envelope.session.id : undefined,
+    codexSessionId: typeof envelope.session?.codex_session_id === "string" ? envelope.session.codex_session_id : undefined,
+    sessionTurnCount: typeof envelope.session?.turn_count === "number" ? envelope.session.turn_count : undefined,
+    sessionRotated: typeof envelope.session?.rotated === "boolean" ? envelope.session.rotated : undefined,
+    warnings
+  };
+}
+
+function normalizeDraftItemType(value: unknown): DraftItemType {
+  if (draftItemTypes.has(value as DraftItemType)) return value as DraftItemType;
+  if (value === "task") return "feature";
+  if (value === "decision") return "idea";
+  return "idea";
 }
 
 function buildInvalidResultMessage(envelope: CodexAgentEnvelope, failures: string[]): string {
@@ -163,6 +235,10 @@ function requireString(record: Record<string, unknown>, key: string, path: strin
     return undefined;
   }
   return record[key];
+}
+
+function optionalString(record: Record<string, unknown>, key: string): string | undefined {
+  return typeof record[key] === "string" && record[key].trim() ? record[key] : undefined;
 }
 
 function requireArray(record: Record<string, unknown>, key: string, path: string, failures: string[]): unknown[] | undefined {

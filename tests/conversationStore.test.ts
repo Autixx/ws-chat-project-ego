@@ -8,6 +8,7 @@ import { MessageStore } from "../src/conversations/messageStore.js";
 import { openDatabase } from "../src/db/database.js";
 import { DraftStore } from "../src/drafts/draftStore.js";
 import type { DraftResult } from "../src/drafts/types.js";
+import { CodexRequestStore } from "../src/llm/codexRequestStore.js";
 import { openReferencedDraft } from "../src/ws/draftOpen.js";
 
 const user = {
@@ -68,6 +69,7 @@ function testStores() {
     database,
     conversations: new ConversationStore(database),
     messages: new MessageStore(database),
+    codexRequests: new CodexRequestStore(database),
     drafts: new DraftStore(dir),
     cleanup: () => {
       database.db.close();
@@ -294,6 +296,76 @@ test("ConversationStore inserts draft references", async () => {
 
     assert.equal(row?.job_id, "20260617-010203-abcdef");
     assert.equal(row?.items_count, 2);
+  } finally {
+    stores.cleanup();
+  }
+});
+
+test("CodexRequestStore persists v2 request trace fields", async () => {
+  const stores = testStores();
+  try {
+    stores.codexRequests.start({
+      clientRequestId: "dash_trace-1",
+      threadId: "projectego-intake",
+      source: "browser_text",
+      mode: "structured_breakdown",
+      inputText: "Make a plan"
+    });
+    const completed = stores.codexRequests.complete({
+      clientRequestId: "dash_trace-1",
+      threadId: "projectego-intake",
+      source: "browser_text",
+      mode: "structured_breakdown",
+      inputText: "Make a plan",
+      status: "done",
+      codexJobId: "agent-job-1",
+      codexInternalSessionId: "internal-session-1",
+      codexSessionId: "codex-session-1",
+      sessionTurnCount: 2,
+      sessionRotated: false,
+      result: { source_summary: "ok", items: [], needs_clarification: [] },
+      warnings: ["warn"]
+    });
+
+    assert.equal(completed.status, "done");
+    assert.equal(completed.codexJobId, "agent-job-1");
+    assert.equal(completed.codexInternalSessionId, "internal-session-1");
+    assert.equal(completed.codexSessionId, "codex-session-1");
+    assert.equal(completed.sessionTurnCount, 2);
+    assert.equal(completed.sessionRotated, false);
+    assert.deepEqual(completed.warnings, ["warn"]);
+    assert.deepEqual(completed.result, { source_summary: "ok", items: [], needs_clarification: [] });
+    assert.ok(completed.completedAt);
+  } finally {
+    stores.cleanup();
+  }
+});
+
+test("CodexRequestStore persists error trace fields", async () => {
+  const stores = testStores();
+  try {
+    stores.codexRequests.start({
+      clientRequestId: "dash_trace-error",
+      threadId: "projectego-intake",
+      source: "browser_text",
+      mode: "create_tasks",
+      inputText: "Make tasks"
+    });
+    const completed = stores.codexRequests.complete({
+      clientRequestId: "dash_trace-error",
+      threadId: "projectego-intake",
+      source: "browser_text",
+      mode: "create_tasks",
+      inputText: "Make tasks",
+      status: "error",
+      codexJobId: "agent-job-error",
+      error: "agent failed"
+    });
+
+    assert.equal(completed.status, "error");
+    assert.equal(completed.codexJobId, "agent-job-error");
+    assert.equal(completed.error, "agent failed");
+    assert.ok(completed.completedAt);
   } finally {
     stores.cleanup();
   }

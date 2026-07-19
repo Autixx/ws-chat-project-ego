@@ -158,7 +158,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.2.32 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.2.33 \
   node dist/pm/migrate.js
 ```
 
@@ -807,7 +807,7 @@ To update from the TrueNAS Apps UI:
 For predictable production rollouts, prefer a fixed tag such as:
 
 ```text
-ghcr.io/autixx/ws-chat-project-ego:v0.2.32
+ghcr.io/autixx/ws-chat-project-ego:v0.2.33
 ```
 
 Then update the tag in TrueNAS when moving to a newer release.
@@ -1073,7 +1073,7 @@ For Docker, back up the mounted `/app/data` volume.
 | `DEV_AUTH_BYPASS` | Legacy env retained but not used for local auth access control. |
 | `TRUST_AUTHELIA_HEADERS` | Legacy env retained but not used for local auth access control. |
 | `LLM_PROVIDER` | `mock` or `codex`. |
-| `CODEX_AGENT_URL` | Optional HTTP endpoint for Codex provider, for example `http://192.168.1.237:19090/v1/projectego/process`. |
+| `CODEX_AGENT_URL` | Optional HTTP endpoint for Codex provider, for example `http://192.168.1.237:19090/v2/projectego/decompose`. |
 | `CODEX_AGENT_HEALTH_URL` | Optional health URL for LLM-agent reachability polling. |
 | `CODEX_AGENT_TOKEN` | Optional token sent as `X-Codex-Agent-Token` to non-health Codex agent routes. |
 | `CODEX_FALLBACK_TO_MOCK` | Fall back to mock if Codex is not configured. |
@@ -1103,9 +1103,11 @@ For Docker, back up the mounted `/app/data` volume.
 Codex agent example:
 
 ```env
-CODEX_AGENT_URL=http://192.168.1.237:19090/v1/projectego/process
+CODEX_AGENT_URL=http://192.168.1.237:19090/v2/projectego/decompose
 CODEX_AGENT_HEALTH_URL=http://192.168.1.237:19090/healthz
 ```
+
+Dashboard sends Codex requests as JSON with a stable `client_request_id`, semantic `thread_id` (`projectego-intake` by default), prompt text, and attachment metadata/download URLs. It does not send multipart uploads, base64 file bodies, cookies, or browser session credentials to codex-agent. Returned agent trace fields are persisted in SQLite in `codex_requests` for diagnostics.
 
 ## Current Limitations
 

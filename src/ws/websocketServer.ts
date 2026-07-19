@@ -30,6 +30,8 @@ import { ComponentStatusMonitor } from "../status/componentStatus.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import { openReferencedDraft } from "./draftOpen.js";
 import { parseClientMessage } from "./protocol.js";
+import { CodexRequestStore } from "../llm/codexRequestStore.js";
+import { normalizeCodexClientRequestId, normalizeCodexThreadId } from "../llm/codexTrace.js";
 
 const MAX_TEXT_LENGTH = 256_000;
 
@@ -58,6 +60,7 @@ export function attachWebSocketServer(
   const conversations = new ConversationStore(database);
   const messages = new MessageStore(database);
   const jobs = new JobStore(database);
+  const codexRequests = new CodexRequestStore(database);
   const drafts = new DraftStore(config.dataDir);
   const unclarified = new UnclarifiedStore(config.dataDir);
   const provider = providerFromConfig(config);
@@ -499,9 +502,19 @@ export function attachWebSocketServer(
 
     const taskMode = taskModeFromUiMode(input.mode);
     const source = llmFileName ? "dashboard-upload" : "browser_text";
+    const shouldTraceCodex = config.llmProvider === "codex" && Boolean(config.codexAgentUrl);
+    const clientRequestId = normalizeCodexClientRequestId();
+    const threadId = normalizeCodexThreadId();
+    if (shouldTraceCodex) {
+      codexRequests.start({ clientRequestId, threadId, source, mode: taskMode, inputText: llmText });
+      await messages.updateMessageMetadata(user, conversation.id, assistantMessage.id, {
+        codexClientRequestId: clientRequestId,
+        codexThreadId: threadId
+      });
+    }
     let assistantContent = "";
 
-    for await (const event of provider.runProjectEgoTask({ mode: taskMode, text: llmText, source, fileName: llmFileName, attachments: llmAttachments, user })) {
+    for await (const event of provider.runProjectEgoTask({ mode: taskMode, text: llmText, source, fileName: llmFileName, attachments: llmAttachments, clientRequestId, threadId, user })) {
       if (event.type === "status") {
         const statusMessage = await messages.appendToolMessage(conversation.id, user, event.message, {
           kind: "status",
@@ -518,6 +531,7 @@ export function attachWebSocketServer(
       }
 
       if (event.type === "error") {
+        if (shouldTraceCodex && event.trace) codexRequests.complete(event.trace);
         const errorMessage = await messages.appendToolMessage(conversation.id, user, event.message, {
           kind: "error",
           mode: input.mode,
@@ -528,6 +542,7 @@ export function attachWebSocketServer(
       }
 
       if (event.type === "result") {
+        const traceRecord = shouldTraceCodex && event.trace ? codexRequests.complete(event.trace) : undefined;
         const saved = await drafts.saveDraft({ mode: taskMode, source, fileName: llmFileName, user, result: event.result });
         assistantContent += `\n\nI created draft ${saved.draft.jobId} with ${saved.draft.result.items.length} item(s).`;
         const draftMessage = await messages.appendToolMessage(conversation.id, user, `Draft ${saved.draft.jobId}: ${saved.draft.result.items.length} item(s).`, {
@@ -536,6 +551,13 @@ export function attachWebSocketServer(
           itemsCount: saved.draft.result.items.length,
           mode: input.mode,
           responseToRequestId: userMessage.id,
+          codexClientRequestId: traceRecord?.clientRequestId ?? clientRequestId,
+          codexThreadId: traceRecord?.threadId ?? threadId,
+          codexJobId: traceRecord?.codexJobId,
+          codexInternalSessionId: traceRecord?.codexInternalSessionId,
+          codexSessionId: traceRecord?.codexSessionId,
+          sessionTurnCount: traceRecord?.sessionTurnCount,
+          sessionRotated: traceRecord?.sessionRotated,
           decisionStatus: "pending"
         });
         await conversations.insertDraftRef(user, {

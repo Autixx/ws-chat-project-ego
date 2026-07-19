@@ -99,6 +99,28 @@ CREATE TABLE IF NOT EXISTS job_events (
 CREATE INDEX IF NOT EXISTS idx_job_events_job_created
 ON job_events(job_id, created_at ASC);
 
+CREATE TABLE IF NOT EXISTS codex_requests (
+  client_request_id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  input_text TEXT NOT NULL,
+  status TEXT NOT NULL,
+  codex_job_id TEXT,
+  codex_internal_session_id TEXT,
+  codex_session_id TEXT,
+  session_turn_count INTEGER,
+  session_rotated INTEGER,
+  result_json TEXT,
+  warnings_json TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_codex_requests_created
+ON codex_requests(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS app_migrations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
@@ -188,6 +210,30 @@ ON job_events(job_id, created_at ASC);
     updateAttachmentNames.run(row.original_file_name ?? row.file_name, row.stored_file_name ?? path.basename(row.storage_path), row.id);
   }
   db.prepare("INSERT OR IGNORE INTO app_migrations (name, applied_at) VALUES (?, ?)").run("004_attachment_original_stored_names", new Date().toISOString());
+  db.exec(`
+CREATE TABLE IF NOT EXISTS codex_requests (
+  client_request_id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  input_text TEXT NOT NULL,
+  status TEXT NOT NULL,
+  codex_job_id TEXT,
+  codex_internal_session_id TEXT,
+  codex_session_id TEXT,
+  session_turn_count INTEGER,
+  session_rotated INTEGER,
+  result_json TEXT,
+  warnings_json TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_codex_requests_created
+ON codex_requests(created_at DESC);
+`);
+  db.prepare("INSERT OR IGNORE INTO app_migrations (name, applied_at) VALUES (?, ?)").run("005_codex_request_trace", new Date().toISOString());
 }
 
 function addColumnIfMissing(db: Database.Database, table: string, column: string, definition: string): void {
