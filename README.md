@@ -158,7 +158,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.2.33 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.2.34 \
   node dist/pm/migrate.js
 ```
 
@@ -488,14 +488,19 @@ Supported upload types:
 
 - `.txt`
 - `.md`
+- `.markdown`
 - `.json`
 - `.csv`
+- `.tsv`
 - `.log`
 - `.yml`
 - `.yaml`
 - `.xml`
 - `.ini`
+- `.cfg`
 - `.conf`
+- `.toml`
+- `.gitignore`
 - `.mp3`
 - `.mp4`
 - `.jpg`
@@ -503,10 +508,11 @@ Supported upload types:
 - `.png`
 - `.svg`
 - `.webp`
+- `.gif`
 
 Maximum binary attachment size: 25 MB. Text extraction for LLM requests is controlled separately by `MAX_UPLOAD_BYTES` and `MAX_EXTRACTED_CHARS`.
 
-Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. Text-like files are saved locally, read as UTF-8, stripped of NUL bytes, capped by `MAX_EXTRACTED_CHARS`, and embedded into the existing Codex agent JSON `text` field with `source: "dashboard-upload"` and `fileName` as metadata only. Image attachments can be forwarded to codex-agent as JSON `attachments[]` entries containing secure internal download URLs; image bytes are not inlined as base64. The original file is not uploaded separately to codex-agent. `.mp3` renders with browser audio controls. `.mp4` opens in a movable video preview subwindow. `.jpg`, `.jpeg`, `.png`, `.svg`, and `.webp` render as image previews. Attachment binary data is never stored in SQLite.
+Attachments are uploaded through `POST /api/uploads`, finalized when the request is sent, linked to the request message in SQLite, and stored as files under `DATA_DIR/attachments`. Text-like files are saved locally, read as UTF-8, stripped of BOM/NUL bytes, normalized to LF line endings, capped by `MAX_EXTRACTED_CHARS`, and embedded into the Codex/n8n JSON `text` field with clear `--- ATTACHED TEXT FILE ---` delimiters and `source: "dashboard"`. Image attachments can be forwarded as JSON `attachments[]` entries containing secure internal download URLs; image bytes are not inlined as base64. `source_files[]` records which files were included as text, sent as image references, or skipped. `.env` is skipped as sensitive by default. PDF/DOC/DOCX/XLS/XLSX/PPT/PPTX/ODT/RTF are not parsed and are reported as unsupported/skipped warnings. `.mp3` renders with browser audio controls. `.mp4` opens in a movable video preview subwindow. `.jpg`, `.jpeg`, `.png`, `.svg`, `.webp`, and `.gif` render as image previews. Attachment binary data is never stored in SQLite.
 
 For image forwarding, set:
 
@@ -807,7 +813,7 @@ To update from the TrueNAS Apps UI:
 For predictable production rollouts, prefer a fixed tag such as:
 
 ```text
-ghcr.io/autixx/ws-chat-project-ego:v0.2.33
+ghcr.io/autixx/ws-chat-project-ego:v0.2.34
 ```
 
 Then update the tag in TrueNAS when moving to a newer release.
@@ -1004,11 +1010,29 @@ Supported extensions:
 
 - `.txt`
 - `.md`
+- `.markdown`
+- `.json`
+- `.csv`
+- `.tsv`
+- `.log`
+- `.yml`
+- `.yaml`
+- `.xml`
+- `.ini`
+- `.cfg`
+- `.conf`
+- `.toml`
+- `.gitignore`
 - `.mp3`
 - `.mp4`
 - `.jpg`
+- `.jpeg`
 - `.png`
 - `.svg`
+- `.webp`
+- `.gif`
+
+Known document formats such as `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.odt`, and `.rtf` may be uploaded only so the request can report them as skipped; Dashboard does not extract them.
 
 Limit: 25 MB per file.
 
@@ -1059,7 +1083,7 @@ For Docker, back up the mounted `/app/data` volume.
 | `DATA_DIR` | Draft artifacts, attachments, and unclarified files. |
 | `ATTACHMENTS_DIR` | Optional attachment root. Defaults to `DATA_DIR/attachments`. |
 | `SQLITE_PATH` | SQLite database file for chat history. |
-| `MAX_UPLOAD_BYTES` | Maximum text-like attachment size for extraction into LLM requests. Defaults to `1048576`. |
+| `MAX_UPLOAD_BYTES` | Maximum text-like attachment size for extraction into LLM requests. Dashboard caps text extraction at 256 KiB per file even if this is higher. Defaults to `1048576`. |
 | `MAX_EXTRACTED_CHARS` | Maximum extracted characters included in LLM requests. Defaults to `50000`. |
 | `MAX_LLM_ATTACHMENT_BYTES` | Maximum image attachment size forwarded to LLM as a download URL. Defaults to `10485760`. |
 | `AGENT_ATTACHMENT_TOKEN` | Bearer token required by `/api/internal/attachments/:attachmentId`. |

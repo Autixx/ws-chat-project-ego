@@ -1044,6 +1044,9 @@ function kb(value) {
 
 function fileExt(fileName) {
   const index = fileName.lastIndexOf(".");
+  const lower = fileName.toLowerCase();
+  if (lower === ".gitignore" || lower.endsWith("/.gitignore")) return ".gitignore";
+  if (lower === ".env" || lower.endsWith("/.env")) return ".env";
   return index >= 0 ? fileName.slice(index).toLowerCase() : "";
 }
 
@@ -1057,9 +1060,12 @@ function attachmentStoredName(attachment) {
 
 function uploadContextLabel(file) {
   const ext = fileExt(file.name);
-  if ([".txt", ".md", ".json", ".csv", ".log", ".yml", ".yaml", ".xml", ".ini", ".conf"].includes(ext)) return "text-extractable";
-  if ([".jpg", ".jpeg", ".png", ".svg", ".webp"].includes(ext) || ["image/jpeg", "image/png", "image/svg+xml", "image/webp"].includes(file.type)) return "image/vision-capable";
-  return "stored-only";
+  if ([".env"].includes(ext)) return "skipped/sensitive";
+  if ([".txt", ".md", ".markdown", ".json", ".csv", ".tsv", ".log", ".yml", ".yaml", ".xml", ".ini", ".cfg", ".conf", ".toml", ".gitignore"].includes(ext)) return "text-in-prompt";
+  if (!ext && file.type?.startsWith("text/")) return "text-in-prompt";
+  if ([".jpg", ".jpeg", ".png", ".svg", ".webp", ".gif"].includes(ext) || ["image/jpeg", "image/jpg", "image/png", "image/svg+xml", "image/webp", "image/gif"].includes(file.type)) return "image-reference";
+  if ([".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".rtf"].includes(ext)) return "skipped/unsupported";
+  return "not uploadable";
 }
 
 function byteSize(text) {
@@ -1553,7 +1559,18 @@ function removeSelectedFile(indexToRemove) {
 
 function updateSelectedFileNotice() {
   const files = selectedFiles();
-  els.fileNotice.textContent = files.length ? `${files.length} file(s) ready to upload` : "";
+  if (!files.length) {
+    els.fileNotice.textContent = "";
+  } else {
+    const groups = files.reduce((acc, file) => {
+      const label = uploadContextLabel(file);
+      if (label === "text-in-prompt") acc.text += 1;
+      else if (label === "image-reference") acc.image += 1;
+      else acc.skipped += 1;
+      return acc;
+    }, { text: 0, image: 0, skipped: 0 });
+    els.fileNotice.textContent = `${files.length} file(s): ${groups.text} text, ${groups.image} image, ${groups.skipped} skipped`;
+  }
   els.fileNotice.classList.toggle("has-files", files.length > 0);
 }
 
@@ -1706,8 +1723,13 @@ els.fileInput.addEventListener("change", async () => {
   const incomingFiles = Array.from(els.fileInput.files || []);
   if (!incomingFiles.length) return;
   for (const file of incomingFiles) {
-    if (!/\.(txt|md|mp3|mp4|jpg|png|svg)$/i.test(file.name)) {
-      els.fileNotice.textContent = "Supported: .txt, .md, .mp3, .mp4, .jpg, .png, .svg";
+    const ext = fileExt(file.name);
+    const allowedForUpload = [
+      ".txt", ".md", ".markdown", ".json", ".csv", ".tsv", ".log", ".yml", ".yaml", ".xml", ".ini", ".cfg", ".conf", ".toml", ".env", ".gitignore",
+      ".mp3", ".mp4", ".jpg", ".jpeg", ".png", ".svg", ".webp", ".gif", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".rtf"
+    ];
+    if (!allowedForUpload.includes(ext) && !(ext === "" && file.type?.startsWith("text/"))) {
+      els.fileNotice.textContent = "Supported uploads: text-like files, images, audio/video, and known document types for skipped warnings.";
       els.fileNotice.classList.remove("has-files");
       els.fileInput.value = "";
       renderUploadInspector();

@@ -98,7 +98,9 @@ test("CodexProvider uses X-Codex-Agent-Token and omits user from payload", async
       text: "Make a plan",
       source: "browser_text",
       fileName: "plan.md",
-      attachments: []
+      attachments: [],
+      source_files: [],
+      warnings: []
     });
     assert.equal(events.at(-1)?.type, "done");
   } finally {
@@ -106,7 +108,7 @@ test("CodexProvider uses X-Codex-Agent-Token and omits user from payload", async
   }
 });
 
-test("CodexProvider sends dashboard-upload source and fileName as JSON metadata", async () => {
+test("CodexProvider sends dashboard source and fileName as JSON metadata", async () => {
   let body: Record<string, unknown> | undefined;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (_url, init) => {
@@ -116,7 +118,7 @@ test("CodexProvider sends dashboard-upload source and fileName as JSON metadata"
   try {
     const events = await collectWithInput(new CodexProvider(config()), {
       ...input,
-      source: "dashboard-upload",
+      source: "dashboard",
       text: "User text:\nHello\n\nAttached file: note.md\nExtracted file content:\nBody",
       fileName: "note.md"
     });
@@ -124,10 +126,12 @@ test("CodexProvider sends dashboard-upload source and fileName as JSON metadata"
       client_request_id: body?.client_request_id,
       thread_id: "projectego-intake",
       mode: "structured_breakdown",
-      source: "dashboard-upload",
+      source: "dashboard",
       text: "User text:\nHello\n\nAttached file: note.md\nExtracted file content:\nBody",
       fileName: "note.md",
-      attachments: []
+      attachments: [],
+      source_files: [],
+      warnings: []
     });
     assert.equal(events.at(-1)?.type, "done");
   } finally {
@@ -145,7 +149,7 @@ test("CodexProvider sends multimodal attachments in JSON body", async () => {
   try {
     await collectWithInput(new CodexProvider(config()), {
       ...input,
-      source: "dashboard-upload",
+      source: "dashboard",
       fileName: "screen.png",
       attachments: [
         {
@@ -168,6 +172,29 @@ test("CodexProvider sends multimodal attachments in JSON body", async () => {
         downloadUrl: "http://127.0.0.1:19100/api/internal/attachments/ATT-image"
       }
     ]);
+    assert.deepEqual(body?.source_files, []);
+    assert.deepEqual(body?.warnings, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("CodexProvider sends source_files and draft warnings in JSON body", async () => {
+  let body: Record<string, unknown> | undefined;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url, init) => {
+    body = JSON.parse(String(init?.body));
+    return Response.json({ status: "done", result: draftResult });
+  }) as typeof fetch;
+  try {
+    await collectWithInput(new CodexProvider(config()), {
+      ...input,
+      source: "dashboard",
+      sourceFiles: [{ fileName: "document.pdf", kind: "unsupported", mimeType: "application/pdf", sizeBytes: 900, skipped: true, reason: "unsupported_file_type" }],
+      warnings: [{ code: "unsupported_file_type", message: "Unsupported file skipped: document.pdf", fileName: "document.pdf" }]
+    });
+    assert.deepEqual(body?.source_files, [{ fileName: "document.pdf", kind: "unsupported", mimeType: "application/pdf", sizeBytes: 900, skipped: true, reason: "unsupported_file_type" }]);
+    assert.deepEqual(body?.warnings, [{ code: "unsupported_file_type", message: "Unsupported file skipped: document.pdf", fileName: "document.pdf" }]);
   } finally {
     globalThis.fetch = originalFetch;
   }

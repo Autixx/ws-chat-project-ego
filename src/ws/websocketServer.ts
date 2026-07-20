@@ -4,11 +4,10 @@ import type { AuthenticatedUser } from "../auth/authelia.js";
 import { requireUserForRequest } from "../auth/requireUser.js";
 import {
   buildLlmPromptWithAttachments,
-  buildLlmAttachmentInputs,
   deleteStoredAttachments,
-  extractTextAttachments,
   finalizeStagedUploads,
-  firstExtractedFileName
+  firstExtractedFileName,
+  prepareDraftAttachmentContext
 } from "../attachments/attachmentService.js";
 import type { Conversation } from "../conversations/types.js";
 import type { AppConfig } from "../config.js";
@@ -405,9 +404,14 @@ export function attachWebSocketServer(
       mimeType: input.mimeType
     });
     let finalizedAttachments: Awaited<ReturnType<typeof finalizeStagedUploads>> = [];
-    let extraction: Awaited<ReturnType<typeof extractTextAttachments>> = { extracted: [], warnings: [] };
+    let preparedContext: Awaited<ReturnType<typeof prepareDraftAttachmentContext>> = {
+      text: input.text.trim(),
+      attachments: [],
+      sourceFiles: [],
+      warnings: [],
+      extracted: []
+    };
     let llmAttachments: LlmAttachmentInput[] = [];
-    let attachmentWarnings: string[] = [];
     if (input.attachmentUploadIds?.length) {
       finalizedAttachments = await finalizeStagedUploads({
         dataDir: config.dataDir,
@@ -424,32 +428,28 @@ export function attachWebSocketServer(
         storedFileNames: finalizedAttachments.map((attachment) => attachment.storedFileName ?? attachment.fileName),
         uploadedFileCount: finalizedAttachments.length
       });
-      extraction = await extractTextAttachments({
+      preparedContext = await prepareDraftAttachmentContext({
         dataDir: config.dataDir,
-        attachments: finalizedAttachments,
-        maxUploadBytes: config.maxUploadBytes,
-        maxExtractedChars: config.maxExtractedChars
-      });
-      if (extraction.extracted.length) {
-        userMessage = await messages.updateMessageMetadata(user, conversation.id, userMessage.id, {
-          extractedAttachments: extraction.extracted.map((item) => ({
-            originalFileName: item.attachment.originalFileName ?? item.fileName,
-            storedFileName: item.attachment.storedFileName,
-            savedPath: item.attachment.storagePath,
-            sizeBytes: item.attachment.sizeBytes,
-            extension: item.extension,
-            extractedChars: item.extractedChars,
-            truncated: item.truncated
-          }))
-        });
-      }
-      const forwardable = buildLlmAttachmentInputs({
+        userText: input.text,
         attachments: finalizedAttachments,
         dashboardInternalBaseUrl: config.dashboardInternalBaseUrl,
+        maxUploadBytes: config.maxUploadBytes,
+        maxExtractedChars: config.maxExtractedChars,
         maxLlmAttachmentBytes: config.maxLlmAttachmentBytes
       });
-      llmAttachments = forwardable.attachments;
-      attachmentWarnings = forwardable.warnings;
+      llmAttachments = preparedContext.attachments;
+      userMessage = await messages.updateMessageMetadata(user, conversation.id, userMessage.id, {
+        sourceFiles: preparedContext.sourceFiles,
+        draftWarnings: preparedContext.warnings,
+        extractedAttachments: preparedContext.extracted.map((item) => ({
+          originalFileName: item.attachment.originalFileName ?? item.fileName,
+          storedFileName: item.attachment.storedFileName,
+          sizeBytes: item.attachment.sizeBytes,
+          extension: item.extension,
+          extractedChars: item.extractedChars,
+          truncated: item.truncated
+        }))
+      });
     }
     send(ws, { type: "message_created", message: userMessage });
 
@@ -469,7 +469,9 @@ export function attachWebSocketServer(
         responseToRequestId: userMessage.id,
         decisionStatus: "pending",
         fileName: userMessage.metadata?.fileName,
-        uploadedFileNames: userMessage.metadata?.uploadedFileNames
+        uploadedFileNames: userMessage.metadata?.uploadedFileNames,
+        sourceFiles: userMessage.metadata?.sourceFiles,
+        draftWarnings: userMessage.metadata?.draftWarnings
       }
     });
     await messages.appendMessage(assistantMessage);
@@ -486,22 +488,24 @@ export function attachWebSocketServer(
       return;
     }
 
-    for (const warning of [...extraction.warnings, ...attachmentWarnings]) {
-      const statusMessage = await messages.appendToolMessage(conversation.id, user, warning, {
+    for (const warning of preparedContext.warnings) {
+      const statusMessage = await messages.appendToolMessage(conversation.id, user, warning.message, {
         kind: "status",
         mode: input.mode,
-        responseToRequestId: userMessage.id
+        responseToRequestId: userMessage.id,
+        warningCode: warning.code,
+        fileName: warning.fileName
       });
       await emitMessage(ws, statusMessage);
-      send(ws, { type: "status", conversationId: conversation.id, messageId: assistantMessage.id, jobId: "pending", message: warning });
+      send(ws, { type: "status", conversationId: conversation.id, messageId: assistantMessage.id, jobId: "pending", message: warning.message });
     }
-    const llmText = buildLlmPromptWithAttachments(input.text, extraction.extracted);
-    const llmFileName = input.fileName ?? firstExtractedFileName(extraction.extracted);
+    const llmText = finalizedAttachments.length ? preparedContext.text : buildLlmPromptWithAttachments(input.text, []);
+    const llmFileName = input.fileName ?? firstExtractedFileName(preparedContext.extracted);
     if (!llmText.trim() && !llmAttachments.length) throw new Error("At least one text prompt, supported text-like attachment, or image attachment is required.");
     if (llmText.length > MAX_TEXT_LENGTH) throw new Error("Combined message text is too large.");
 
     const taskMode = taskModeFromUiMode(input.mode);
-    const source = llmFileName ? "dashboard-upload" : "browser_text";
+    const source = "dashboard";
     const shouldTraceCodex = config.llmProvider === "codex" && Boolean(config.codexAgentUrl);
     const clientRequestId = normalizeCodexClientRequestId();
     const threadId = normalizeCodexThreadId();
@@ -514,7 +518,18 @@ export function attachWebSocketServer(
     }
     let assistantContent = "";
 
-    for await (const event of provider.runProjectEgoTask({ mode: taskMode, text: llmText, source, fileName: llmFileName, attachments: llmAttachments, clientRequestId, threadId, user })) {
+    for await (const event of provider.runProjectEgoTask({
+      mode: taskMode,
+      text: llmText,
+      source,
+      fileName: llmFileName,
+      attachments: llmAttachments,
+      sourceFiles: preparedContext.sourceFiles,
+      warnings: preparedContext.warnings,
+      clientRequestId,
+      threadId,
+      user
+    })) {
       if (event.type === "status") {
         const statusMessage = await messages.appendToolMessage(conversation.id, user, event.message, {
           kind: "status",
@@ -558,6 +573,8 @@ export function attachWebSocketServer(
           codexSessionId: traceRecord?.codexSessionId,
           sessionTurnCount: traceRecord?.sessionTurnCount,
           sessionRotated: traceRecord?.sessionRotated,
+          sourceFiles: preparedContext.sourceFiles,
+          draftWarnings: preparedContext.warnings,
           decisionStatus: "pending"
         });
         await conversations.insertDraftRef(user, {

@@ -12,6 +12,7 @@ import {
   extractAttachmentText,
   finalizeStagedUploads,
   firstExtractedFileName,
+  prepareDraftAttachmentContext,
   stageUploadedFile,
   validateAttachmentFile,
   validateExtractableAttachmentFile,
@@ -76,6 +77,15 @@ test("validateAttachmentFile accepts supported attachment types", () => {
   assert.doesNotThrow(() => validateAttachmentFile("image.png", "image/png", 10));
   assert.doesNotThrow(() => validateAttachmentFile("vector.svg", "image/svg+xml", 10));
   assert.doesNotThrow(() => validateAttachmentFile("preview.webp", "image/webp", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("animation.gif", "image/gif", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("readme.markdown", "text/markdown", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("data.tsv", "text/tab-separated-values", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("config.cfg", "text/plain", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("settings.toml", "application/toml", 10));
+  assert.doesNotThrow(() => validateAttachmentFile(".gitignore", "text/plain", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("README", "text/plain", 10));
+  assert.doesNotThrow(() => validateAttachmentFile(".env", "text/plain", 10));
+  assert.doesNotThrow(() => validateAttachmentFile("document.pdf", "application/pdf", 10));
 });
 
 test("extractAttachmentText accepts markdown and strips NUL bytes", async () => {
@@ -138,9 +148,10 @@ test("extractAttachmentText caps extracted content and marks truncation", async 
   }
 });
 
-test("validateExtractableAttachmentFile rejects unsupported and oversized files", () => {
+test("validateExtractableAttachmentFile rejects unsupported sensitive and oversized files", () => {
   assert.throws(() => validateExtractableAttachmentFile("image.png", 10), /Unsupported text attachment extension/);
-  assert.throws(() => validateExtractableAttachmentFile("note.markdown", 10), /Unsupported text attachment extension/);
+  assert.doesNotThrow(() => validateExtractableAttachmentFile("note.markdown", 10));
+  assert.throws(() => validateExtractableAttachmentFile(".env", 10), /Sensitive text attachment/);
   assert.throws(() => validateExtractableAttachmentFile("large.md", 11, 10), /text extraction limit/);
 });
 
@@ -163,7 +174,7 @@ test("buildLlmPromptWithAttachments combines text and file content", () => {
       extension: ".md"
     }
   ]);
-  assert.equal(prompt, "User text:\nPlease summarize\n\nAttached file: plan.md\nExtracted file content:\nfile body");
+  assert.equal(prompt, "Please summarize\n\n--- ATTACHED TEXT FILE: plan.md ---\nfile body\n--- END ATTACHED TEXT FILE: plan.md ---");
 });
 
 test("firstExtractedFileName returns filename passed to LLM provider", () => {
@@ -282,6 +293,207 @@ test("buildLlmAttachmentInputs reports missing internal base URL for images", ()
   });
   assert.equal(result.attachments.length, 0);
   assert.match(result.warnings[0], /DASHBOARD_INTERNAL_BASE_URL/);
+});
+
+test("prepareDraftAttachmentContext appends markdown with delimiters and normalizes CRLF/BOM", async () => {
+  const s = stores();
+  try {
+    const relative = "attachments/request/notes.md";
+    const absolute = path.join(s.dir, relative);
+    mkdirSync(path.dirname(absolute), { recursive: true });
+    writeFileSync(absolute, "\uFEFF# Title\r\nline\r\n\r\n", "utf8");
+    const result = await prepareDraftAttachmentContext({
+      dataDir: s.dir,
+      userText: "Please review",
+      attachments: [
+        {
+          id: "ATT-md",
+          conversationId: "C-md",
+          fileName: "notes.md",
+          originalFileName: "notes.md",
+          storedFileName: "ATT-md.md",
+          mimeType: "text/markdown",
+          sizeBytes: 18,
+          storagePath: relative,
+          createdAt: new Date().toISOString()
+        }
+      ],
+      dashboardInternalBaseUrl: "http://127.0.0.1:19100"
+    });
+    assert.equal(result.text, "Please review\n\n--- ATTACHED TEXT FILE: notes.md ---\n# Title\nline\n--- END ATTACHED TEXT FILE: notes.md ---");
+    assert.deepEqual(result.sourceFiles[0], {
+      fileName: "notes.md",
+      kind: "text",
+      mimeType: "text/markdown",
+      sizeBytes: 18,
+      included_in_text: true
+    });
+    assert.equal(result.warnings.length, 0);
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("prepareDraftAttachmentContext includes json as text", async () => {
+  const s = stores();
+  try {
+    const relative = "attachments/request/payload.json";
+    const absolute = path.join(s.dir, relative);
+    mkdirSync(path.dirname(absolute), { recursive: true });
+    writeFileSync(absolute, "{\"ok\":true}", "utf8");
+    const result = await prepareDraftAttachmentContext({
+      dataDir: s.dir,
+      userText: "",
+      attachments: [
+        {
+          id: "ATT-json",
+          conversationId: "C-json",
+          fileName: "payload.json",
+          mimeType: "application/json",
+          sizeBytes: 11,
+          storagePath: relative,
+          createdAt: new Date().toISOString()
+        }
+      ]
+    });
+    assert.match(result.text, /--- ATTACHED TEXT FILE: payload\.json ---\n\{"ok":true\}/);
+    assert.equal(result.sourceFiles[0].included_in_text, true);
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("prepareDraftAttachmentContext rejects env files as sensitive by default", async () => {
+  const s = stores();
+  try {
+    const relative = "attachments/request/.env";
+    const absolute = path.join(s.dir, relative);
+    mkdirSync(path.dirname(absolute), { recursive: true });
+    writeFileSync(absolute, "SECRET=value", "utf8");
+    const result = await prepareDraftAttachmentContext({
+      dataDir: s.dir,
+      userText: "context",
+      attachments: [
+        {
+          id: "ATT-env",
+          conversationId: "C-env",
+          fileName: ".env",
+          mimeType: "text/plain",
+          sizeBytes: 12,
+          storagePath: relative,
+          createdAt: new Date().toISOString()
+        }
+      ]
+    });
+    assert.equal(result.text, "context");
+    assert.equal(result.sourceFiles[0].kind, "unsupported");
+    assert.equal(result.sourceFiles[0].reason, "sensitive_file_type");
+    assert.equal(result.warnings[0].code, "sensitive_file_type");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("prepareDraftAttachmentContext sends png as image metadata and skips pdf", async () => {
+  const s = stores();
+  try {
+    const result = await prepareDraftAttachmentContext({
+      dataDir: s.dir,
+      userText: "Разбери материалы",
+      dashboardInternalBaseUrl: "http://dashboard-internal",
+      attachments: [
+        {
+          id: "img_001",
+          conversationId: "C-mixed",
+          fileName: "reference.png",
+          originalFileName: "reference.png",
+          storedFileName: "img_001.png",
+          mimeType: "image/png",
+          sizeBytes: 123456,
+          storagePath: "attachments/C/R/img_001.png",
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: "ATT-pdf",
+          conversationId: "C-mixed",
+          fileName: "document.pdf",
+          originalFileName: "document.pdf",
+          storedFileName: "ATT-pdf.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 900000,
+          storagePath: "attachments/C/R/ATT-pdf.pdf",
+          createdAt: new Date().toISOString()
+        }
+      ]
+    });
+    assert.equal(result.text, "Разбери материалы");
+    assert.deepEqual(result.attachments, [
+      {
+        id: "img_001",
+        kind: "image",
+        fileName: "img_001.png",
+        mimeType: "image/png",
+        sizeBytes: 123456,
+        downloadUrl: "http://dashboard-internal/api/internal/attachments/img_001"
+      }
+    ]);
+    assert.equal(result.sourceFiles.find((item) => item.fileName === "reference.png")?.included_as_attachment, true);
+    assert.equal(result.sourceFiles.find((item) => item.fileName === "document.pdf")?.reason, "unsupported_file_type");
+    assert.equal(result.warnings[0].code, "unsupported_file_type");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("prepareDraftAttachmentContext rejects oversized text file and allows only valid attachment cases", async () => {
+  const s = stores();
+  try {
+    const relative = "attachments/request/large.md";
+    const absolute = path.join(s.dir, relative);
+    mkdirSync(path.dirname(absolute), { recursive: true });
+    writeFileSync(absolute, "x".repeat(20), "utf8");
+    const onlyOversized = await prepareDraftAttachmentContext({
+      dataDir: s.dir,
+      userText: "",
+      maxUploadBytes: 10,
+      attachments: [
+        {
+          id: "ATT-large",
+          conversationId: "C-large",
+          fileName: "large.md",
+          mimeType: "text/markdown",
+          sizeBytes: 20,
+          storagePath: relative,
+          createdAt: new Date().toISOString()
+        }
+      ]
+    });
+    assert.equal(onlyOversized.text, "");
+    assert.equal(onlyOversized.attachments.length, 0);
+    assert.equal(onlyOversized.sourceFiles[0].reason, "text_file_too_large");
+    assert.equal(Boolean(onlyOversized.text.trim() || onlyOversized.attachments.length), false);
+
+    const onlyImage = await prepareDraftAttachmentContext({
+      dataDir: s.dir,
+      userText: "",
+      dashboardInternalBaseUrl: "http://127.0.0.1:19100",
+      attachments: [
+        {
+          id: "ATT-image-only",
+          conversationId: "C-image-only",
+          fileName: "image.png",
+          storedFileName: "ATT-image-only.png",
+          mimeType: "image/png",
+          sizeBytes: 10,
+          storagePath: "attachments/C/R/ATT-image-only.png",
+          createdAt: new Date().toISOString()
+        }
+      ]
+    });
+    assert.equal(Boolean(onlyImage.text.trim() || onlyImage.attachments.length), true);
+  } finally {
+    s.cleanup();
+  }
 });
 
 test("internal attachment bearer authorization requires AGENT_ATTACHMENT_TOKEN", () => {

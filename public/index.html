@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ProjectEGO Dashboard</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=0.2.34" />
   </head>
   <body class="theme-dark">
     <section id="authScreen" class="auth-screen">
@@ -129,7 +129,7 @@
           <button class="mode-button" type="button" data-mode="tasks">Tasks</button>
           <button class="mode-button" type="button" data-mode="digest">Digest</button>
           <button class="mode-button" type="button" data-mode="abstract_idea">Abstract idea</button>
-          <span id="fileNotice" title="Text extraction supports .txt, .md, .json, .csv, .log, .yml, .yaml, .xml, .ini, .conf. Media files are stored as attachments."></span>
+          <span id="fileNotice" title="Text files are included in prompt; images are sent as references; PDF/DOCX/etc are skipped with warnings. .env is skipped as sensitive."></span>
         </div>
 
       </section>
@@ -244,6 +244,6 @@
         <pre id="debugOutput"></pre>
       </details>
     </main>
-    <script src="/app.js" defer></script>
+    <script src="/app.js?v=0.2.34" defer></script>
   </body>
 </html>
