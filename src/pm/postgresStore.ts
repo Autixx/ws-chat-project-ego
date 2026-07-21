@@ -529,10 +529,18 @@ export class PmStore {
     const [activity, changes, announcements, myEpics] = await Promise.all([
       this.pool.query(
         `
-        SELECT t.id, t.project_id, t.title, t.status, t.priority, t.created_at, p.name AS project_name
+        SELECT t.id, t.project_id, t.title, t.status, t.priority, t.created_at, p.name AS project_name, board_ref.board_id, board_ref.board_name
         FROM pm.tasks t
         JOIN pm.projects p ON p.id = t.project_id
         LEFT JOIN pm.project_members m ON m.project_id = t.project_id AND m.user_id = $1
+        LEFT JOIN LATERAL (
+          SELECT tp.board_id, b.name AS board_name
+          FROM pm.task_positions tp
+          JOIN pm.boards b ON b.id = tp.board_id
+          WHERE tp.task_id = t.id
+          ORDER BY b.epic_id NULLS FIRST, b.updated_at DESC
+          LIMIT 1
+        ) board_ref ON TRUE
         WHERE t.deleted_at IS NULL
           AND (t.creator_id = $1 OR t.assignee_id = $1 OR m.user_id = $1)
         ORDER BY t.created_at DESC
@@ -542,11 +550,19 @@ export class PmStore {
       ),
       this.pool.query(
         `
-        SELECT DISTINCT ON (t.id) t.id, t.project_id, t.title, t.status, t.priority, t.updated_at, p.name AS project_name
+        SELECT DISTINCT ON (t.id) t.id, t.project_id, t.title, t.status, t.priority, t.updated_at, p.name AS project_name, board_ref.board_id, board_ref.board_name
         FROM pm.tasks t
         JOIN pm.projects p ON p.id = t.project_id
         LEFT JOIN pm.comments c ON c.task_id = t.id AND c.author_id = $1
         LEFT JOIN audit.events e ON e.task_id = t.id
+        LEFT JOIN LATERAL (
+          SELECT tp.board_id, b.name AS board_name
+          FROM pm.task_positions tp
+          JOIN pm.boards b ON b.id = tp.board_id
+          WHERE tp.task_id = t.id
+          ORDER BY b.epic_id NULLS FIRST, b.updated_at DESC
+          LIMIT 1
+        ) board_ref ON TRUE
         WHERE t.deleted_at IS NULL
           AND (t.creator_id = $1 OR t.assignee_id = $1 OR c.author_id = $1 OR e.actor_id = $1::text)
         ORDER BY t.id, t.updated_at DESC
@@ -572,8 +588,8 @@ export class PmStore {
       )
     ]);
     return {
-      activity: activity.rows.map((row) => ({ id: String(row.id), projectId: String(row.project_id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), createdAt: asIso(row.created_at) })),
-      changes: changes.rows.map((row) => ({ id: String(row.id), projectId: String(row.project_id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), updatedAt: asIso(row.updated_at) })),
+      activity: activity.rows.map((row) => ({ id: String(row.id), projectId: String(row.project_id), boardId: row.board_id ? String(row.board_id) : undefined, boardName: row.board_name ? String(row.board_name) : undefined, title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), createdAt: asIso(row.created_at) })),
+      changes: changes.rows.map((row) => ({ id: String(row.id), projectId: String(row.project_id), boardId: row.board_id ? String(row.board_id) : undefined, boardName: row.board_name ? String(row.board_name) : undefined, title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), updatedAt: asIso(row.updated_at) })),
       announcements: announcements.rows.map(mapAnnouncement),
       myEpics: myEpics.rows.map((row) => ({ id: String(row.id), projectId: String(row.project_id), title: String(row.title), status: String(row.status), priority: String(row.priority), projectName: String(row.project_name ?? ""), taskCount: Number(row.task_count ?? 0), updatedAt: asIso(row.updated_at) }))
     };
@@ -943,16 +959,17 @@ export class PmStore {
     const includeUnpositioned = Boolean(board.isDefault);
     const taskResult = await this.pool.query(
       `
-      SELECT t.*, tp.column_id, tp.position AS board_position, COALESCE(array_agg(tl.label_id) FILTER (WHERE tl.label_id IS NOT NULL), ARRAY[]::uuid[]) AS label_ids
+      SELECT t.*, tp.board_id, b.name AS board_name, tp.column_id, tp.position AS board_position, COALESCE(array_agg(tl.label_id) FILTER (WHERE tl.label_id IS NOT NULL), ARRAY[]::uuid[]) AS label_ids
       FROM pm.tasks t
       LEFT JOIN pm.task_positions tp ON tp.task_id = t.id AND tp.board_id = $1
+      LEFT JOIN pm.boards b ON b.id = tp.board_id
       LEFT JOIN pm.task_labels tl ON tl.task_id = t.id
       WHERE t.project_id = $2
         AND t.deleted_at IS NULL
         AND t.archived_at IS NULL
         AND ($3::uuid IS NULL OR t.epic_id = $3::uuid)
         AND ($4::boolean OR tp.board_id IS NOT NULL)
-      GROUP BY t.id, tp.column_id, tp.position
+      GROUP BY t.id, tp.board_id, b.name, tp.column_id, tp.position
       ORDER BY COALESCE(tp.position, 1000000000), t.updated_at DESC
       `,
       [board.id, board.projectId, board.epicId ?? null, includeUnpositioned]
@@ -964,9 +981,17 @@ export class PmStore {
     const search = normalizeSearch(filters.search);
     const result = await this.pool.query(
       `
-      SELECT t.*, COALESCE(array_agg(tl.label_id) FILTER (WHERE tl.label_id IS NOT NULL), ARRAY[]::uuid[]) AS label_ids
+      SELECT t.*, board_ref.board_id, board_ref.board_name, COALESCE(array_agg(tl.label_id) FILTER (WHERE tl.label_id IS NOT NULL), ARRAY[]::uuid[]) AS label_ids
       FROM pm.tasks t
       LEFT JOIN pm.task_labels tl ON tl.task_id = t.id
+      LEFT JOIN LATERAL (
+        SELECT tp.board_id, b.name AS board_name
+        FROM pm.task_positions tp
+        JOIN pm.boards b ON b.id = tp.board_id
+        WHERE tp.task_id = t.id
+        ORDER BY b.epic_id NULLS FIRST, b.updated_at DESC
+        LIMIT 1
+      ) board_ref ON TRUE
       WHERE t.project_id = $1
         AND t.deleted_at IS NULL
         AND ($2::uuid IS NULL OR t.epic_id = $2::uuid)
@@ -979,7 +1004,7 @@ export class PmStore {
           OR t.description ILIKE '%' || $5::text || '%'
           OR t.search_document @@ plainto_tsquery('simple', $5::text)
         )
-      GROUP BY t.id
+      GROUP BY t.id, board_ref.board_id, board_ref.board_name
       ORDER BY t.updated_at DESC
       `,
       [projectId, filters.epicId ?? null, filters.sprintId ?? null, Boolean(filters.includeArchived), search]
@@ -1862,6 +1887,8 @@ function mapTask(row: Row): PmTask {
     epicId: row.epic_id ? String(row.epic_id) : undefined,
     sprintId: row.sprint_id ? String(row.sprint_id) : undefined,
     parentTaskId: row.parent_task_id ? String(row.parent_task_id) : undefined,
+    boardId: row.board_id ? String(row.board_id) : undefined,
+    boardName: row.board_name ? String(row.board_name) : undefined,
     title: String(row.title),
     description: String(row.description ?? ""),
     status: String(row.status),

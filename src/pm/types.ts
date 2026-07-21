@@ -45,6 +45,8 @@ export type PmTask = {
   epicId?: string;
   sprintId?: string;
   parentTaskId?: string;
+  boardId?: string;
+  boardName?: string;
   title: string;
   description: string;
   status: string;

@@ -1027,7 +1027,8 @@ function formatApiTerminalPayload(payload) {
 
 async function openTaskReference(item, newTab = false) {
   if (!item?.id || !item?.projectId) return;
-  const url = pmTaskPath(item.projectId, null, item.id);
+  const boardId = item.boardId || await resolveBoardIdForTask(item.id, item.projectId);
+  const url = pmTaskPath(item.projectId, boardId, item.id);
   if (newTab) {
     window.open(url, "_blank", "noopener");
     return;
@@ -1035,9 +1036,11 @@ async function openTaskReference(item, newTab = false) {
   navigatePm(url);
   state.currentView = "kanban";
   state.activeProjectId = item.projectId;
+  state.activeBoardId = boardId || null;
+  state.activeEpicId = null;
   state.activeSprintId = "__all";
   setPmView("kanban");
-  await loadProjectData();
+  await loadProjectData({ openRouteTask: false });
   const task = state.tasks.find((entry) => entry.id === item.id) || state.boardTasks.find((entry) => entry.id === item.id);
   if (task) openTask(task);
   else setError("Task is not visible in the current filters.");
@@ -1074,30 +1077,65 @@ function pmHashParams() {
 
 async function openTaskFromRoute() {
   const route = pmRouteFromLocation();
-  if (!route.projectId || !route.taskId) return;
-  if (state.activeProjectId !== route.projectId) {
-    if (!state.projects.some((project) => project.id === route.projectId)) return;
-    state.activeProjectId = route.projectId;
-    if (route.boardId) state.activeBoardId = route.boardId;
+  const routeProjectId = route.projectId || projectByKey(route.projectKey)?.id || null;
+  if (!routeProjectId || !route.taskId) return;
+  if (state.activeProjectId !== routeProjectId) {
+    if (!state.projects.some((project) => project.id === routeProjectId)) return;
+    state.activeProjectId = routeProjectId;
+    state.activeBoardId = route.boardId || null;
+    state.activeEpicId = route.epicId || null;
     state.activeSprintId = "__all";
-    await loadProjectData();
-    return;
+    await loadProjectData({ openRouteTask: false });
   }
   if (route.epicId && state.activeEpicId !== route.epicId) {
     state.activeEpicId = route.epicId;
     state.activeBoardId = null;
-    await loadProjectData();
-    return;
+    await loadProjectData({ openRouteTask: false });
   }
   if (route.boardId && state.activeBoardId !== route.boardId) {
     state.activeBoardId = route.boardId;
-    await loadProjectData();
-    return;
+    state.activeEpicId = null;
+    await loadProjectData({ openRouteTask: false });
+  }
+  if (!state.activeBoardId) {
+    const boardId = await resolveBoardIdForTask(route.taskId, routeProjectId);
+    if (boardId) {
+      state.activeBoardId = boardId;
+      state.activeEpicId = null;
+      await loadProjectData({ openRouteTask: false });
+      navigatePm(pmTaskPath(routeProjectId, boardId, route.taskId), { replace: true });
+    }
   }
   const task = state.tasks.find((entry) => entry.id === route.taskId) || state.boardTasks.find((entry) => entry.id === route.taskId);
   if (!task || state.activeTask?.id === task.id) return;
   setPmView("kanban");
   openTask(task, "view", { navigate: false });
+}
+
+async function resolveBoardIdForTask(taskId, projectId = state.activeProjectId) {
+  if (!taskId || !projectId) return null;
+  const known = [...state.boardTasks, ...state.tasks].find((task) => task.id === taskId && task.boardId);
+  if (known?.boardId) return known.boardId;
+  let boards = state.projectBoardMap.get(projectId);
+  if (!boards?.length) {
+    try {
+      const body = await api(`/api/pm/projects/${encodeURIComponent(projectId)}/boards`);
+      boards = body.boards || [];
+      state.projectBoardMap.set(projectId, boards);
+    } catch {
+      boards = projectId === state.activeProjectId ? state.boards : [];
+    }
+  }
+  for (const board of boards || []) {
+    try {
+      const snapshot = await api(`/api/pm/boards/${encodeURIComponent(board.id)}`);
+      const task = (snapshot.tasks || []).find((entry) => entry.id === taskId);
+      if (task) return snapshot.board?.id || board.id;
+    } catch {
+      // The user may not have access to this board anymore; keep searching.
+    }
+  }
+  return null;
 }
 
 function checkHomeTimers() {
@@ -1605,7 +1643,7 @@ async function loadProjects() {
   await loadProjectData();
 }
 
-async function loadProjectData() {
+async function loadProjectData({ openRouteTask = true } = {}) {
   const project = activeProject();
   els.archiveProjectBtn.disabled = !project;
   els.memberForm.querySelector("button").disabled = !project;
@@ -1686,7 +1724,7 @@ async function loadProjectData() {
   renderTasks();
   renderBoard();
   renderProjectTitleSheet();
-  await openTaskFromRoute();
+  if (openRouteTask) await openTaskFromRoute();
 }
 
 function applyProjectOrder(projects) {
@@ -1803,6 +1841,12 @@ function activeProject() {
 
 function projectById(projectId) {
   return state.projects.find((project) => project.id === projectId) || null;
+}
+
+function projectByKey(projectKey) {
+  if (!projectKey) return null;
+  const normalized = String(projectKey).toLowerCase();
+  return state.projects.find((project) => project.key.toLowerCase() === normalized) || null;
 }
 
 function taskSearchQuery() {
