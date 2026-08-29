@@ -370,3 +370,39 @@ test("CodexRequestStore persists error trace fields", async () => {
     stores.cleanup();
   }
 });
+
+test("CodexRequestStore applies async codex-agent outcome to existing trace", async () => {
+  const stores = testStores();
+  try {
+    stores.codexRequests.start({
+      clientRequestId: "dash_trace-outcome",
+      threadId: "projectego-intake",
+      source: "browser_text",
+      mode: "advisor",
+      inputText: "Advise me"
+    });
+    const completed = stores.codexRequests.completeOutcome({
+      clientRequestId: "dash_trace-outcome",
+      status: "done",
+      codexJobId: "agent-job-outcome",
+      codexInternalSessionId: "internal-session-outcome",
+      codexSessionId: "codex-session-outcome",
+      sessionTurnCount: 3,
+      sessionRotated: true,
+      warnings: ["late"]
+    });
+
+    assert.ok(completed);
+    assert.equal(completed.status, "done");
+    assert.equal(completed.mode, "advisor");
+    assert.equal(completed.inputText, "Advise me");
+    assert.equal(completed.codexJobId, "agent-job-outcome");
+    assert.equal(completed.codexInternalSessionId, "internal-session-outcome");
+    assert.equal(completed.codexSessionId, "codex-session-outcome");
+    assert.equal(completed.sessionTurnCount, 3);
+    assert.equal(completed.sessionRotated, true);
+    assert.deepEqual(completed.warnings, ["late"]);
+  } finally {
+    stores.cleanup();
+  }
+});

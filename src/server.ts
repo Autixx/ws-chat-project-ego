@@ -7,13 +7,14 @@ import { stageUploadedFile, streamAttachment, validateAttachmentFile, MAX_ATTACH
 import { isValidAgentAttachmentAuthorization } from "./attachments/internalAttachmentAuth.js";
 import { createAuthRouter } from "./auth/authRoutes.js";
 import { requireUserMiddleware } from "./auth/requireUser.js";
-import { config } from "./config.js";
+import { config, type AppConfig } from "./config.js";
 import { ConversationStore } from "./conversations/conversationStore.js";
 import { openDatabase } from "./db/database.js";
 import { handleJobCallback } from "./jobs/jobCallback.js";
 import { JobStore } from "./jobs/jobStore.js";
 import { ComponentStatusMonitor } from "./status/componentStatus.js";
 import { attachWebSocketServer } from "./ws/websocketServer.js";
+import { CodexRequestStore } from "./llm/codexRequestStore.js";
 
 const app = express();
 type AuthedRequest = express.Request & { auth?: { user: import("./auth/authelia.js").AuthenticatedUser } };
@@ -23,6 +24,7 @@ const publicDir = path.resolve(__dirname, "..", "public");
 const database = openDatabase(config);
 const conversations = new ConversationStore(database);
 const jobs = new JobStore(database);
+const codexRequests = new CodexRequestStore(database);
 const componentStatus = new ComponentStatusMonitor(config);
 const uploadTempDir = path.join(config.attachmentsDir ?? path.join(config.dataDir, "attachments"), "tmp");
 await fs.mkdir(uploadTempDir, { recursive: true });
@@ -123,6 +125,38 @@ app.get("/api/internal/attachments/:attachmentId", async (req, res) => {
   }
 });
 
+app.post("/api/internal/codex-agent/outcome", async (req, res) => {
+  try {
+    if (!isValidCodexAgentAuthorization(config, req.headers.authorization, req.headers["x-codex-agent-token"])) {
+      res.status(401).json({ error: "Invalid codex agent token." });
+      return;
+    }
+    const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+    const clientRequestId = typeof body.client_request_id === "string" ? body.client_request_id : "";
+    if (!clientRequestId) {
+      res.status(400).json({ error: "client_request_id is required." });
+      return;
+    }
+    const status = body.status === "done" ? "done" : "error";
+    const record = codexRequests.completeOutcome({
+      clientRequestId,
+      threadId: typeof body.thread_id === "string" ? body.thread_id : undefined,
+      status,
+      codexJobId: typeof body.job_id === "string" ? body.job_id : undefined,
+      codexInternalSessionId: typeof body.session_id === "string" ? body.session_id : undefined,
+      codexSessionId: typeof body.codex_session_id === "string" ? body.codex_session_id : undefined,
+      sessionTurnCount: typeof body.session_turn_count === "number" ? body.session_turn_count : undefined,
+      sessionRotated: typeof body.session_rotated === "boolean" ? body.session_rotated : undefined,
+      warnings: Array.isArray(body.warnings) ? body.warnings : undefined,
+      error: typeof body.error === "string" ? body.error : undefined,
+      completedAt: typeof body.completed_at === "string" ? body.completed_at : undefined
+    });
+    res.status(202).json({ accepted: true, matched: Boolean(record) });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
 app.get(["/login", "/register"], (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });
@@ -134,3 +168,12 @@ const server = app.listen(config.port, config.host, () => {
 });
 
 webSocketRuntime = attachWebSocketServer(server, config, database, componentStatus);
+
+function isValidCodexAgentAuthorization(appConfig: AppConfig, authorization: unknown, tokenHeader: unknown): boolean {
+  if (!appConfig.codexAgentToken) return false;
+  const expected = appConfig.codexAgentToken;
+  if (typeof tokenHeader === "string" && tokenHeader === expected) return true;
+  if (typeof authorization !== "string") return false;
+  const [scheme, token] = authorization.split(/\s+/, 2);
+  return scheme?.toLowerCase() === "bearer" && token === expected;
+}

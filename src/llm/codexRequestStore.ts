@@ -22,6 +22,20 @@ export type CodexRequestRecord = {
   completedAt?: string;
 };
 
+export type CodexOutcomeTrace = {
+  clientRequestId: string;
+  threadId?: string;
+  status: "done" | "error";
+  codexJobId?: string;
+  codexInternalSessionId?: string;
+  codexSessionId?: string;
+  sessionTurnCount?: number;
+  sessionRotated?: boolean;
+  warnings?: unknown[];
+  error?: string;
+  completedAt?: string;
+};
+
 type CodexRequestRow = {
   client_request_id: string;
   thread_id: string;
@@ -118,6 +132,28 @@ export class CodexRequestStore {
       createdAt: completedAt,
       completedAt
     };
+  }
+
+  completeOutcome(trace: CodexOutcomeTrace): CodexRequestRecord | undefined {
+    const existing = this.load(trace.clientRequestId);
+    if (!existing) return undefined;
+    return this.complete({
+      clientRequestId: trace.clientRequestId,
+      threadId: trace.threadId ?? existing.threadId,
+      source: existing.source,
+      mode: existing.mode,
+      inputText: existing.inputText,
+      status: trace.status,
+      codexJobId: trace.codexJobId ?? existing.codexJobId,
+      codexInternalSessionId: trace.codexInternalSessionId ?? existing.codexInternalSessionId,
+      codexSessionId: trace.codexSessionId ?? existing.codexSessionId,
+      sessionTurnCount: trace.sessionTurnCount ?? existing.sessionTurnCount,
+      sessionRotated: trace.sessionRotated ?? existing.sessionRotated,
+      result: existing.result,
+      warnings: trace.warnings ?? existing.warnings,
+      error: trace.error ?? existing.error,
+      completedAt: trace.completedAt
+    });
   }
 
   load(clientRequestId: string): CodexRequestRecord | undefined {
