@@ -643,7 +643,10 @@ export function buildTasksTextFromAdvisor(answer: string): string {
     "Create one draft task per concrete numbered step or day unless two adjacent points are inseparable.",
     "Do not collapse a clear pipeline into broad thinking/planning cards.",
     "Use imperative task titles and concrete deliverables. Avoid titles/details like 'consider', 'advisor says', 'think about', or 'determine whether' when the Advisor already gave a direct recommendation.",
-    "Include source heading and step/day number in details. Put measurable verification in acceptance_criteria.",
+    "Each task must be implementation-ready for a developer.",
+    "For every task, write details as a concrete action plan with 4-8 practical steps or checks, including UE5 assets/classes/Blueprints/Data Assets/levels when they are known from the Advisor answer.",
+    "For every task, write 3-6 measurable acceptance_criteria. Avoid empty criteria unless the Advisor answer gives no testable outcome.",
+    "Include source heading and step/day number in details. Preserve chronological order and explicit dependencies.",
     "",
     "Advisor answer:",
     answer.trim()

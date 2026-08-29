@@ -561,5 +561,8 @@ test("advisor answer can be wrapped as task creation input", () => {
   assert.match(text, /conversion pass/);
   assert.match(text, /one draft task per concrete numbered step or day/);
   assert.match(text, /Do not collapse a clear pipeline/);
+  assert.match(text, /implementation-ready/);
+  assert.match(text, /4-8 practical steps/);
+  assert.match(text, /3-6 measurable acceptance_criteria/);
   assert.match(text, /## Plan/);
 });
