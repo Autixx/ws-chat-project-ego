@@ -1164,6 +1164,16 @@ function renderResponses() {
         });
         actions.append(open);
       }
+      if (response.kind === "response" && response.metadata?.mode === "advisor" && response.content.trim()) {
+        const createTasks = document.createElement("button");
+        createTasks.type = "button";
+        createTasks.textContent = "Create draft from answer";
+        createTasks.addEventListener("click", (event) => {
+          event.stopPropagation();
+          send({ type: "create_tasks_from_response", conversationId: state.currentConversationId, messageId: response.id });
+        });
+        actions.append(createTasks);
+      }
       main.append(actions);
       row.append(main);
     } else {

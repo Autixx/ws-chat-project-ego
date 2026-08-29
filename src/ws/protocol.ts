@@ -25,6 +25,7 @@ export type ClientMessage =
   | { type: "job_list"; conversationId: string }
   | { type: "attachments_for_request"; conversationId: string; requestId: string }
   | { type: "response_decision_update"; conversationId: string; messageId: string; decisionStatus: "pending" | "applied" | "dropped" | "kept" }
+  | { type: "create_tasks_from_response"; conversationId: string; messageId: string }
   | { type: "digest"; conversationId?: string; text: string; fileName?: string }
   | { type: "tasks"; conversationId?: string; text: string; fileName?: string }
   | { type: "apply"; conversationId: string; jobId: string; expression: string }
@@ -156,6 +157,13 @@ export function parseClientMessage(raw: unknown): ClientMessage {
       messageId: msg.messageId,
       decisionStatus: msg.decisionStatus as "pending" | "applied" | "dropped" | "kept"
     };
+  }
+
+  if (msg.type === "create_tasks_from_response") {
+    if (typeof msg.conversationId !== "string" || typeof msg.messageId !== "string") {
+      throw new Error("create_tasks_from_response requires conversationId and messageId.");
+    }
+    return { type: "create_tasks_from_response", conversationId: msg.conversationId, messageId: msg.messageId };
   }
 
   if (msg.type === "digest" || msg.type === "tasks") {

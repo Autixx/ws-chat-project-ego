@@ -231,6 +231,20 @@ export function attachWebSocketServer(
       return;
     }
 
+    if (message.type === "create_tasks_from_response") {
+      const response = await messages.loadMessage(user, message.conversationId, message.messageId);
+      if (response.kind !== "response" || response.metadata?.mode !== "advisor" || !response.content.trim()) {
+        throw new Error("Only non-empty Advisor responses can be converted to draft tasks.");
+      }
+      await handleConversationMessage(ws, user, {
+        conversationId: message.conversationId,
+        mode: "tasks",
+        text: buildTasksTextFromAdvisor(response.content),
+        fileName: "advisor-answer.md"
+      });
+      return;
+    }
+
     if (message.type === "apply") {
       await conversations.loadConversation(user, message.conversationId);
       const draft = await drafts.loadDraft(message.jobId, user);
@@ -619,4 +633,15 @@ export function attachWebSocketServer(
     send(ws, { type: "assistant_message_done", conversationId: conversation.id, messageId: assistantMessage.id });
   }
   return { notifyJobUpdated };
+}
+
+export function buildTasksTextFromAdvisor(answer: string): string {
+  return [
+    "Create issue-like draft tasks from this Advisor answer.",
+    "Preserve concrete recommendations, ordering, dependencies, risks, and explicit next actions.",
+    "Do not re-answer as an advisor; convert the actionable content into reviewable backlog items.",
+    "",
+    "Advisor answer:",
+    answer.trim()
+  ].join("\n");
 }

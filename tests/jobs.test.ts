@@ -14,6 +14,7 @@ import { dispatchApplyJobToN8n } from "../src/jobs/n8nApply.js";
 import { updateResponseDecision } from "../src/jobs/responseDecision.js";
 import { mapDraftItemForN8n, sendApplyToN8n, type N8nApplyPayload } from "../src/integrations/n8nApplyClient.js";
 import { parseClientMessage } from "../src/ws/protocol.js";
+import { buildTasksTextFromAdvisor } from "../src/ws/websocketServer.js";
 import type { DraftItem, StoredDraft } from "../src/drafts/types.js";
 
 const user = { username: "worker", email: "worker@example.test", groups: [] };
@@ -547,4 +548,16 @@ test("protocol keeps text-only request flow and allows file-only request flow", 
     mimeType: undefined,
     attachmentUploadIds: undefined
   });
+  assert.deepEqual(parseClientMessage({ type: "create_tasks_from_response", conversationId: "C-1", messageId: "M-1" }), {
+    type: "create_tasks_from_response",
+    conversationId: "C-1",
+    messageId: "M-1"
+  });
+});
+
+test("advisor answer can be wrapped as task creation input", () => {
+  const text = buildTasksTextFromAdvisor("## Plan\n1. Build movement.");
+  assert.match(text, /Create issue-like draft tasks/);
+  assert.match(text, /Do not re-answer as an advisor/);
+  assert.match(text, /## Plan/);
 });
