@@ -558,6 +558,8 @@ test("protocol keeps text-only request flow and allows file-only request flow", 
 test("advisor answer can be wrapped as task creation input", () => {
   const text = buildTasksTextFromAdvisor("## Plan\n1. Build movement.");
   assert.match(text, /Create issue-like draft tasks/);
-  assert.match(text, /Do not re-answer as an advisor/);
+  assert.match(text, /conversion pass/);
+  assert.match(text, /one draft task per concrete numbered step or day/);
+  assert.match(text, /Do not collapse a clear pipeline/);
   assert.match(text, /## Plan/);
 });

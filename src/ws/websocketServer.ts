@@ -638,8 +638,12 @@ export function attachWebSocketServer(
 export function buildTasksTextFromAdvisor(answer: string): string {
   return [
     "Create issue-like draft tasks from this Advisor answer.",
-    "Preserve concrete recommendations, ordering, dependencies, risks, and explicit next actions.",
-    "Do not re-answer as an advisor; convert the actionable content into reviewable backlog items.",
+    "This is a conversion pass, not a new consulting answer.",
+    "Preserve the Advisor structure: headings, numbered pipeline steps, day-by-day plan, dependencies, risks, and explicit next actions.",
+    "Create one draft task per concrete numbered step or day unless two adjacent points are inseparable.",
+    "Do not collapse a clear pipeline into broad thinking/planning cards.",
+    "Use imperative task titles and concrete deliverables. Avoid titles/details like 'consider', 'advisor says', 'think about', or 'determine whether' when the Advisor already gave a direct recommendation.",
+    "Include source heading and step/day number in details. Put measurable verification in acceptance_criteria.",
     "",
     "Advisor answer:",
     answer.trim()
