@@ -6,6 +6,34 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class MockProvider implements LlmProvider {
   async *runProjectEgoTask(input: LlmTaskInput): AsyncGenerator<LlmStreamEvent> {
+    if (input.mode === "advisor") {
+      yield { type: "status", message: "MockProvider: preparing advisor response." };
+      await wait(120);
+      yield {
+        type: "answer",
+        answer: {
+          mode: "advisor",
+          source_summary: limitText(input.text.replace(/\s+/g, " "), 220),
+          answer_markdown: [
+            "## Advisor response",
+            "",
+            "Start by narrowing the design goal, then build the smallest playable prototype that proves movement, camera, and one core interaction.",
+            "",
+            "## Suggested order",
+            "1. Define the target loop and constraints.",
+            "2. Prototype controller, camera, and interaction feel.",
+            "3. Add one test level that supports repeated iteration.",
+            "4. Only then split production tasks manually."
+          ].join("\n"),
+          key_points: ["Keep the first prototype small", "Validate feel before content scale", "Create tasks after choosing a direction"],
+          suggested_next_actions: ["Write a one-page gameplay loop", "Prototype movement and camera", "Create manual tasks from the accepted plan"],
+          needs_clarification: []
+        }
+      };
+      yield { type: "done" };
+      return;
+    }
+
     yield { type: "status", message: "MockProvider: preparing ProjectEGO draft." };
     await wait(120);
 

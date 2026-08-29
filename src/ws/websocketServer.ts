@@ -42,7 +42,8 @@ function providerFromConfig(config: AppConfig): LlmProvider {
   return config.llmProvider === "codex" ? new CodexProvider(config) : new MockProvider();
 }
 
-function taskModeFromUiMode(mode: "digest" | "tasks" | "abstract_idea"): LlmTaskMode {
+function taskModeFromUiMode(mode: "advisor" | "digest" | "tasks" | "abstract_idea"): LlmTaskMode {
+  if (mode === "advisor") return "advisor";
   if (mode === "tasks") return "create_tasks";
   if (mode === "abstract_idea") return "abstract_idea";
   return "structured_breakdown";
@@ -387,7 +388,7 @@ export function attachWebSocketServer(
     user: AuthenticatedUser,
     input: {
       conversationId?: string;
-      mode: "chat" | "digest" | "tasks" | "abstract_idea";
+      mode: "chat" | "advisor" | "digest" | "tasks" | "abstract_idea";
       text: string;
       fileName?: string;
       fileSize?: number;
@@ -480,7 +481,7 @@ export function attachWebSocketServer(
     if (input.mode === "chat") {
       const updatedAssistant = await messages.updateMessageContent(
         assistantMessage,
-        "I received your message and saved it in this conversation. General chat is currently a lightweight MVP path; use Digest, Tasks, or Abstract idea to generate ProjectEGO drafts."
+        "I received your message and saved it in this conversation. General chat is currently a lightweight MVP path; use Advisor for structured answers or Digest, Tasks, and Abstract idea for ProjectEGO drafts."
       );
       await conversations.touchConversation(user, conversation.id);
       send(ws, { type: "message_created", message: updatedAssistant });
@@ -587,6 +588,25 @@ export function attachWebSocketServer(
           itemsCount: saved.draft.result.items.length
         });
         await emitMessage(ws, draftMessage);
+      }
+
+      if (event.type === "answer") {
+        if (shouldTraceCodex && event.trace) codexRequests.complete(event.trace);
+        assistantContent += event.answer.answer_markdown;
+        await messages.updateMessageMetadata(user, conversation.id, assistantMessage.id, {
+          codexClientRequestId: event.trace?.clientRequestId ?? clientRequestId,
+          codexThreadId: event.trace?.threadId ?? threadId,
+          codexJobId: event.trace?.codexJobId,
+          codexInternalSessionId: event.trace?.codexInternalSessionId,
+          codexSessionId: event.trace?.codexSessionId,
+          sessionTurnCount: event.trace?.sessionTurnCount,
+          sessionRotated: event.trace?.sessionRotated,
+          sourceSummary: event.answer.source_summary,
+          keyPoints: event.answer.key_points,
+          suggestedNextActions: event.answer.suggested_next_actions,
+          needsClarification: event.answer.needs_clarification,
+          decisionStatus: undefined
+        });
       }
     }
 

@@ -14,7 +14,7 @@ export type ClientMessage =
   | {
       type: "message_send";
       conversationId: string;
-      mode: "chat" | "digest" | "tasks" | "abstract_idea";
+      mode: "chat" | "advisor" | "digest" | "tasks" | "abstract_idea";
       text: string;
       fileName?: string;
       fileSize?: number;
@@ -108,13 +108,13 @@ export function parseClientMessage(raw: unknown): ClientMessage {
     if (typeof msg.conversationId !== "string" || typeof msg.text !== "string" || (!msg.text.trim() && !attachmentUploadIds?.length)) {
       throw new Error("message_send requires conversationId and text or attachmentUploadIds.");
     }
-    if (!["chat", "digest", "tasks", "abstract_idea"].includes(String(msg.mode))) {
+    if (!["chat", "advisor", "digest", "tasks", "abstract_idea"].includes(String(msg.mode))) {
       throw new Error("Unsupported message_send mode.");
     }
     return {
       type: "message_send",
       conversationId: msg.conversationId,
-      mode: msg.mode as "chat" | "digest" | "tasks" | "abstract_idea",
+      mode: msg.mode as "chat" | "advisor" | "digest" | "tasks" | "abstract_idea",
       text: msg.text,
       fileName: typeof msg.fileName === "string" ? msg.fileName : undefined,
       fileSize: typeof msg.fileSize === "number" ? msg.fileSize : undefined,

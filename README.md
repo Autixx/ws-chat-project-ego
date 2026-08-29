@@ -371,6 +371,7 @@ The primary screen is a compact technical dashboard:
 - right response panel with decision status squares
 - attachments panel linked to the selected request
 - request input field with mode selector, file attach and Ctrl+Enter send
+- Advisor mode for structured answers that stay in chat without creating draft task cards
 - draft inspector opened explicitly from a draft response
 
 Request answer status:
@@ -983,12 +984,13 @@ Plane is no longer used for chat authentication or authorization. Plane variable
 4. Send a `Chat` request.
 5. Confirm the request appears in the left panel and the response appears in the right panel.
 6. Reload and confirm both persist.
-7. Send `Digest`, `Tasks`, or `Abstract idea`.
-8. Click the draft response.
-9. Click `Open in Draft Inspector`.
-10. Choose Apply/Keep/Drop per item.
-11. Click `Apply selected`.
-12. Change response-level Apply/Drop/Keep status and reload to verify persistence.
+7. Send `Advisor` and confirm a structured answer appears directly in chat without a draft.
+8. Send `Digest`, `Tasks`, or `Abstract idea`.
+9. Click the draft response.
+10. Click `Open in Draft Inspector`.
+11. Choose Apply/Keep/Drop per item.
+12. Click `Apply selected`.
+13. Change response-level Apply/Drop/Keep status and reload to verify persistence.
 
 Dashboard does not create Plane work-items directly. Apply workflow execution is tracked as jobs and should be handled by n8n callbacks.
 
@@ -1131,7 +1133,7 @@ CODEX_AGENT_URL=http://192.168.1.237:19090/v2/projectego/decompose
 CODEX_AGENT_HEALTH_URL=http://192.168.1.237:19090/healthz
 ```
 
-Dashboard sends Codex requests as JSON with a stable `client_request_id`, semantic `thread_id` (`projectego-intake` by default), prompt text, and attachment metadata/download URLs. It does not send multipart uploads, base64 file bodies, cookies, or browser session credentials to codex-agent. Returned agent trace fields are persisted in SQLite in `codex_requests` for diagnostics.
+Dashboard sends Codex requests as JSON with a stable `client_request_id`, semantic `thread_id` (`projectego-intake` by default), prompt text, and attachment metadata/download URLs. It does not send multipart uploads, base64 file bodies, cookies, or browser session credentials to codex-agent. Returned agent trace fields are persisted in SQLite in `codex_requests` for diagnostics. `Advisor` maps to codex-agent mode `advisor` and renders `result.answer_markdown` as the assistant answer; `Digest`, `Tasks`, and `Abstract idea` continue to create reviewable drafts.
 
 ## Current Limitations
 

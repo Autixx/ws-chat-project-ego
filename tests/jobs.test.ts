@@ -537,4 +537,14 @@ test("protocol keeps text-only request flow and allows file-only request flow", 
     mimeType: undefined,
     attachmentUploadIds: ["UP-1"]
   });
+  assert.deepEqual(parseClientMessage({ type: "message_send", conversationId: "C-1", mode: "advisor", text: "explain plan" }), {
+    type: "message_send",
+    conversationId: "C-1",
+    mode: "advisor",
+    text: "explain plan",
+    fileName: undefined,
+    fileSize: undefined,
+    mimeType: undefined,
+    attachmentUploadIds: undefined
+  });
 });

@@ -1,7 +1,7 @@
 import type { AuthenticatedUser } from "../auth/authelia.js";
 import type { DraftResult } from "../drafts/types.js";
 
-export type LlmTaskMode = "structured_breakdown" | "create_tasks" | "abstract_idea";
+export type LlmTaskMode = "structured_breakdown" | "create_tasks" | "abstract_idea" | "advisor";
 
 export type LlmAttachmentInput = {
   id: string;
@@ -74,9 +74,19 @@ export type CodexTrace = {
   completedAt?: string;
 };
 
+export type AdviceResult = {
+  mode: "advisor";
+  source_summary: string;
+  answer_markdown: string;
+  key_points: string[];
+  suggested_next_actions: string[];
+  needs_clarification: string[];
+};
+
 export type LlmStreamEvent =
   | { type: "status"; message: string }
   | { type: "token"; text: string }
+  | { type: "answer"; answer: AdviceResult; trace?: CodexTrace }
   | { type: "result"; result: DraftResult; trace?: CodexTrace }
   | { type: "error"; message: string; trace?: CodexTrace }
   | { type: "done" };

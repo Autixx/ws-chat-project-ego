@@ -337,6 +337,49 @@ test("CodexProvider normalizes v2 decompose result and exposes trace fields", as
   }
 });
 
+test("CodexProvider emits advisor answer without draft normalization", async () => {
+  let body: Record<string, unknown> | undefined;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url, init) => {
+    body = JSON.parse(String(init?.body));
+    return Response.json({
+      client_request_id: body?.client_request_id,
+      job_id: "agent-job-advisor",
+      status: "done",
+      thread_id: "projectego-intake",
+      session: {
+        id: "internal-session-advisor",
+        codex_session_id: "codex-session-advisor",
+        turn_count: 1,
+        rotated: false
+      },
+      result: {
+        mode: "advisor",
+        source_summary: "Need UE5 project startup advice.",
+        answer_markdown: "## Pipeline\nStart with scope, then prototype movement.",
+        key_points: ["Answer directly"],
+        suggested_next_actions: ["Create tasks manually after accepting the plan"],
+        needs_clarification: []
+      }
+    });
+  }) as typeof fetch;
+  try {
+    const events = await collectWithInput(new CodexProvider(config()), {
+      ...input,
+      mode: "advisor"
+    });
+    assert.equal(body?.mode, "advisor");
+    assert.deepEqual(events.map((event) => event.type), ["answer", "done"]);
+    const answerEvent = events[0];
+    assert.equal(answerEvent.type, "answer");
+    if (answerEvent.type !== "answer") return;
+    assert.match(answerEvent.answer.answer_markdown, /Pipeline/);
+    assert.equal(answerEvent.trace?.codexJobId, "agent-job-advisor");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("CodexProvider safely defaults invalid draft item enum fields", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>

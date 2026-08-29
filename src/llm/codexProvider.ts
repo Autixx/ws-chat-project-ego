@@ -2,7 +2,7 @@ import type { AppConfig } from "../config.js";
 import type { DraftItem, DraftResult } from "../drafts/types.js";
 import { MockProvider } from "./mockProvider.js";
 import { normalizeCodexClientRequestId, normalizeCodexThreadId } from "./codexTrace.js";
-import type { CodexTrace, LlmProvider, LlmStreamEvent, LlmTaskInput } from "./provider.js";
+import type { AdviceResult, CodexTrace, LlmProvider, LlmStreamEvent, LlmTaskInput } from "./provider.js";
 
 type CodexAgentEnvelope = {
   client_request_id?: string;
@@ -118,6 +118,18 @@ export class CodexProvider implements LlmProvider {
       yield { type: "error", message, trace: { ...responseTrace, status: "error", error: message, completedAt: new Date().toISOString() } };
       return;
     }
+    if (input.mode === "advisor") {
+      const normalized = normalizeAdviceResult(envelope.result);
+      if (!normalized.ok) {
+        const message = buildInvalidResultMessage(envelope, normalized.failures);
+        yield { type: "error", message, trace: { ...responseTrace, status: "error", error: message, completedAt: new Date().toISOString() } };
+        return;
+      }
+      yield { type: "answer", answer: normalized.result, trace: { ...responseTrace, status: "done", result: envelope.result, completedAt: new Date().toISOString() } };
+      yield { type: "done" };
+      return;
+    }
+
     const normalized = normalizeDraftResult(envelope.result);
     if (!normalized.ok) {
       const message = buildInvalidResultMessage(envelope, normalized.failures);
@@ -127,6 +139,45 @@ export class CodexProvider implements LlmProvider {
     yield { type: "result", result: normalized.result, trace: { ...responseTrace, status: "done", result: envelope.result, completedAt: new Date().toISOString() } };
     yield { type: "done" };
   }
+}
+
+function normalizeAdviceResult(value: unknown): { ok: true; result: AdviceResult } | { ok: false; failures: string[] } {
+  const failures: string[] = [];
+  if (!isRecord(value)) {
+    return { ok: false, failures: ["result must be an object"] };
+  }
+  const mode = requireString(value, "mode", "result.mode", failures);
+  const sourceSummary = requireString(value, "source_summary", "result.source_summary", failures);
+  const answerMarkdown = requireString(value, "answer_markdown", "result.answer_markdown", failures);
+  const keyPoints = requireArray(value, "key_points", "result.key_points", failures);
+  const suggestedNextActions = requireArray(value, "suggested_next_actions", "result.suggested_next_actions", failures);
+  const needsClarification = requireArray(value, "needs_clarification", "result.needs_clarification", failures);
+
+  if (
+    failures.length > 0 ||
+    mode === undefined ||
+    sourceSummary === undefined ||
+    answerMarkdown === undefined ||
+    keyPoints === undefined ||
+    suggestedNextActions === undefined ||
+    needsClarification === undefined
+  ) {
+    return { ok: false, failures };
+  }
+  if (mode !== "advisor") {
+    return { ok: false, failures: ["result.mode must be advisor"] };
+  }
+  return {
+    ok: true,
+    result: {
+      mode: "advisor",
+      source_summary: sourceSummary,
+      answer_markdown: answerMarkdown,
+      key_points: toStringArray(keyPoints),
+      suggested_next_actions: toStringArray(suggestedNextActions),
+      needs_clarification: toStringArray(needsClarification)
+    }
+  };
 }
 
 function normalizeDraftResult(value: unknown): { ok: true; result: DraftResult } | { ok: false; failures: string[] } {
