@@ -430,6 +430,25 @@ test("CodexProvider returns error on non-2xx response", async () => {
   }
 });
 
+test("CodexProvider uses configured request timeout", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url, init) => {
+    await new Promise((resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+      setTimeout(resolve, 50);
+    });
+    return Response.json({ status: "done", result: draftResult });
+  }) as typeof fetch;
+  try {
+    const events = await collectWithInput(new CodexProvider({ ...config(), codexAgentRequestTimeoutMs: 5 }), input);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, "error");
+    assert.match(events[0].type === "error" ? events[0].message : "", /timed out after 5ms/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("CodexProvider returns error when v2 envelope status is error", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => Response.json({ client_request_id: "dash_error-1", job_id: "job-error", status: "error", error: "model failed" })) as typeof fetch;

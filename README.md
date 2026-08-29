@@ -158,7 +158,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.3.0 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.3.1 \
   node dist/pm/migrate.js
 ```
 
@@ -814,7 +814,7 @@ To update from the TrueNAS Apps UI:
 For predictable production rollouts, prefer a fixed tag such as:
 
 ```text
-ghcr.io/autixx/ws-chat-project-ego:v0.3.0
+ghcr.io/autixx/ws-chat-project-ego:v0.3.1
 ```
 
 Then update the tag in TrueNAS when moving to a newer release.
@@ -1102,6 +1102,7 @@ For Docker, back up the mounted `/app/data` volume.
 | `CODEX_AGENT_URL` | Optional HTTP endpoint for Codex provider, for example `http://192.168.1.237:19090/v2/projectego/decompose`. |
 | `CODEX_AGENT_HEALTH_URL` | Optional health URL for LLM-agent reachability polling. |
 | `CODEX_AGENT_TOKEN` | Optional token sent as `X-Codex-Agent-Token` to non-health Codex agent routes. |
+| `CODEX_AGENT_REQUEST_TIMEOUT_MS` | Timeout for generation requests sent to codex-agent. Default `240000`. |
 | `CODEX_FALLBACK_TO_MOCK` | Fall back to mock if Codex is not configured. |
 | `PLANE_BASE_URL` | Optional Plane base URL for informational reachability. |
 | `PLANE_HEALTH_URL` | Optional Plane health URL for reachability polling. |
@@ -1131,6 +1132,7 @@ Codex agent example:
 ```env
 CODEX_AGENT_URL=http://192.168.1.237:19090/v2/projectego/decompose
 CODEX_AGENT_HEALTH_URL=http://192.168.1.237:19090/healthz
+CODEX_AGENT_REQUEST_TIMEOUT_MS=240000
 ```
 
 Dashboard sends Codex requests as JSON with a stable `client_request_id`, semantic `thread_id` (`projectego-intake` by default), prompt text, and attachment metadata/download URLs. It does not send multipart uploads, base64 file bodies, cookies, or browser session credentials to codex-agent. Returned agent trace fields are persisted in SQLite in `codex_requests` for diagnostics. `Advisor` maps to codex-agent mode `advisor` and renders `result.answer_markdown` as the assistant answer; `Digest`, `Tasks`, and `Abstract idea` continue to create reviewable drafts.

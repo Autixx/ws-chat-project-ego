@@ -555,6 +555,9 @@ export function attachWebSocketServer(
         });
         await emitMessage(ws, errorMessage);
         send(ws, { type: "error", message: event.message });
+        await conversations.touchConversation(user, conversation.id);
+        send(ws, { type: "assistant_message_done", conversationId: conversation.id, messageId: assistantMessage.id });
+        return;
       }
 
       if (event.type === "result") {

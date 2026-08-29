@@ -23,6 +23,7 @@ export type AppConfig = {
   codexAgentUrl?: string;
   codexAgentHealthUrl?: string;
   codexAgentToken?: string;
+  codexAgentRequestTimeoutMs?: number;
   codexFallbackToMock: boolean;
   planeBaseUrl?: string;
   planeHealthUrl?: string;
@@ -70,6 +71,7 @@ export const config: AppConfig = {
   codexAgentUrl: process.env.CODEX_AGENT_URL,
   codexAgentHealthUrl: process.env.CODEX_AGENT_HEALTH_URL,
   codexAgentToken: process.env.CODEX_AGENT_TOKEN,
+  codexAgentRequestTimeoutMs: numberFromEnv(process.env.CODEX_AGENT_REQUEST_TIMEOUT_MS, 240000),
   codexFallbackToMock: boolFromEnv(process.env.CODEX_FALLBACK_TO_MOCK, true),
   planeBaseUrl: process.env.PLANE_BASE_URL,
   planeHealthUrl: process.env.PLANE_HEALTH_URL,

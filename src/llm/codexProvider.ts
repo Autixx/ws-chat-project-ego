@@ -59,7 +59,8 @@ export class CodexProvider implements LlmProvider {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60_000);
+    const timeoutMs = Math.max(1, this.config.codexAgentRequestTimeoutMs ?? 240_000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
       response = await fetch(this.config.codexAgentUrl, {
@@ -83,7 +84,7 @@ export class CodexProvider implements LlmProvider {
       });
     } catch (error) {
       const message = error instanceof Error && error.name === "AbortError"
-        ? "Codex provider request timed out."
+        ? `Codex provider request timed out after ${timeoutMs}ms.`
         : `Codex provider request failed: ${error instanceof Error ? error.message : String(error)}.`;
       yield { type: "error", message, trace: { ...traceBase, status: "error", error: message, completedAt: new Date().toISOString() } };
       return;
