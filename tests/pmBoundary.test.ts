@@ -457,6 +457,73 @@ test("PM automation API lists projects with boards for n8n routing", async () =>
   }
 });
 
+test("PM board snapshot includes archived tasks when requested", async () => {
+  const now = new Date().toISOString();
+  const board = {
+    id: "board-1",
+    projectId: "project-1",
+    name: "Project Kanban",
+    boardType: "kanban",
+    isDefault: true,
+    createdAt: now,
+    updatedAt: now,
+    version: 1
+  };
+  const archivedTask = {
+    id: "task-archived",
+    projectId: "project-1",
+    title: "Archived task",
+    description: "",
+    status: "todo",
+    priority: "medium",
+    archivedAt: now,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    boardId: "board-1",
+    boardName: "Project Kanban",
+    columnId: "todo",
+    boardPosition: 1000
+  };
+  const calls: string[] = [];
+  const fakeStore = {
+    async ensureUser() {
+      return { id: "pm-user-1", username: "operator", displayName: "Operator" };
+    },
+    async health() {
+      return { ok: true };
+    },
+    async loadBoard(boardId: string) {
+      calls.push(`loadBoard:${boardId}`);
+      return board;
+    },
+    async getProjectRole(userId: string, projectId: string) {
+      calls.push(`role:${userId}:${projectId}`);
+      return "viewer";
+    },
+    async loadBoardSnapshot(boardId: string, filters: { includeArchived?: boolean }) {
+      calls.push(`snapshot:${boardId}:${filters.includeArchived === true}`);
+      return { board, columns: [], tasks: filters.includeArchived ? [archivedTask] : [] };
+    }
+  };
+  const app = createPmApp(loadPmConfig({ NODE_ENV: "development", PM_DEV_AUTH_BYPASS: "true" }), fakeStore as never);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/pm/boards/board-1?includeArchived=true`);
+    assert.equal(response.status, 200);
+    const body = await response.json() as { tasks: Array<{ id: string; archivedAt?: string }> };
+    assert.equal(body.tasks.length, 1);
+    assert.equal(body.tasks[0].id, "task-archived");
+    assert.equal(body.tasks[0].archivedAt, now);
+    assert.deepEqual(calls, ["loadBoard:board-1", "role:pm-user-1:project-1", "snapshot:board-1:true"]);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test("PM API hard deletes projects tasks and boards with attachment files", async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), "projectego-pm-hard-delete-"));
   const attachmentsDir = path.join(root, "attachments");

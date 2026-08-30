@@ -672,7 +672,7 @@ export function createPmRouter(store: PmStore, events: PmEventHub, options: PmRo
       const user = requirePmUser(req);
       const board = await store.loadBoard(req.params.boardId);
       requireProjectRole(await store.getProjectRole(user.id, board.projectId), "viewer");
-      res.json(await store.loadBoardSnapshot(req.params.boardId));
+      res.json(await store.loadBoardSnapshot(req.params.boardId, { includeArchived: req.query.includeArchived === "true" }));
     } catch (error) {
       next(error);
     }

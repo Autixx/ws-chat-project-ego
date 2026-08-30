@@ -1804,7 +1804,7 @@ async function loadSelectedBoard() {
     state.boardTasks = [];
     return;
   }
-  const snapshot = await api(`/api/pm/boards/${state.activeBoardId}`);
+  const snapshot = await api(`/api/pm/boards/${state.activeBoardId}${archivedQuery()}`);
   state.board = snapshot.board;
   state.columns = snapshot.columns;
   state.boardTasks = snapshot.tasks;
@@ -1815,7 +1815,7 @@ async function loadBoardSnapshot() {
     state.boardTasks = [];
     return;
   }
-  const snapshot = await api(`/api/pm/boards/${state.board.id}`);
+  const snapshot = await api(`/api/pm/boards/${state.board.id}${archivedQuery()}`);
   state.board = snapshot.board;
   state.columns = snapshot.columns;
   state.boardTasks = snapshot.tasks;
@@ -1851,7 +1851,15 @@ function projectByKey(projectKey) {
 
 function taskSearchQuery() {
   const search = els.taskSearch.value.trim();
-  return search ? `?search=${encodeURIComponent(search)}` : "";
+  const params = new URLSearchParams();
+  if (search) params.set("search", search);
+  if (els.includeArchived.checked) params.set("includeArchived", "true");
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function archivedQuery() {
+  return els.includeArchived.checked ? "?includeArchived=true" : "";
 }
 
 function renderProjects() {
@@ -3683,7 +3691,7 @@ async function toggleTaskArchive() {
     body: JSON.stringify({ archived: !state.activeTask.archivedAt })
   });
   await loadProjectData();
-  if (task.archivedAt) {
+  if (task.archivedAt && !els.includeArchived.checked) {
     closeTask();
   } else {
     openTask(task);
@@ -4709,7 +4717,14 @@ els.markAllNotificationsReadBtn.addEventListener("click", () => markAllNotificat
 els.refreshWebhooksBtn.addEventListener("click", () => loadWebhookDeliveries().catch((error) => setError(error.message)));
 els.webhookStatusFilter.addEventListener("change", () => loadWebhookDeliveries().catch((error) => setError(error.message)));
 els.refreshOpsBtn.addEventListener("click", () => loadOpsStatus().catch((error) => setError(error.message)));
-els.includeArchived.addEventListener("change", () => loadProjects().catch((error) => setError(error.message)));
+els.includeArchived.addEventListener("change", async () => {
+  try {
+    await loadProjects();
+    if (state.activeProjectId) await loadProjectData();
+  } catch (error) {
+    setError(error.message);
+  }
+});
 els.includeCompletedSprints.addEventListener("change", () => loadProjectData().catch((error) => setError(error.message)));
 els.backlogFilterBtn.addEventListener("click", () => {
   state.activeSprintId = "__backlog";

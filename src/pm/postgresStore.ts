@@ -953,7 +953,7 @@ export class PmStore {
     return column;
   }
 
-  async loadBoardSnapshot(boardId: string): Promise<{ board: PmBoard; columns: PmBoardColumn[]; tasks: PmBoardTask[] }> {
+  async loadBoardSnapshot(boardId: string, filters: { includeArchived?: boolean } = {}): Promise<{ board: PmBoard; columns: PmBoardColumn[]; tasks: PmBoardTask[] }> {
     const board = await this.loadBoard(boardId);
     const columns = await this.listBoardColumns(boardId);
     const includeUnpositioned = Boolean(board.isDefault);
@@ -966,13 +966,13 @@ export class PmStore {
       LEFT JOIN pm.task_labels tl ON tl.task_id = t.id
       WHERE t.project_id = $2
         AND t.deleted_at IS NULL
-        AND t.archived_at IS NULL
+        AND ($5::boolean OR t.archived_at IS NULL)
         AND ($3::uuid IS NULL OR t.epic_id = $3::uuid)
         AND ($4::boolean OR tp.board_id IS NOT NULL)
       GROUP BY t.id, tp.board_id, b.name, tp.column_id, tp.position
       ORDER BY COALESCE(tp.position, 1000000000), t.updated_at DESC
       `,
-      [board.id, board.projectId, board.epicId ?? null, includeUnpositioned]
+      [board.id, board.projectId, board.epicId ?? null, includeUnpositioned, Boolean(filters.includeArchived)]
     );
     return { board, columns, tasks: taskResult.rows.map(mapBoardTask) };
   }
