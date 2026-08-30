@@ -17,7 +17,6 @@ export type DashboardStatus = {
     db: DbHealth;
     llmAgent: ProbeStatus;
     n8n: ProbeStatus;
-    plane: ProbeStatus;
     jobs: { callbackConfigured: boolean };
   };
 };
@@ -34,8 +33,7 @@ export class ComponentStatusMonitor {
   ) {
     this.latest = {
       llmAgent: this.initialLlmAgentStatus(),
-      n8n: this.initialN8nStatus(),
-      plane: { status: "unreachable", message: "Plane URL is not configured." }
+      n8n: this.initialN8nStatus()
     };
   }
 
@@ -67,8 +65,8 @@ export class ComponentStatusMonitor {
   }
 
   async poll(): Promise<void> {
-    const [llmAgent, n8n, plane] = await Promise.all([this.checkLlmAgent(), this.checkN8n(), this.checkPlane()]);
-    this.latest = { llmAgent, n8n, plane };
+    const [llmAgent, n8n] = await Promise.all([this.checkLlmAgent(), this.checkN8n()]);
+    this.latest = { llmAgent, n8n };
   }
 
   private initialLlmAgentStatus(): ProbeStatus {
@@ -93,12 +91,6 @@ export class ComponentStatusMonitor {
       return { status: "unconfigured", checkedAt: new Date().toISOString(), message: "n8n URL or token is not configured." };
     }
     return this.probe(this.config.n8nHealthUrl || this.config.n8nBaseUrl, "configured", "unreachable");
-  }
-
-  private async checkPlane(): Promise<ProbeStatus> {
-    const url = this.config.planeHealthUrl || this.config.planeBaseUrl;
-    if (!url) return { status: "unreachable", checkedAt: new Date().toISOString(), message: "Plane URL is not configured." };
-    return this.probe(url, "reachable", "unreachable");
   }
 
   private async probe(url: string, okStatus: string, failStatus: string): Promise<ProbeStatus> {

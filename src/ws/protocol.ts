@@ -47,7 +47,6 @@ export type ServerMessage =
       type: "app_status";
       db: { status: "ok" | "error"; path?: string; quickCheck?: string; writable?: boolean; message?: string };
       llmAgent: { status: string; checkedAt?: string; latencyMs?: number; message?: string; lastError?: string };
-      plane: { status: string; checkedAt?: string; latencyMs?: number; message?: string; lastError?: string };
       n8n: { status: string; checkedAt?: string; latencyMs?: number; message?: string; lastError?: string };
       jobs?: { callbackConfigured: boolean };
     }

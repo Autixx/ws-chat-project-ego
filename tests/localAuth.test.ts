@@ -26,8 +26,7 @@ function baseConfig(dir: string): AppConfig {
     registrationInviteCode: "invite",
     cookieSecure: false,
     llmProvider: "mock",
-    codexFallbackToMock: true,
-    planeWorkspace: "projectego"
+    codexFallbackToMock: true
   };
 }
 

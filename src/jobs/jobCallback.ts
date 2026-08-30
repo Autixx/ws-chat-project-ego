@@ -28,7 +28,7 @@ export type JobCallbackResult = {
 
 const CALLBACK_STATUSES = new Set<JobExecutionStatus>(["running", "succeeded", "failed", "partial", "cancelled"]);
 const FINISHED_CALLBACK_STATUSES = new Set<JobExecutionStatus>(["succeeded", "failed", "partial"]);
-const CALLBACK_EVENT_TYPES = new Set(["started", "plane_created", "plane_failed", "finished", "error"]);
+const CALLBACK_EVENT_TYPES = new Set(["started", "work_items_created", "work_items_failed", "finished", "error"]);
 
 export async function handleJobCallback(input: { config: AppConfig; jobs: JobStore; jobId: string; authorization?: string; body: JobCallbackBody }): Promise<JobCallbackResult> {
   const expected = input.config.jobCallbackToken;

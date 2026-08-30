@@ -34,8 +34,6 @@ const state = {
 const els = {
   wsSquare: document.getElementById("wsSquare"),
   wsText: document.getElementById("wsText"),
-  planeSquare: document.getElementById("planeSquare"),
-  planeText: document.getElementById("planeText"),
   n8nSquare: document.getElementById("n8nSquare"),
   n8nText: document.getElementById("n8nText"),
   llmSquare: document.getElementById("llmSquare"),
@@ -227,7 +225,6 @@ function handleServerMessage(message) {
     setStatusIndicator(els.dbSquare, els.dbText, message.db.status, statusLabel(message.db.status, message.db.path || message.db.message));
     setStatusIndicator(els.llmSquare, els.llmText, componentTone(message.llmAgent?.status), statusLabel(message.llmAgent?.status, message.llmAgent?.message || message.llmAgent?.lastError));
     setStatusIndicator(els.n8nSquare, els.n8nText, componentTone(message.n8n?.status), statusLabel(message.n8n?.status, message.n8n?.message || message.n8n?.lastError));
-    setStatusIndicator(els.planeSquare, els.planeText, componentTone(message.plane?.status, { informational: true }), statusLabel(message.plane?.status, message.plane?.message || message.plane?.lastError));
   }
 
   if (message.type === "conversation_list") {

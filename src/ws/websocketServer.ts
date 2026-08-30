@@ -301,7 +301,7 @@ export function attachWebSocketServer(
       send(ws, { type: "job_event", jobId: dispatch.job.id, event: dispatch.event });
 
       const queuedText = dispatch.result.accepted ? `queued=${applyEntries.length}` : `failed=${applyEntries.length}`;
-      const content = `Apply result for ${draft.jobId}: ${queuedText}, kept=${keepItems.length}, dropped=${selection.drop.length}, job=${job.id}. Dashboard does not write Plane directly; n8n workflow execution is tracked separately.`;
+      const content = `Apply result for ${draft.jobId}: ${queuedText}, kept=${keepItems.length}, dropped=${selection.drop.length}, job=${job.id}. Dashboard queues execution through n8n and tracks the workflow result separately.`;
       const toolMessage = await messages.appendToolMessage(message.conversationId, user, content, {
         kind: "apply_result",
         jobId: draft.jobId,

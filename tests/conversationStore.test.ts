@@ -61,8 +61,7 @@ function testStores() {
     registrationEnabled: true,
     cookieSecure: false,
     llmProvider: "mock",
-    codexFallbackToMock: true,
-    planeWorkspace: "projectego"
+    codexFallbackToMock: true
   });
   return {
     dir,

@@ -20,8 +20,7 @@ function baseConfig(dir: string): AppConfig {
     registrationEnabled: true,
     cookieSecure: false,
     llmProvider: "mock",
-    codexFallbackToMock: true,
-    planeWorkspace: "projectego"
+    codexFallbackToMock: true
   };
 }
 
@@ -112,16 +111,8 @@ test("n8n is unreachable when configured probe fails", async () => {
   assert.equal(monitor.snapshot(validFakeDb()).components.n8n.status, "unreachable");
 });
 
-test("Plane unreachable does not make dashboard health fail", async () => {
-  const monitor = new ComponentStatusMonitor(configWith({ planeBaseUrl: "http://plane.test" }), failingFetch());
-  await monitor.poll();
-  const snapshot = monitor.snapshot(validFakeDb());
-  assert.equal(snapshot.components.plane.status, "unreachable");
-  assert.equal(snapshot.status, "ok");
-});
-
 test("DB error still makes dashboard health error", async () => {
-  const monitor = new ComponentStatusMonitor(configWith({ planeBaseUrl: "http://plane.test" }), okFetch());
+  const monitor = new ComponentStatusMonitor(configWith({}), okFetch());
   await monitor.poll();
   const snapshot = monitor.snapshot(invalidFakeDb());
   assert.equal(snapshot.status, "error");

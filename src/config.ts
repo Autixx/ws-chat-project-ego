@@ -25,10 +25,6 @@ export type AppConfig = {
   codexAgentToken?: string;
   codexAgentRequestTimeoutMs?: number;
   codexFallbackToMock: boolean;
-  planeBaseUrl?: string;
-  planeHealthUrl?: string;
-  planeWorkspace: string;
-  planeApiKey?: string;
   n8nBaseUrl?: string;
   n8nHealthUrl?: string;
   n8nApplyWebhookUrl?: string;
@@ -73,10 +69,6 @@ export const config: AppConfig = {
   codexAgentToken: process.env.CODEX_AGENT_TOKEN,
   codexAgentRequestTimeoutMs: numberFromEnv(process.env.CODEX_AGENT_REQUEST_TIMEOUT_MS, 240000),
   codexFallbackToMock: boolFromEnv(process.env.CODEX_FALLBACK_TO_MOCK, true),
-  planeBaseUrl: process.env.PLANE_BASE_URL,
-  planeHealthUrl: process.env.PLANE_HEALTH_URL,
-  planeWorkspace: process.env.PLANE_WORKSPACE ?? "projectego",
-  planeApiKey: process.env.PLANE_API_KEY,
   n8nBaseUrl: process.env.N8N_BASE_URL,
   n8nHealthUrl: process.env.N8N_HEALTH_URL,
   n8nApplyWebhookUrl: process.env.N8N_APPLY_WEBHOOK_URL,

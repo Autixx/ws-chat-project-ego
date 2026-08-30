@@ -58,8 +58,7 @@ function config(): AppConfig {
     llmProvider: "codex",
     codexAgentUrl: "http://agent.test/v2/projectego/decompose",
     codexAgentToken: "secret-token",
-    codexFallbackToMock: false,
-    planeWorkspace: "projectego"
+    codexFallbackToMock: false
   };
 }
 

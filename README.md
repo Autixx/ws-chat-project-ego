@@ -19,9 +19,8 @@ Browser dashboard for ProjectEGO planning automation. The UI separates user requ
   - per-item JSON
   - uploaded attachment files
 - LLM provider abstraction with `MockProvider` and `CodexProvider` placeholder.
-- Background component reachability polling for SQLite, LLM-agent/codex-agent, n8n, and Plane.
-- n8n is the controlled workflow executor and future writer to Plane.
-- Plane is informational reachability only from the Dashboard; Dashboard does not create Plane work-items directly.
+- Background component reachability polling for SQLite, LLM-agent/codex-agent, and n8n.
+- n8n is the controlled workflow executor for Dashboard Apply actions.
 - Multipart upload API for text-like files, media attachments, and image previews.
 - Dashboard and PM both use their own ProjectEGO login screens; Authelia is optional outer perimeter protection only.
 
@@ -123,7 +122,6 @@ PM must not receive Dashboard/agent secrets. Keep these variables out of the `pr
 - `AGENT_ATTACHMENT_TOKEN`
 - `JOB_CALLBACK_TOKEN`
 - `N8N_WEBHOOK_TOKEN`
-- `PLANE_API_KEY`
 - `DASHBOARD_INTERNAL_BASE_URL`
 
 The PM runtime validates this boundary on startup. If any of those variables are present, the PM service refuses to start.
@@ -158,7 +156,7 @@ For a registry image without Compose:
 ```bash
 docker run --rm \
   -e PM_DATABASE_URL=postgres://projectego_admin:...@projectego-postgres:5432/projectego \
-  ghcr.io/autixx/ws-chat-project-ego:v0.3.6 \
+  ghcr.io/autixx/ws-chat-project-ego:v0.3.7 \
   node dist/pm/migrate.js
 ```
 
@@ -364,7 +362,7 @@ The automation API goes through PM backend authorization and audit paths. n8n sh
 
 The primary screen is a compact technical dashboard:
 
-- top status bar with WS, DB, LLM-agent, n8n, Plane and user indicators
+- top status bar with WS, DB, LLM-agent, n8n and user indicators
 - request search field
 - response search field
 - left request panel with answer status squares
@@ -388,7 +386,7 @@ Response decision status:
 
 Expanded pending responses expose response-level `Apply`, `Drop`, and `Keep` buttons. These persist decision status in SQLite metadata. Item-level draft Apply/Keep/Drop remains in the Draft Inspector.
 
-Execution status is tracked separately from decision status. Clicking response-level `Apply` records the user decision and creates a backend execution job. Applying selected Draft Inspector items creates an `n8n_apply` job and sends the selected draft payload to `N8N_APPLY_WEBHOOK_URL`; n8n remains responsible for any Plane work-item creation. A green decision square therefore means "user chose Apply", not "n8n/Plane work succeeded".
+Execution status is tracked separately from decision status. Clicking response-level `Apply` records the user decision and creates a backend execution job. Applying selected Draft Inspector items creates an `n8n_apply` job and sends the selected draft payload to `N8N_APPLY_WEBHOOK_URL`; n8n remains responsible for workflow execution. A green decision square therefore means "user chose Apply", not "n8n workflow succeeded".
 
 ## Storage
 
@@ -767,7 +765,6 @@ Forbidden env:
   AGENT_ATTACHMENT_TOKEN
   JOB_CALLBACK_TOKEN
   N8N_WEBHOOK_TOKEN
-  PLANE_API_KEY
   DASHBOARD_INTERNAL_BASE_URL
 ```
 
@@ -814,7 +811,7 @@ To update from the TrueNAS Apps UI:
 For predictable production rollouts, prefer a fixed tag such as:
 
 ```text
-ghcr.io/autixx/ws-chat-project-ego:v0.3.6
+ghcr.io/autixx/ws-chat-project-ego:v0.3.7
 ```
 
 Then update the tag in TrueNAS when moving to a newer release.
@@ -843,9 +840,6 @@ Expected response:
     "n8n": {
       "status": "configured"
     },
-    "plane": {
-      "status": "reachable"
-    },
     "jobs": {
       "callbackConfigured": true
     }
@@ -853,9 +847,9 @@ Expected response:
 }
 ```
 
-The SQLite healthcheck verifies `SELECT 1`, `PRAGMA quick_check`, and write access to the database directory. Production responses avoid exposing full host paths. Dashboard global health returns `error` only when DB health fails; LLM-agent, n8n, and Plane failures are exposed as component statuses.
+The SQLite healthcheck verifies `SELECT 1`, `PRAGMA quick_check`, and write access to the database directory. Production responses avoid exposing full host paths. Dashboard global health returns `error` only when DB health fails; LLM-agent and n8n failures are exposed as component statuses.
 
-Component status polling runs in the background. `LLM_PROVIDER=codex` requires `CODEX_AGENT_URL` for generation; `CODEX_AGENT_HEALTH_URL` can override the probe URL. n8n reachability polling uses `N8N_BASE_URL`/`N8N_HEALTH_URL`, while Draft Inspector Apply uses `N8N_APPLY_WEBHOOK_URL` plus `N8N_WEBHOOK_TOKEN`. Plane reachability is informational only.
+Component status polling runs in the background. `LLM_PROVIDER=codex` requires `CODEX_AGENT_URL` for generation; `CODEX_AGENT_HEALTH_URL` can override the probe URL. n8n reachability polling uses `N8N_BASE_URL`/`N8N_HEALTH_URL`, while Draft Inspector Apply uses `N8N_APPLY_WEBHOOK_URL` plus `N8N_WEBHOOK_TOKEN`.
 
 ## Caddy + Optional Authelia Perimeter
 
@@ -974,7 +968,7 @@ POST /api/auth/logout
 GET  /api/auth/me
 ```
 
-Plane is no longer used for chat authentication or authorization. Plane variables are used only for informational reachability from the Dashboard. n8n is the workflow executor and the intended writer to Plane.
+n8n is the workflow executor for Dashboard Apply actions. Dashboard itself records decisions and jobs, then waits for n8n callbacks when workflow completion needs to be reflected.
 
 ## MockProvider Test
 
@@ -992,7 +986,7 @@ Plane is no longer used for chat authentication or authorization. Plane variable
 12. Click `Apply selected`.
 13. Change response-level Apply/Drop/Keep status and reload to verify persistence.
 
-Dashboard does not create Plane work-items directly. Apply workflow execution is tracked as jobs and should be handled by n8n callbacks.
+Dashboard does not create external work-items directly. Apply workflow execution is tracked as jobs and should be handled by n8n callbacks.
 
 ## Upload API
 
@@ -1104,10 +1098,6 @@ For Docker, back up the mounted `/app/data` volume.
 | `CODEX_AGENT_TOKEN` | Optional token sent as `X-Codex-Agent-Token` to non-health Codex agent routes. |
 | `CODEX_AGENT_REQUEST_TIMEOUT_MS` | Timeout for generation requests sent to codex-agent. Default `240000`. |
 | `CODEX_FALLBACK_TO_MOCK` | Fall back to mock if Codex is not configured. |
-| `PLANE_BASE_URL` | Optional Plane base URL for informational reachability. |
-| `PLANE_HEALTH_URL` | Optional Plane health URL for reachability polling. |
-| `PLANE_WORKSPACE` | Plane workspace slug. |
-| `PLANE_API_KEY` | Optional Plane API key retained for future integration; Dashboard is not a Plane writer. |
 | `N8N_BASE_URL` | Optional n8n base URL. |
 | `N8N_HEALTH_URL` | Optional n8n health URL for reachability polling. |
 | `N8N_APPLY_WEBHOOK_URL` | Optional n8n webhook URL used by Draft Inspector Apply. |
@@ -1139,7 +1129,7 @@ Dashboard sends Codex requests as JSON with a stable `client_request_id`, semant
 
 ## Current Limitations
 
-- Plane work-item creation is out of scope for Dashboard; route execution through n8n.
+- External work-item creation is out of scope for Dashboard; route execution through n8n.
 - `CodexProvider` is non-streaming unless the configured backend streams or returns incremental events.
 - SQLite is intended for single-node deployment.
 - Self-service password reset, email verification, and login rate limiting are not implemented yet.

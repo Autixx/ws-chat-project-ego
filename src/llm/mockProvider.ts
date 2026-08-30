@@ -77,8 +77,8 @@ export class MockProvider implements LlmProvider {
       },
       {
         title: "Route candidate work to ProjectEGO systems",
-        summary: "Assign the request to likely Plane project areas using canonical project names.",
-        details: "The MVP keeps routing transparent and reversible until Plane integration is configured.",
+        summary: "Assign the request to likely ProjectEGO work areas using canonical area names.",
+        details: "The MVP keeps routing transparent and reversible until workflow automation is configured.",
         project: "Data Depot Framework",
         module: "Routing",
         type: "technical",
@@ -86,13 +86,13 @@ export class MockProvider implements LlmProvider {
         routing_confidence: "medium",
         labels: ["routing"],
         dependencies: ["Canonical project mapping"],
-        acceptance_criteria: ["Every item has a Plane project", "Low confidence routing is visible in preview"],
-        needs_clarification: ["Confirm target Plane project if routing confidence is medium or low."],
+        acceptance_criteria: ["Every item has a target work area", "Low confidence routing is visible in preview"],
+        needs_clarification: ["Confirm target work area if routing confidence is medium or low."],
         source_text: source
       },
       {
         title: "Prepare apply/keep/drop decision",
-        summary: "Expose the generated items for user review before creating Plane work-items.",
+        summary: "Expose the generated items for user review before sending them to workflow automation.",
         details: "User choices are recorded through apply grammar; kept items move into unclarified storage.",
         project: "UI and UX",
         module: "Review Flow",

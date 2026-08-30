@@ -33,7 +33,6 @@ function baseConfig(dir: string, jobCallbackToken?: string): AppConfig {
     cookieSecure: false,
     llmProvider: "mock",
     codexFallbackToMock: true,
-    planeWorkspace: "projectego",
     jobCallbackToken
   };
 }
@@ -173,7 +172,7 @@ test("job callback updates job to running succeeded and failed", async () => {
       jobs: s.jobs,
       jobId: job.id,
       authorization: auth,
-      body: { status: "succeeded", eventType: "finished", externalRefs: [{ system: "plane", type: "work_item", id: "P-1" }] }
+      body: { status: "succeeded", eventType: "finished", externalRefs: [{ system: "pm", type: "task", id: "P-1" }] }
     });
     assert.equal(succeeded.job.status, "succeeded");
     assert.equal(succeeded.ok, true);
@@ -187,7 +186,7 @@ test("job callback updates job to running succeeded and failed", async () => {
     assert.equal(succeeded.externalRefsCount, 1);
     assert.equal(succeeded.currentJob.id, job.id);
     assert.ok(succeeded.job.finishedAt);
-    assert.deepEqual(succeeded.job.metadata?.externalRefs, [{ system: "plane", type: "work_item", id: "P-1" }]);
+    assert.deepEqual(succeeded.job.metadata?.externalRefs, [{ system: "pm", type: "task", id: "P-1" }]);
     assert.equal(succeeded.job.metadata?.lastEventStatus, "succeeded");
     assert.equal(succeeded.job.metadata?.lastEventType, "finished");
 
@@ -196,10 +195,10 @@ test("job callback updates job to running succeeded and failed", async () => {
       jobs: s.jobs,
       jobId: job.id,
       authorization: auth,
-      body: { status: "failed", eventType: "error", message: "Plane rejected payload" }
+      body: { status: "failed", eventType: "error", message: "Workflow rejected payload" }
     });
     assert.equal(failed.job.status, "failed");
-    assert.equal(failed.job.errorMessage, "Plane rejected payload");
+    assert.equal(failed.job.errorMessage, "Workflow rejected payload");
     assert.equal(failed.job.metadata?.lastEventStatus, "failed");
     assert.equal(failed.job.metadata?.lastEventType, "error");
   } finally {
@@ -393,13 +392,13 @@ test("n8n callback marks apply job succeeded and stores external refs", async ()
       body: {
         status: "succeeded",
         eventType: "finished",
-        externalRefs: [{ system: "plane", type: "work_item", id: "PEGO-42", url: "https://plane.example.test/PEGO-42" }]
+        externalRefs: [{ system: "pm", type: "task", id: "PEGO-42", url: "https://pm.example.test/tasks/PEGO-42" }]
       }
     });
 
     assert.equal(callback.job.status, "succeeded");
     assert.deepEqual(callback.job.metadata?.externalRefs, [
-      { system: "plane", type: "work_item", id: "PEGO-42", url: "https://plane.example.test/PEGO-42" }
+      { system: "pm", type: "task", id: "PEGO-42", url: "https://pm.example.test/tasks/PEGO-42" }
     ]);
   } finally {
     s.cleanup();
@@ -416,7 +415,7 @@ test("dedupe finished callback completes running job and preserves duplicate ext
     };
     const conversation = await s.conversations.createConversation(user, "dedupe callback");
     const job = await s.jobs.createJob({ conversationId: conversation.id, status: "running", source: "n8n_apply" });
-    const externalRefs = [{ system: "plane", type: "work_item", id: "PEGO-42", url: "https://plane.example.test/PEGO-42" }];
+    const externalRefs = [{ system: "pm", type: "task", id: "PEGO-42", url: "https://pm.example.test/tasks/PEGO-42" }];
     const callback = await handleJobCallback({
       config: s.config,
       jobs: s.jobs,

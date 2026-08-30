@@ -25,10 +25,6 @@ services:
       CODEX_AGENT_TOKEN: ""
       CODEX_AGENT_REQUEST_TIMEOUT_MS: "240000"
       CODEX_FALLBACK_TO_MOCK: "true"
-      PLANE_BASE_URL: ""
-      PLANE_HEALTH_URL: ""
-      PLANE_WORKSPACE: projectego
-      PLANE_API_KEY: ""
       N8N_BASE_URL: ""
       N8N_HEALTH_URL: ""
       N8N_WEBHOOK_TOKEN: ""
